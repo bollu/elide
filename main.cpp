@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <iostream>
+#include <iterator>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,19 @@ int clamp(int lo, int val, int hi) {
 struct erow {
   int size = 0;
   char *chars = nullptr;
+  int rsize = 0;
+  char * render = nullptr;
+
+  void update() {
+    free(render);
+    render = (char *)malloc(size + 1);
+    int ix = 0;
+    for(int j = 0; j < size; ++j) {
+      render[ix++] = chars[j];
+    }
+    render[ix] = '\0';
+    rsize = ix;
+  }
 };
 
 struct editorConfig {
@@ -236,12 +250,18 @@ int getWindowSize(int *rows, int *cols) {
 void editorAppendRow(char *s, size_t len) {
 
   E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));
-  int at = E.numrows;
+  const int at = E.numrows;
+  // TODO: placement-new.
   E.row[at].size = len;
   E.row[at].chars = (char *)malloc(len + 1);
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
-  E.numrows++;
+
+  E.row[at].rsize = 0;
+  E.row[at].render = NULL;
+  E.row[at].update();  E.numrows++;
+
+
 }
 
 /*** file i/o ***/
@@ -312,12 +332,12 @@ void editorDrawRows(abuf &ab) {
     int filerow = y + E.rowoff;
 
     if (filerow < E.numrows) {
-      int len = clamp(0, E.row[filerow].size - E.coloff, E.screencols);
+      int len = clamp(0, E.row[filerow].rsize - E.coloff, E.screencols);
 
       // int len = E.row[filerow].size;
       // if (len > E.screencols)
       //   len = E.screencols;
-      ab.appendbuf(E.row[filerow].chars + E.coloff, len);
+      ab.appendbuf(E.row[filerow].render + E.coloff, len);
 
     } else {
       if (E.numrows == 0 && y == E.screenrows / 3) {
