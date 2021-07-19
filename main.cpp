@@ -288,6 +288,10 @@ void editorRefreshScreen() {
 
 /*** input ***/
 
+int clamp(int lo, int val, int hi) {
+  return std::min<int>(std::max<int>(lo, val), hi);
+}
+
 void editorMoveCursor(int key) {
   switch (key) {
   case ARROW_LEFT:
@@ -305,6 +309,9 @@ void editorMoveCursor(int key) {
   default:
     assert(false && "unknown key to move cursor");
   }
+
+  E.cx = clamp(0, E.cx, E.screencols);
+  E.cy = clamp(0, E.cy, E.screenrows);
 }
 
 void editorProcessKeypress() {
