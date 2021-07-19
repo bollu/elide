@@ -11,7 +11,7 @@
 #include <sys/ttydefaults.h>
 #include <termios.h>
 #include <unistd.h>
-
+#include <fcntl.h>
 static const int NSPACES_PER_TAB = 2;
 /*** defines ***/
 
@@ -24,6 +24,7 @@ enum editorKey {
   ARROW_DOWN,
   PAGE_UP,
   PAGE_DOWN,
+  BACKSPACE,
 };
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
@@ -344,6 +345,40 @@ void editorOpen(const char *filename) {
   fclose(fp);
 }
 
+char *editorRowsToString(int *buflen) {
+  int totlen = 0;
+  for (int j = 0; j < E.numrows; j++) {
+    totlen += E.row[j].size + 1;
+  }
+  *buflen = totlen;
+  char *buf = (char *)malloc(totlen);
+  char *p = buf;
+  for (int j = 0; j < E.numrows; j++) {
+    memcpy(p, E.row[j].chars, E.row[j].size);
+    p += E.row[j].size;
+    *p = '\n';
+    p++;
+  }
+  return buf;
+}
+
+void editorSave() {
+  if (E.filepath == NULL) {
+    return;
+  }
+  int len;
+  char *buf = editorRowsToString(&len);
+  // | open for read and write
+  // | create if does not exist
+  // 0644: +r, +w
+  int fd = open(E.filepath, O_RDWR | O_CREAT, 0644);
+  // | set file to len.
+  ftruncate(fd, len);
+  write(fd, buf, len);
+  close(fd);
+  free(buf);
+}
+
 /*** append buffer ***/
 struct abuf {
   char *b = nullptr;
@@ -593,9 +628,18 @@ void editorMoveCursor(int key) {
 void editorProcessKeypress() {
   int c = editorReadKey();
   switch (c) {
+  case '\r':
+    /* ENTER KEY: TODO */
+    break;
 
   case CTRL_KEY('q'):
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
     exit(0);
+    break;
+  case CTRL_KEY('s'):
+    editorSave();
+    editorSetStatusMessage("Saved file");
     break;
   case ARROW_UP:
   case ARROW_DOWN:
@@ -604,6 +648,12 @@ void editorProcessKeypress() {
   case PAGE_DOWN:
   case PAGE_UP:
     editorMoveCursor(c);
+    break;
+  case BACKSPACE:
+    // TODO:
+    break;
+  case '\x1b':
+    // escape
     break;
   default:
     editorInsertChar(c);
