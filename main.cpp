@@ -90,6 +90,7 @@ struct editorConfig {
   int rowoff = 0;
   int coloff = 0;
   int numrows = 0;
+  char *filepath = nullptr;
 } E;
 
 /*** terminal ***/
@@ -291,6 +292,9 @@ void editorAppendRow(char *s, size_t len) {
 
 /*** file i/o ***/
 void editorOpen(const char *filename) {
+  free(E.filepath);
+  E.filepath = strdup(filename);
+
   FILE *fp = fopen(filename, "r");
   if (!fp) {
     die("fopen");
@@ -410,7 +414,14 @@ void editorDrawStatusBar(abuf &ab) {
   // can select all with [1;4;5;7m
   // 0: clear, default arg.
   ab.appendstr("\x1b[7m");
-  int len = 0;
+
+  char status[80];
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+    E.filepath ? E.filepath : "[No Name]", E.numrows);
+
+  len = std::min<int>(len, E.screencols);
+  ab.appendstr(status);
+
   while (len < E.screencols) {
     ab.appendstr(" ");
     len++;
