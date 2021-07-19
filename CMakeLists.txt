@@ -6,8 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -fdiagnostics-color=always -fsanitize=address,undefined")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always -O2")
 
-add_executable(txt main.cpp)
+add_executable(edtr main.cpp)
 # target_link_libraries(ward SDL2::SDL2 SDL2::SDL2main  ${X11_LIBRARIES} ${X11_Xinput_LIB})
 
-install(TARGETS txt DESTINATION bin)
+install(TARGETS edtr DESTINATION bin)
 
