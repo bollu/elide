@@ -11,6 +11,7 @@
 #include <termios.h>
 #include <unistd.h>
 
+static const int NSPACES_PER_TAB = 2;
 /*** defines ***/
 
 const char *VERSION = "0.0.1";
@@ -44,11 +45,25 @@ struct erow {
   char * render = nullptr;
 
   void update() {
-    free(render);
-    render = (char *)malloc(size + 1);
+
+    int ntabs = 0;
+    for(int j = 0; j < size; ++j) {
+      ntabs += chars[j] == '\t';
+    }
+
+    free(render);    
+    render = (char *)malloc(size + ntabs *NSPACES_PER_TAB + 1);
     int ix = 0;
     for(int j = 0; j < size; ++j) {
-      render[ix++] = chars[j];
+      if (chars[j] == '\t') {
+        render[ix++] = ' ';
+        while (ix % NSPACES_PER_TAB != 0) { 
+          render[ix++] = ' ';
+        }
+      } else {
+        render[ix++] = chars[j];
+      }
+
     }
     render[ix] = '\0';
     rsize = ix;
