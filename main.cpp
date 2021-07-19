@@ -44,6 +44,17 @@ struct erow {
   int rsize = 0;
   char * render = nullptr;
 
+  int cxToRx(int cx) const {
+    int rx = 0;
+    for(int j = 0; j < cx; ++j) {
+      if (chars[j] == '\t') {
+        rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
+      } else {
+        rx++;
+      }
+    }
+    return rx;
+  }
   void update() {
 
     int ntabs = 0;
@@ -322,18 +333,21 @@ struct abuf {
 /*** output ***/
 
 void editorScroll() {
-  E.rx = E.cx;
+  E.rx = 0;
+  if (E.cy < E.numrows) {
+    E.rx = E.row[E.cy].cxToRx(E.cx);
+  }
   if (E.cy < E.rowoff) {
     E.rowoff = E.cy;
   }
   if (E.cy >= E.rowoff + E.screenrows) {
     E.rowoff = E.cy - E.screenrows + 1;
   }
-  if (E.cx < E.coloff) {
-    E.coloff = E.cx;
+  if (E.rx < E.coloff) {
+    E.coloff = E.rx;
   }
-  if (E.cx >= E.coloff + E.screencols) {
-    E.coloff = E.cx - E.screencols + 1;
+  if (E.rx >= E.coloff + E.screencols) {
+    E.coloff = E.rx - E.screencols + 1;
   }
 }
 
