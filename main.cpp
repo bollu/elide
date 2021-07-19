@@ -15,6 +15,8 @@
 static const int NSPACES_PER_TAB = 2;
 /*** defines ***/
 
+void editorSetStatusMessage(const char *fmt, ...);
+
 const char *VERSION = "0.0.1";
 
 enum editorKey {
@@ -39,6 +41,29 @@ int clamp(int lo, int val, int hi) {
 }
 
 /*** data ***/
+
+struct erow;
+
+struct editorConfig {
+  int cx = 0, cy = 0;
+  struct termios orig_termios;
+  int screenrows;
+  int screencols;
+  int rx = 0;
+  erow *row;
+  int rowoff = 0;
+  int coloff = 0;
+  int numrows = 0;
+  char *filepath = nullptr;
+  char statusmsg[80];
+  time_t statusmsg_time = 0;
+  bool dirty = false;
+
+  editorConfig() { statusmsg[0] = '\0'; }
+
+} E;
+
+
 
 struct erow {
   int size = 0;
@@ -93,26 +118,9 @@ struct erow {
     size++;
     chars[at] = c;
     this->update();
+    E.dirty = true;
   }
 };
-
-struct editorConfig {
-  int cx = 0, cy = 0;
-  struct termios orig_termios;
-  int screenrows;
-  int screencols;
-  int rx = 0;
-  erow *row;
-  int rowoff = 0;
-  int coloff = 0;
-  int numrows = 0;
-  char *filepath = nullptr;
-  char statusmsg[80];
-  time_t statusmsg_time = 0;
-
-  editorConfig() { statusmsg[0] = '\0'; }
-
-} E;
 
 /*** terminal ***/
 
@@ -309,6 +317,7 @@ void editorAppendRow(const char *s, size_t len) {
   E.row[at].render = NULL;
   E.row[at].update();
   E.numrows++;
+  E.dirty = true;
 }
 
 /*** editor operations ***/
@@ -343,6 +352,7 @@ void editorOpen(const char *filename) {
   }
   free(line);
   fclose(fp);
+  E.dirty = false;
 }
 
 char *editorRowsToString(int *buflen) {
@@ -372,11 +382,18 @@ void editorSave() {
   // | create if does not exist
   // 0644: +r, +w
   int fd = open(E.filepath, O_RDWR | O_CREAT, 0644);
+  if (fd != -1) {
+    editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
+  }
+  assert(fd != -1 && "unable to open file");
   // | set file to len.
-  ftruncate(fd, len);
-  write(fd, buf, len);
+  int err = ftruncate(fd, len);
+  assert(err != -1 && "unable to truncate");
+  int nwritten = write(fd, buf, len);
+  assert(nwritten == len && "wasn't able to write enough bytes");
   close(fd);
   free(buf);
+  E.dirty = false;
 }
 
 /*** append buffer ***/
@@ -481,8 +498,10 @@ void editorDrawStatusBar(abuf &ab) {
   ab.appendstr("\x1b[7m");
 
   char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-                     E.filepath ? E.filepath : "[No Name]", E.numrows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %.20s",
+                     E.filepath ? E.filepath : "[No Name]",
+                     E.numrows,
+                     E.dirty ? "(DIRTY)"  : "(CLEAN)");
 
   len = std::min<int>(len, E.screencols);
   ab.appendstr(status);
