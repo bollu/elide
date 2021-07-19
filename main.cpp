@@ -43,6 +43,7 @@ struct editorConfig {
   int screenrows;
   int screencols;
   erow *row;
+  int rowoff = 0;
   int numrows = 0;
 } E;
 
@@ -224,12 +225,11 @@ void editorAppendRow(char *s, size_t len) {
   E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));
   int at = E.numrows;
   E.row[at].size = len;
-  E.row[at].chars = (char*)malloc(len + 1);
+  E.row[at].chars = (char *)malloc(len + 1);
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
   E.numrows++;
 }
-
 
 /*** file i/o ***/
 void editorOpen(const char *filename) {
@@ -271,6 +271,23 @@ struct abuf {
 };
 
 /*** output ***/
+
+void editorScroll() {
+
+  while (E.rowoff > 0 && E.cy < E.screenrows / 3) {
+    E.cy++;
+    E.rowoff--;
+  }
+
+  // if (E.cy < E.rowoff) {
+  //   E.rowoff = E.cy;
+  // }
+  while (E.rowoff + 1 < E.numrows  && E.cy >= (2 * E.screenrows)/3) {
+    E.cy--;
+    E.rowoff++; 
+  }
+}
+
 void editorDrawRows(abuf &ab) {
 
   // When we print the nal tilde, we then print a
@@ -280,11 +297,13 @@ void editorDrawRows(abuf &ab) {
   // "\r\n" ’s.
 
   for (int y = 0; y < E.screenrows; y++) {
-    if (y < E.numrows) {
-      int len = E.row[y].size;
+    int filerow = y + E.rowoff;
+
+    if (filerow < E.numrows) {
+      int len = E.row[filerow].size;
       if (len > E.screencols)
         len = E.screencols;
-      ab.appendbuf(E.row[y].chars, len);
+      ab.appendbuf(E.row[filerow].chars, len);
 
     } else {
       if (E.numrows == 0 && y == E.screenrows / 3) {
@@ -318,6 +337,8 @@ void editorDrawRows(abuf &ab) {
 }
 
 void editorRefreshScreen() {
+
+  editorScroll();
   abuf ab;
 
   // It’s possible that the cursor might be displayed in the middle of the
@@ -394,7 +415,7 @@ void editorMoveCursor(int key) {
   }
 
   E.cx = clamp(0, E.cx, E.screencols);
-  E.cy = clamp(0, E.cy, E.screenrows);
+  E.cy = clamp(0, E.cy, E.numrows);
 }
 
 void editorProcessKeypress() {
@@ -426,7 +447,7 @@ void initEditor() {
 int main(int argc, char **argv) {
   enableRawMode();
   initEditor();
-    
+
   if (argc >= 2) {
     editorOpen(argv[1]);
   }
