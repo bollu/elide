@@ -42,11 +42,11 @@ struct erow {
   int size = 0;
   char *chars = nullptr;
   int rsize = 0;
-  char * render = nullptr;
+  char *render = nullptr;
 
   int cxToRx(int cx) const {
     int rx = 0;
-    for(int j = 0; j < cx; ++j) {
+    for (int j = 0; j < cx; ++j) {
       if (chars[j] == '\t') {
         rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
       } else {
@@ -58,23 +58,22 @@ struct erow {
   void update() {
 
     int ntabs = 0;
-    for(int j = 0; j < size; ++j) {
+    for (int j = 0; j < size; ++j) {
       ntabs += chars[j] == '\t';
     }
 
-    free(render);    
-    render = (char *)malloc(size + ntabs *NSPACES_PER_TAB + 1);
+    free(render);
+    render = (char *)malloc(size + ntabs * NSPACES_PER_TAB + 1);
     int ix = 0;
-    for(int j = 0; j < size; ++j) {
+    for (int j = 0; j < size; ++j) {
       if (chars[j] == '\t') {
         render[ix++] = ' ';
-        while (ix % NSPACES_PER_TAB != 0) { 
+        while (ix % NSPACES_PER_TAB != 0) {
           render[ix++] = ' ';
         }
       } else {
         render[ix++] = chars[j];
       }
-
     }
     render[ix] = '\0';
     rsize = ix;
@@ -286,9 +285,8 @@ void editorAppendRow(char *s, size_t len) {
 
   E.row[at].rsize = 0;
   E.row[at].render = NULL;
-  E.row[at].update();  E.numrows++;
-
-
+  E.row[at].update();
+  E.numrows++;
 }
 
 /*** file i/o ***/
@@ -395,10 +393,29 @@ void editorDrawRows(abuf &ab) {
     // by default, arg is 0, which erases everything to the right of the
     // cursor.
     ab.appendstr("\x1b[K");
-    if (y < E.screenrows - 1) {
-      ab.appendstr("\r\n");
-    }
+    // always append a space, since we decrement a row from screen rows
+    // to make space for status bar.
+    // if (y < E.screenrows - 1) {
+    ab.appendstr("\r\n");
+    // }
   }
+}
+
+void editorDrawStatusBar(abuf &ab) {
+  // m: select graphic rendition
+  // 1: bold
+  // 4: underscore
+  // 5: bliks
+  // 7: inverted colors
+  // can select all with [1;4;5;7m
+  // 0: clear, default arg.
+  ab.appendstr("\x1b[7m");
+  int len = 0;
+  while (len < E.screencols) {
+    ab.appendstr(" ");
+    len++;
+  }
+  ab.appendstr("\x1b[m");
 }
 
 void editorRefreshScreen() {
@@ -433,6 +450,7 @@ void editorRefreshScreen() {
   ab.appendstr("\x1b[H");
 
   editorDrawRows(ab);
+  editorDrawStatusBar(ab);
 
   // move cursor to correct row;col.
   char buf[32];
@@ -523,6 +541,8 @@ void initEditor() {
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
     die("getWindowSize");
   };
+  static const int STATUS_BAR_HEIGHT = 1;
+  E.screenrows -= STATUS_BAR_HEIGHT;
 }
 
 int main(int argc, char **argv) {
