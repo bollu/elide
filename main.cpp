@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <iostream>
 #include <iterator>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,7 +11,6 @@
 #include <sys/ttydefaults.h>
 #include <termios.h>
 #include <unistd.h>
-#include <stdarg.h>
 
 static const int NSPACES_PER_TAB = 2;
 /*** defines ***/
@@ -443,6 +443,21 @@ void editorDrawStatusBar(abuf &ab) {
   ab.appendstr("\r\n");
 }
 
+void editorDrawMessageBar(abuf &ab) {
+  // [K: clear sequence
+  ab.appendstr("\x1b[K");
+  int msglen = strlen(E.statusmsg);
+  if (msglen > E.screencols) {
+    msglen = E.screencols;
+  }
+
+  E.statusmsg[msglen] = '\0';
+
+  if (msglen && time(NULL) - E.statusmsg_time < 5) {
+    ab.appendstr(E.statusmsg);
+  }
+}
+
 void editorRefreshScreen() {
 
   editorScroll();
@@ -476,6 +491,7 @@ void editorRefreshScreen() {
 
   editorDrawRows(ab);
   editorDrawStatusBar(ab);
+  editorDrawMessageBar(ab);
 
   // move cursor to correct row;col.
   char buf[32];
@@ -583,7 +599,6 @@ int main(int argc, char **argv) {
   initEditor();
 
   editorSetStatusMessage("HELP: Ctrl-Q = quit");
-
 
   if (argc >= 2) {
     editorOpen(argv[1]);
