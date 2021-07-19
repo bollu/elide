@@ -75,6 +75,7 @@ struct editorConfig {
   struct termios orig_termios;
   int screenrows;
   int screencols;
+  int rx = 0;
   erow *row;
   int rowoff = 0;
   int coloff = 0;
@@ -321,6 +322,7 @@ struct abuf {
 /*** output ***/
 
 void editorScroll() {
+  E.rx = E.cx;
   if (E.cy < E.rowoff) {
     E.rowoff = E.cy;
   }
@@ -420,7 +422,7 @@ void editorRefreshScreen() {
 
   // move cursor to correct row;col.
   char buf[32];
-  sprintf(buf, "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.cx - E.coloff + 1);
+  sprintf(buf, "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.rx - E.coloff + 1);
   ab.appendstr(buf);
   // ab.appendstr("\x1b[H"); < now place cursor at right location!
 
