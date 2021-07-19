@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/ttydefaults.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -17,7 +18,9 @@ enum editorKey {
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
   ARROW_UP,
-  ARROW_DOWN
+  ARROW_DOWN,
+  PAGE_UP,
+  PAGE_DOWN,
 };
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
@@ -134,6 +137,10 @@ int editorReadKey() {
     };
 
     return '\x1b';
+  } else if (c == CTRL_KEY('d')) {
+    return PAGE_DOWN;
+  } else if (c == CTRL('u')) {
+    return PAGE_UP;
   } else {
     return c;
   }
@@ -294,6 +301,15 @@ int clamp(int lo, int val, int hi) {
 
 void editorMoveCursor(int key) {
   switch (key) {
+  case PAGE_UP:
+  case PAGE_DOWN: {
+    int times = E.screenrows;
+    while (times--) {
+      editorMoveCursor(key == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+    }
+    break;
+  }
+
   case ARROW_LEFT:
     E.cx--;
     break;
@@ -325,6 +341,8 @@ void editorProcessKeypress() {
   case ARROW_DOWN:
   case ARROW_RIGHT:
   case ARROW_LEFT:
+  case PAGE_DOWN:
+  case PAGE_UP:
     editorMoveCursor(c);
     break;
   }
