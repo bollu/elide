@@ -191,6 +191,14 @@ void editorDrawRows(abuf &ab) {
 void editorRefreshScreen() {
   abuf ab;
 
+  // It’s possible that the cursor might be displayed in the middle of the screen somewhere
+  // for a split second while the terminal is drawing to the screen. To make sure that doesn’t
+  // happen, let’s hide the cursor before refreshing the screen, and show it again
+  // immediately after the refresh nishes.
+  ab.appendstr("\x1b[?25l"); //hide cursor
+
+
+
   // VT100 escapes.
   // \x1b: escape.
   // J: erase in display.
@@ -209,6 +217,10 @@ void editorRefreshScreen() {
   editorDrawRows(ab);
 
   ab.appendstr("\x1b[H");
+
+
+  // show hidden cursor
+  ab.appendstr("\x1b[?25h");
 
   // write(STDOUT_FILENO, "\x1b[H", 3);
   write(STDOUT_FILENO, ab.b, ab.len);
