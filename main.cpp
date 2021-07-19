@@ -34,7 +34,6 @@ int clamp(int lo, int val, int hi) {
   return std::min<int>(std::max<int>(lo, val), hi);
 }
 
-
 /*** data ***/
 
 struct erow {
@@ -279,31 +278,17 @@ struct abuf {
 /*** output ***/
 
 void editorScroll() {
-
-  while (E.coloff > 0 && E.cx < E.screencols / 3) {
-    E.cx++;
-    E.coloff--;
+  if (E.cy < E.rowoff) {
+    E.rowoff = E.cy;
   }
-
-  static const int numcols = 200;
-  while (E.coloff + 1 < numcols && E.cx >= (2 * E.screencols) / 3) {
-    E.cx--;
-    E.coloff++;
+  if (E.cy >= E.rowoff + E.screenrows) {
+    E.rowoff = E.cy - E.screenrows + 1;
   }
-
-
-
-  while (E.rowoff > 0 && E.cy < E.screenrows / 3) {
-    E.cy++;
-    E.rowoff--;
+  if (E.cx < E.coloff) {
+    E.coloff = E.cx;
   }
-
-  // if (E.cy < E.rowoff) {
-  //   E.rowoff = E.cy;
-  // }
-  while (E.rowoff + 1 < E.numrows  && E.cy >= (2 * E.screenrows)/3) {
-    E.cy--;
-    E.rowoff++; 
+  if (E.cx >= E.coloff + E.screencols) {
+    E.coloff = E.cx - E.screencols + 1;
   }
 }
 
@@ -392,7 +377,7 @@ void editorRefreshScreen() {
 
   // move cursor to correct row;col.
   char buf[32];
-  sprintf(buf, "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+  sprintf(buf, "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.cx - E.coloff + 1);
   ab.appendstr(buf);
   // ab.appendstr("\x1b[H"); < now place cursor at right location!
 
@@ -404,36 +389,36 @@ void editorRefreshScreen() {
 
 /*** input ***/
 
-
 void editorMoveCursor(int key) {
   switch (key) {
-  case PAGE_UP:
-  case PAGE_DOWN: {
-    int times = E.screenrows;
-    while (times--) {
-      editorMoveCursor(key == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+  case ARROW_LEFT:
+    if (E.cx != 0) {
+      E.cx--;
     }
     break;
-  }
-
-  case ARROW_LEFT:
-    E.cx--;
-    break;
   case ARROW_RIGHT:
-    E.cx++;
+    if (E.cx != E.screencols - 1) {
+      E.cx++;
+    }
     break;
   case ARROW_UP:
-    E.cy--;
+    if (E.cy != 0) {
+      E.cy--;
+    }
     break;
   case ARROW_DOWN:
-    E.cy++;
+    if (E.cy < E.numrows) {
+      E.cy++;
+    }
     break;
-  default:
-    assert(false && "unknown key to move cursor");
-  }
+  case PAGE_DOWN:
+    E.cy = std::min<int>(E.cy + E.screenrows/2, E.numrows);
+    break;
+  case PAGE_UP:
+    E.cy = std::max<int>(E.cy - E.screenrows/2, 0);
+    break;
 
-  E.cx = clamp(0, E.cx, E.screencols);
-  E.cy = clamp(0, E.cy, E.numrows);
+  }
 }
 
 void editorProcessKeypress() {
