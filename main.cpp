@@ -9,7 +9,16 @@
 #include <termios.h>
 #include <unistd.h>
 
+/*** defines ***/
+
 const char *VERSION = "0.0.1";
+
+enum editorKey {
+  ARROW_LEFT = 'h',
+  ARROW_RIGHT = 'l',
+  ARROW_UP = 'k',
+  ARROW_DOWN = 'j'
+};
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
 
@@ -98,7 +107,7 @@ char editorReadKey() {
       die("read");
   }
 
-  // if we see an escape char, then read. 
+  // if we see an escape char, then read.
   if (c == '\x1b') {
     char seq[3];
 
@@ -114,13 +123,13 @@ char editorReadKey() {
       // translate arrow keys to vim :)
       switch (seq[1]) {
       case 'A':
-        return 'k';
+        return ARROW_UP;
       case 'B':
-        return 'j';
+        return ARROW_DOWN;
       case 'C':
-        return 'l';
+        return ARROW_RIGHT;
       case 'D':
-        return 'h';
+        return ARROW_LEFT;
       }
     };
 
@@ -281,18 +290,20 @@ void editorRefreshScreen() {
 
 void editorMoveCursor(char key) {
   switch (key) {
-  case 'h':
+  case ARROW_LEFT:
     E.cx--;
     break;
-  case 'l':
+  case ARROW_RIGHT:
     E.cx++;
     break;
-  case 'k':
+  case ARROW_UP:
     E.cy--;
     break;
-  case 'j':
+  case ARROW_DOWN:
     E.cy++;
     break;
+  default:
+    assert(false && "unknown key to move cursor");
   }
 }
 
@@ -303,10 +314,10 @@ void editorProcessKeypress() {
   case CTRL_KEY('q'):
     exit(0);
     break;
-  case 'h':
-  case 'j':
-  case 'k':
-  case 'l':
+  case ARROW_UP:
+  case ARROW_DOWN:
+  case ARROW_RIGHT:
+  case ARROW_LEFT:
     editorMoveCursor(c);
     break;
   }
