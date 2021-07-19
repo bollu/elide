@@ -10,6 +10,7 @@
 #include <sys/ttydefaults.h>
 #include <termios.h>
 #include <unistd.h>
+#include <stdarg.h>
 
 static const int NSPACES_PER_TAB = 2;
 /*** defines ***/
@@ -91,6 +92,11 @@ struct editorConfig {
   int coloff = 0;
   int numrows = 0;
   char *filepath = nullptr;
+  char statusmsg[80];
+  time_t statusmsg_time = 0;
+
+  editorConfig() { statusmsg[0] = '\0'; }
+
 } E;
 
 /*** terminal ***/
@@ -417,25 +423,24 @@ void editorDrawStatusBar(abuf &ab) {
 
   char status[80], rstatus[80];
   int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-    E.filepath ? E.filepath : "[No Name]", E.numrows);
+                     E.filepath ? E.filepath : "[No Name]", E.numrows);
 
   len = std::min<int>(len, E.screencols);
   ab.appendstr(status);
 
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d",
-    E.cy + 1, E.numrows);
-
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
 
   while (len < E.screencols) {
     if (E.screencols - len == rlen) {
       ab.appendstr(rstatus);
       break;
     } else {
-       ab.appendstr(" ");
+      ab.appendstr(" ");
       len++;
     }
   }
   ab.appendstr("\x1b[m");
+  ab.appendstr("\r\n");
 }
 
 void editorRefreshScreen() {
@@ -482,6 +487,14 @@ void editorRefreshScreen() {
   ab.appendstr("\x1b[?25h");
 
   write(STDOUT_FILENO, ab.b, ab.len);
+}
+
+void editorSetStatusMessage(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  E.statusmsg_time = time(NULL);
 }
 
 /*** input ***/
@@ -561,13 +574,16 @@ void initEditor() {
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
     die("getWindowSize");
   };
-  static const int STATUS_BAR_HEIGHT = 1;
-  E.screenrows -= STATUS_BAR_HEIGHT;
+  static const int BOTTOM_INFO_PANE_HEIGHT = 2;
+  E.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
 }
 
 int main(int argc, char **argv) {
   enableRawMode();
   initEditor();
+
+  editorSetStatusMessage("HELP: Ctrl-Q = quit");
+
 
   if (argc >= 2) {
     editorOpen(argv[1]);
