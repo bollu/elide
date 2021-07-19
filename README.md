@@ -5,7 +5,7 @@
 - [ ] multiple cursors.
 - [ ] lsp.
 - [ ] tree sitter.
-- Currently reading: Chapter 3. 
+- Currently reading: Chapter 5: text editor.
 
 
 

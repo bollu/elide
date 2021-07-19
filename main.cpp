@@ -79,6 +79,20 @@ struct erow {
     render[ix] = '\0';
     rsize = ix;
   }
+
+  void insertChar(int at, int c) {
+    assert(at >= 0);
+    assert(at <= size);
+    // +2, one for new char, one for null.
+    chars = (char *)realloc(chars, size + 2);
+    // nchars: [chars+at...chars+size)
+    // TODO: why +1 at end?
+    // memmove(chars + at + 1, chars + at, size - at + 1);
+    memmove(chars + at + 1, chars + at, size - at);
+    size++;
+    chars[at] = c;
+    this->update();
+  }
 };
 
 struct editorConfig {
@@ -280,7 +294,7 @@ int getWindowSize(int *rows, int *cols) {
 
 /*** row operations ***/
 
-void editorAppendRow(char *s, size_t len) {
+void editorAppendRow(const char *s, size_t len) {
 
   E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));
   const int at = E.numrows;
@@ -294,6 +308,16 @@ void editorAppendRow(char *s, size_t len) {
   E.row[at].render = NULL;
   E.row[at].update();
   E.numrows++;
+}
+
+/*** editor operations ***/
+void editorInsertChar(int c) {
+  if (E.cy == E.numrows) {
+    editorAppendRow("", 0);
+  }
+
+  E.row[E.cy].insertChar(E.cx, c);
+  E.cx++;
 }
 
 /*** file i/o ***/
@@ -580,6 +604,9 @@ void editorProcessKeypress() {
   case PAGE_DOWN:
   case PAGE_UP:
     editorMoveCursor(c);
+    break;
+  default:
+    editorInsertChar(c);
     break;
   }
 }
