@@ -6,6 +6,8 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <assert.h>
+
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
 
@@ -95,7 +97,45 @@ char editorReadKey() {
   return c;
 }
 
+void getCursorPosition(int *rows, int *cols) {
+  char buf[32];
+  unsigned int i = 0;
+  // n: terminal status | 6: cursor position
+  if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) {
+    die(" | unable to read terminal status");
+  }
+
+  // Then we can read the reply from the standard input.
+  // The reply is an escape sequence!
+  // It’s an escape character ( 27 ), followed by a [
+  // character, and then the actual response: 24;80R , or similar.
+  //(This escape sequence is documented as Cursor Position Report.)
+  while (i < sizeof(buf) - 1) {
+    if (read(STDIN_FILENO, &buf[i], 1) != 1)
+      break;
+    if (buf[i] == 'R')
+      break;
+    i++;
+  }
+  buf[i] = '\0';
+
+    
+  assert(buf[0] == '\x1b');
+  assert(buf[1] == '[');
+
+  if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) {
+      die("unable to parse cursor string");
+  };
+
+
+  printf("\r\n&buf[1]: '%s'\r\n", &buf[1]);
+}
+
 int getWindowSize(int *rows, int *cols) {
+
+  getCursorPosition(rows, cols);
+  printf("\r\nrows: %d | cols: %d\r\n", *rows, *cols);
+
   struct winsize ws;
   // TIOCGWINSZ: terminal IOctl get window size.
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
@@ -109,8 +149,18 @@ int getWindowSize(int *rows, int *cols) {
 
 /*** output ***/
 void editorDrawRows() {
+
+  // When we print the nal tilde, we then print a
+  // "\r\n" like on any other line, but this causes the terminal to scroll in order to make
+  // room for a new, blank line. Let’s make the last line an exception when we print our
+  // "\r\n" ’s.
+
   for (int y = 0; y < E.screenrows; y++) {
-    write(STDOUT_FILENO, "~\r\n", 3);
+    write(STDOUT_FILENO, "~", 1);
+
+    if (y < E.screenrows - 1) {
+      write(STDOUT_FILENO, "\r\n", 2);
+    }
   }
 }
 
