@@ -14,10 +14,10 @@
 const char *VERSION = "0.0.1";
 
 enum editorKey {
-  ARROW_LEFT = 'h',
-  ARROW_RIGHT = 'l',
-  ARROW_UP = 'k',
-  ARROW_DOWN = 'j'
+  ARROW_LEFT = 1000,
+  ARROW_RIGHT,
+  ARROW_UP,
+  ARROW_DOWN
 };
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
@@ -99,7 +99,7 @@ void enableRawMode() {
   }
 }
 
-char editorReadKey() {
+int editorReadKey() {
   int nread;
   char c;
   while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -288,7 +288,7 @@ void editorRefreshScreen() {
 
 /*** input ***/
 
-void editorMoveCursor(char key) {
+void editorMoveCursor(int key) {
   switch (key) {
   case ARROW_LEFT:
     E.cx--;
@@ -308,7 +308,7 @@ void editorMoveCursor(char key) {
 }
 
 void editorProcessKeypress() {
-  char c = editorReadKey();
+  int c = editorReadKey();
   switch (c) {
 
   case CTRL_KEY('q'):
