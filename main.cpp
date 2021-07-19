@@ -30,6 +30,11 @@ enum editorKey {
 // #define CTRL_KEY(k) ((k) & ((1 << 6) - 1))
 #define CTRL_KEY(k) ((k)&0x1f)
 
+int clamp(int lo, int val, int hi) {
+  return std::min<int>(std::max<int>(lo, val), hi);
+}
+
+
 /*** data ***/
 
 struct erow {
@@ -44,6 +49,7 @@ struct editorConfig {
   int screencols;
   erow *row;
   int rowoff = 0;
+  int coloff = 0;
   int numrows = 0;
 } E;
 
@@ -274,6 +280,19 @@ struct abuf {
 
 void editorScroll() {
 
+  while (E.coloff > 0 && E.cx < E.screencols / 3) {
+    E.cx++;
+    E.coloff--;
+  }
+
+  static const int numcols = 200;
+  while (E.coloff + 1 < numcols && E.cx >= (2 * E.screencols) / 3) {
+    E.cx--;
+    E.coloff++;
+  }
+
+
+
   while (E.rowoff > 0 && E.cy < E.screenrows / 3) {
     E.cy++;
     E.rowoff--;
@@ -300,10 +319,12 @@ void editorDrawRows(abuf &ab) {
     int filerow = y + E.rowoff;
 
     if (filerow < E.numrows) {
-      int len = E.row[filerow].size;
-      if (len > E.screencols)
-        len = E.screencols;
-      ab.appendbuf(E.row[filerow].chars, len);
+      int len = clamp(0, E.row[filerow].size - E.coloff, E.screencols);
+
+      // int len = E.row[filerow].size;
+      // if (len > E.screencols)
+      //   len = E.screencols;
+      ab.appendbuf(E.row[filerow].chars + E.coloff, len);
 
     } else {
       if (E.numrows == 0 && y == E.screenrows / 3) {
@@ -383,9 +404,6 @@ void editorRefreshScreen() {
 
 /*** input ***/
 
-int clamp(int lo, int val, int hi) {
-  return std::min<int>(std::max<int>(lo, val), hi);
-}
 
 void editorMoveCursor(int key) {
   switch (key) {
