@@ -4,10 +4,12 @@
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
-#include <string.h>
+
+const char *VERSION = "0.0.1";
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
 
@@ -158,14 +160,9 @@ struct abuf {
     this->len += slen;
   }
 
-  void appendstr(const char *s) {
-    appendbuf(s, strlen(s));
-  }
+  void appendstr(const char *s) { appendbuf(s, strlen(s)); }
 
-
-  ~abuf() {
-    free(b);
-  }
+  ~abuf() { free(b); }
 };
 
 /*** output ***/
@@ -178,12 +175,29 @@ void editorDrawRows(abuf &ab) {
   // "\r\n" ’s.
 
   for (int y = 0; y < E.screenrows; y++) {
-    ab.appendstr("~");
-    // write(STDOUT_FILENO, "~", 1);
+    if (y == E.screenrows / 3) {
+      char welcome[80];
+      int welcomelen = sprintf(welcome, "Kilo editor -- version %s", VERSION);
+      welcomelen = std::min<int>(welcomelen, E.screencols);
 
+      int padding = (E.screencols - welcomelen) / 2;
+      if (padding) {
+        ab.appendstr("~");
+        padding--;
+      }
+      while (padding--) { ab.appendstr(" "); };
+
+
+      ab.appendbuf(welcome, welcomelen);
+    } else {
+      ab.appendstr("~");
+    }
+
+    // The K command (Erase In Line) erases part of the current line.
+    // by default, arg is 0, which erases everything to the right of the cursor.
+    ab.appendstr("\x1b[K");
     if (y < E.screenrows - 1) {
       ab.appendstr("\r\n");
-      // write(STDOUT_FILENO, "\r\n", 2);
     }
   }
 }
@@ -191,14 +205,18 @@ void editorDrawRows(abuf &ab) {
 void editorRefreshScreen() {
   abuf ab;
 
-  // It’s possible that the cursor might be displayed in the middle of the screen somewhere
-  // for a split second while the terminal is drawing to the screen. To make sure that doesn’t
-  // happen, let’s hide the cursor before refreshing the screen, and show it again
-  // immediately after the refresh nishes.
-  ab.appendstr("\x1b[?25l"); //hide cursor
+  // It’s possible that the cursor might be displayed in the middle of the
+  // screen somewhere for a split second while the terminal is drawing to the
+  // screen. To make sure that doesn’t happen, let’s hide the cursor before
+  // refreshing the screen, and show it again immediately after the refresh
+  // finishes.
+  ab.appendstr("\x1b[?25l"); // hide cursor
 
-
-
+  // EDIT: no need to refresh screen, screen is cleared
+  // line by line @ editorDrawRows.
+  //
+  // EDIT: I am not sure if this extra complexity is worth it!
+  //
   // VT100 escapes.
   // \x1b: escape.
   // J: erase in display.
@@ -206,25 +224,21 @@ void editorRefreshScreen() {
   // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
   // cursor to bottom
   //          0 is default arg, so [J: clear screen from cursor to bottom
-  // write(STDOUT_FILENO, "\x1b[2J", 4);
-  ab.appendstr("\x1b[2J");
+  // ab.appendstr("\x1b[2J");
+
   // H: cursor position
   // [<row>;<col>H   (args separated by ;).
   // Default arguments for H is 1, so it's as if we had sent [1;1H
-  // write(STDOUT_FILENO, "\x1b[H", 3);
   ab.appendstr("\x1b[H");
 
   editorDrawRows(ab);
 
   ab.appendstr("\x1b[H");
 
-
   // show hidden cursor
   ab.appendstr("\x1b[?25h");
 
-  // write(STDOUT_FILENO, "\x1b[H", 3);
   write(STDOUT_FILENO, ab.b, ab.len);
-
 }
 
 /*** input ***/
