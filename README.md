@@ -1,10 +1,13 @@
 # txt
 - `TXT` suX @ Text
 - minimal C++ IDE written for myself by myself.
-- vim keybindings.
-- multiple cursors.
-- lsp.
-- tree sitter.
+- [ ] vim keybindings.
+- [ ] multiple cursors.
+- [ ] lsp.
+- [ ] tree sitter.
+- Currently reading: Chapter 3. 
+
+
 
 
 #### Building

@@ -21,6 +21,7 @@ const char *VERSION = "0.0.1";
 /*** data ***/
 
 struct editorConfig {
+  int cx, cy;
   struct termios orig_termios;
   int screenrows;
   int screencols;
@@ -185,8 +186,9 @@ void editorDrawRows(abuf &ab) {
         ab.appendstr("~");
         padding--;
       }
-      while (padding--) { ab.appendstr(" "); };
-
+      while (padding--) {
+        ab.appendstr(" ");
+      };
 
       ab.appendbuf(welcome, welcomelen);
     } else {
@@ -233,7 +235,11 @@ void editorRefreshScreen() {
 
   editorDrawRows(ab);
 
-  ab.appendstr("\x1b[H");
+  // move cursor to correct row;col.
+  char buf[32];
+  sprintf(buf, "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+  ab.appendstr(buf);
+  // ab.appendstr("\x1b[H"); < now place cursor at right location!
 
   // show hidden cursor
   ab.appendstr("\x1b[?25h");
@@ -242,12 +248,36 @@ void editorRefreshScreen() {
 }
 
 /*** input ***/
+
+void editorMoveCursor(char key) {
+  switch (key) {
+  case 'h':
+    E.cx--;
+    break;
+  case 'l':
+    E.cx++;
+    break;
+  case 'k':
+    E.cy--;
+    break;
+  case 'j':
+    E.cy++;
+    break;
+  }
+}
+
 void editorProcessKeypress() {
   char c = editorReadKey();
   switch (c) {
 
   case CTRL_KEY('q'):
     exit(0);
+    break;
+  case 'h':
+  case 'j':
+  case 'k':
+  case 'l':
+    editorMoveCursor(c);
     break;
   }
 }
