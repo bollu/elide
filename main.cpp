@@ -225,7 +225,7 @@ void editorOpen(const char *filename) {
   }
 
   char *line = nullptr;
-  size_t linecap = 0;
+  size_t linecap = 0; // allocate memory for line read.
   ssize_t linelen;
   linelen = getline(&line, &linecap, fp);
   if (linelen != -1) {
@@ -279,7 +279,7 @@ void editorDrawRows(abuf &ab) {
       ab.appendbuf(E.row.chars, len);
 
     } else {
-      if (y == E.screenrows / 3) {
+      if (E.numrows == 0 && y == E.screenrows / 3) {
         char welcome[80];
         int welcomelen = sprintf(welcome, "Kilo editor -- version %s", VERSION);
         welcomelen = std::min<int>(welcomelen, E.screencols);
