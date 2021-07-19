@@ -240,9 +240,8 @@ void editorOpen(const char *filename) {
 
   char *line = nullptr;
   size_t linecap = 0; // allocate memory for line read.
-  ssize_t linelen;
-  linelen = getline(&line, &linecap, fp);
-  if (linelen != -1) {
+  ssize_t linelen = -1;
+  while ((linelen = getline(&line, &linecap, fp)) != -1) {
     while (linelen > 0 &&
            (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) {
       linelen--;
