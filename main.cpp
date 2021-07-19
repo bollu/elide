@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <iostream>
@@ -6,8 +7,7 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
-#include <assert.h>
-
+#include <string.h>
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
 
@@ -119,14 +119,12 @@ void getCursorPosition(int *rows, int *cols) {
   }
   buf[i] = '\0';
 
-    
   assert(buf[0] == '\x1b');
   assert(buf[1] == '[');
 
   if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) {
-      die("unable to parse cursor string");
+    die("unable to parse cursor string");
   };
-
 
   printf("\r\n&buf[1]: '%s'\r\n", &buf[1]);
 }
@@ -147,24 +145,52 @@ int getWindowSize(int *rows, int *cols) {
   return 0;
 }
 
+/*** append buffer ***/
+struct abuf {
+  char *b = nullptr;
+  int len = 0;
+  abuf() {}
+
+  void appendbuf(const char *s, int slen) {
+    this->b = (char *)realloc(b, len + slen);
+    assert(this->b && "unable to append string");
+    memcpy(this->b + len, s, slen);
+    this->len += slen;
+  }
+
+  void appendstr(const char *s) {
+    appendbuf(s, strlen(s));
+  }
+
+
+  ~abuf() {
+    free(b);
+  }
+};
+
 /*** output ***/
-void editorDrawRows() {
+void editorDrawRows(abuf &ab) {
 
   // When we print the nal tilde, we then print a
-  // "\r\n" like on any other line, but this causes the terminal to scroll in order to make
-  // room for a new, blank line. Let’s make the last line an exception when we print our
+  // "\r\n" like on any other line, but this causes the terminal to scroll in
+  // order to make room for a new, blank line. Let’s make the last line an
+  // exception when we print our
   // "\r\n" ’s.
 
   for (int y = 0; y < E.screenrows; y++) {
-    write(STDOUT_FILENO, "~", 1);
+    ab.appendstr("~");
+    // write(STDOUT_FILENO, "~", 1);
 
     if (y < E.screenrows - 1) {
-      write(STDOUT_FILENO, "\r\n", 2);
+      ab.appendstr("\r\n");
+      // write(STDOUT_FILENO, "\r\n", 2);
     }
   }
 }
 
 void editorRefreshScreen() {
+  abuf ab;
+
   // VT100 escapes.
   // \x1b: escape.
   // J: erase in display.
@@ -172,15 +198,21 @@ void editorRefreshScreen() {
   // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
   // cursor to bottom
   //          0 is default arg, so [J: clear screen from cursor to bottom
-  write(STDOUT_FILENO, "\x1b[2J", 4);
+  // write(STDOUT_FILENO, "\x1b[2J", 4);
+  ab.appendstr("\x1b[2J");
   // H: cursor position
   // [<row>;<col>H   (args separated by ;).
   // Default arguments for H is 1, so it's as if we had sent [1;1H
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  // write(STDOUT_FILENO, "\x1b[H", 3);
+  ab.appendstr("\x1b[H");
 
-  editorDrawRows();
+  editorDrawRows(ab);
 
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  ab.appendstr("\x1b[H");
+
+  // write(STDOUT_FILENO, "\x1b[H", 3);
+  write(STDOUT_FILENO, ab.b, ab.len);
+
 }
 
 /*** input ***/
