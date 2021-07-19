@@ -415,16 +415,25 @@ void editorDrawStatusBar(abuf &ab) {
   // 0: clear, default arg.
   ab.appendstr("\x1b[7m");
 
-  char status[80];
+  char status[80], rstatus[80];
   int len = snprintf(status, sizeof(status), "%.20s - %d lines",
     E.filepath ? E.filepath : "[No Name]", E.numrows);
 
   len = std::min<int>(len, E.screencols);
   ab.appendstr(status);
 
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d",
+    E.cy + 1, E.numrows);
+
+
   while (len < E.screencols) {
-    ab.appendstr(" ");
-    len++;
+    if (E.screencols - len == rlen) {
+      ab.appendstr(rstatus);
+      break;
+    } else {
+       ab.appendstr(" ");
+      len++;
+    }
   }
   ab.appendstr("\x1b[m");
 }
