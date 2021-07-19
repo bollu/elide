@@ -170,6 +170,14 @@ int editorReadKey() {
     return PAGE_DOWN;
   } else if (c == CTRL('u')) {
     return PAGE_UP;
+  } else if (c == 'h') {
+    return ARROW_LEFT;
+  } else if (c == 'j') {
+    return ARROW_DOWN;
+  } else if (c == 'k') {
+    return ARROW_UP;
+  } else if (c == 'l') {
+    return ARROW_RIGHT;
   } else {
     return c;
   }
@@ -407,7 +415,12 @@ void editorMoveCursor(int key) {
   case ARROW_RIGHT:
     if (row && E.cx < row->size) {
       E.cx++;
+    } else if (row && E.cx == row->size) {
+      assert(E.cx == row->size);
+      E.cy++;
+      E.cx = 0;
     }
+
     break;
   case ARROW_UP:
     if (E.cy != 0) {
