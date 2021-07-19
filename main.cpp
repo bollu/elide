@@ -32,11 +32,18 @@ enum editorKey {
 
 /*** data ***/
 
+struct erow {
+  int size = 0;
+  char *chars = nullptr;
+};
+
 struct editorConfig {
-  int cx, cy;
+  int cx = 0, cy = 0;
   struct termios orig_termios;
   int screenrows;
   int screencols;
+  erow row;
+  int numrows = 0;
 } E;
 
 /*** terminal ***/
@@ -123,6 +130,22 @@ int editorReadKey() {
     // user pressed escape sequence!
     // ... Oh wow, that's why it's called an ESCAPE sequence.
     if (seq[0] == '[') {
+
+      // [<digit>
+      if (seq[1] >= '0' && seq[1] <= '9') {
+        // read digit.
+        if (read(STDIN_FILENO, &seq[2], 1) != 1)
+          return '\x1b';
+        // [<digit>~
+        if (seq[2] == '~') {
+          switch (seq[1]) {
+          case '5':
+            return PAGE_UP;
+          case '6':
+            return PAGE_DOWN;
+          }
+        }
+      }
       // translate arrow keys to vim :)
       switch (seq[1]) {
       case 'A':
@@ -194,6 +217,16 @@ int getWindowSize(int *rows, int *cols) {
   return 0;
 }
 
+/*** file i/o ***/
+void editorOpen() {
+  const char *line = "Hello, world!";
+  const ssize_t linelen = strlen(line);
+  E.row.size = linelen;
+  E.row.chars = (char *)malloc(linelen + 1);
+  strcpy(E.row.chars, line);
+  E.numrows = 1;
+}
+
 /*** append buffer ***/
 struct abuf {
   char *b = nullptr;
@@ -222,27 +255,36 @@ void editorDrawRows(abuf &ab) {
   // "\r\n" ’s.
 
   for (int y = 0; y < E.screenrows; y++) {
-    if (y == E.screenrows / 3) {
-      char welcome[80];
-      int welcomelen = sprintf(welcome, "Kilo editor -- version %s", VERSION);
-      welcomelen = std::min<int>(welcomelen, E.screencols);
+    if (y < E.numrows) {
+      int len = E.row.size;
+      if (len > E.screencols)
+        len = E.screencols;
+      ab.appendbuf(E.row.chars, len);
 
-      int padding = (E.screencols - welcomelen) / 2;
-      if (padding) {
-        ab.appendstr("~");
-        padding--;
-      }
-      while (padding--) {
-        ab.appendstr(" ");
-      };
-
-      ab.appendbuf(welcome, welcomelen);
     } else {
-      ab.appendstr("~");
+      if (y == E.screenrows / 3) {
+        char welcome[80];
+        int welcomelen = sprintf(welcome, "Kilo editor -- version %s", VERSION);
+        welcomelen = std::min<int>(welcomelen, E.screencols);
+
+        int padding = (E.screencols - welcomelen) / 2;
+        if (padding) {
+          ab.appendstr("~");
+          padding--;
+        }
+        while (padding--) {
+          ab.appendstr(" ");
+        };
+
+        ab.appendbuf(welcome, welcomelen);
+      } else {
+        ab.appendstr("~");
+      }
     }
 
     // The K command (Erase In Line) erases part of the current line.
-    // by default, arg is 0, which erases everything to the right of the cursor.
+    // by default, arg is 0, which erases everything to the right of the
+    // cursor.
     ab.appendstr("\x1b[K");
     if (y < E.screenrows - 1) {
       ab.appendstr("\r\n");
@@ -359,6 +401,8 @@ void initEditor() {
 int main() {
   enableRawMode();
   initEditor();
+  editorOpen();
+
   while (1) {
     editorRefreshScreen();
     editorProcessKeypress();
