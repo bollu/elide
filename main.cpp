@@ -645,17 +645,26 @@ void editorMoveCursor(int key) {
 }
 
 void editorProcessKeypress() {
+  static const int N_QUIT_CONFIRMS = 1;
+  static int quit_times = N_QUIT_CONFIRMS;
+
   int c = editorReadKey();
   switch (c) {
   case '\r':
     /* ENTER KEY: TODO */
     break;
 
-  case CTRL_KEY('q'):
+  case CTRL_KEY('q'): {
+    if (E.dirty && quit_times > 0) {
+      editorSetStatusMessage("File has unsaved changes. Press <C-q> %d more times to quit", quit_times);
+      quit_times--;
+      return;
+    }
     write(STDOUT_FILENO, "\x1b[2J", 4);
     write(STDOUT_FILENO, "\x1b[H", 3);
     exit(0);
     break;
+  }
   case CTRL_KEY('s'):
     editorSave();
     editorSetStatusMessage("Saved file");
@@ -678,6 +687,10 @@ void editorProcessKeypress() {
     editorInsertChar(c);
     break;
   }
+
+  // TODO: find some better way to restructure control flow.
+  // TODO: ask pedu maybe?
+  quit_times = N_QUIT_CONFIRMS;
 }
 
 /*** init ***/
