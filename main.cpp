@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <iostream>
 #include <iterator>
 #include <stdarg.h>
@@ -11,7 +12,6 @@
 #include <sys/ttydefaults.h>
 #include <termios.h>
 #include <unistd.h>
-#include <fcntl.h>
 static const int NSPACES_PER_TAB = 2;
 /*** defines ***/
 
@@ -26,7 +26,7 @@ enum editorKey {
   ARROW_DOWN,
   PAGE_UP,
   PAGE_DOWN,
-  BACKSPACE,
+  DEL_CHAR,
 };
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
@@ -63,8 +63,6 @@ struct editorConfig {
 
 } E;
 
-
-
 struct erow {
   int size = 0;
   char *chars = nullptr;
@@ -82,6 +80,7 @@ struct erow {
     }
     return rx;
   }
+  // should be private? since it updates info cache.
   void update() {
 
     int ntabs = 0;
@@ -117,6 +116,15 @@ struct erow {
     memmove(chars + at + 1, chars + at, size - at);
     size++;
     chars[at] = c;
+    this->update();
+    E.dirty = true;
+  }
+  void appendString(char *s, size_t len) {
+    chars = (char *)realloc(chars, size + len + 1);
+    // copy string s into chars.
+    memcpy(&chars[size], s, len);
+    size += len;
+    chars[size] = '\0';
     this->update();
     E.dirty = true;
   }
@@ -248,6 +256,8 @@ int editorReadKey() {
     return ARROW_UP;
   } else if (c == 'l') {
     return ARROW_RIGHT;
+  } else if (c == 127) {
+    return DEL_CHAR;
   } else {
     return c;
   }
@@ -320,6 +330,32 @@ void editorAppendRow(const char *s, size_t len) {
   E.dirty = true;
 }
 
+void editorFreeRow(erow *row) {
+  free(row->render);
+  free(row->chars);
+}
+
+void editorDelRow(int at) {
+  if (at < 0 || at >= E.numrows)
+    return;
+  editorFreeRow(&E.row[at]);
+  memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+  E.numrows--;
+  E.dirty = true;
+}
+
+void editorRowDelChar(erow *row, int at) {
+  assert(at >= 0);
+  assert(at < row->size);
+  if (at < 0 || at >= row->size) {
+    return;
+  }
+  memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+  row->size--;
+  row->update();
+  E.dirty = true;
+}
+
 /*** editor operations ***/
 void editorInsertChar(int c) {
   if (E.cy == E.numrows) {
@@ -328,6 +364,29 @@ void editorInsertChar(int c) {
 
   E.row[E.cy].insertChar(E.cx, c);
   E.cx++;
+}
+
+void editorDelChar() {
+  if (E.cy == E.numrows) {
+    return;
+  }
+  if (E.cx == 0 && E.cy == 0)
+    return;
+
+  erow *row = &E.row[E.cy];
+  if (E.cx > 0) {
+    editorRowDelChar(row, E.cx - 1);
+    E.cx--;
+  } else {
+    // place cursor at last column of prev row.
+    E.cx = E.row[E.cy - 1].size;
+    // append string.
+    E.row[E.cy - 1].appendString(row->chars, row->size);
+    // delete current row
+    editorDelRow(E.cy);
+    // go to previous row.
+    E.cy--;
+  }
 }
 
 /*** file i/o ***/
@@ -499,9 +558,8 @@ void editorDrawStatusBar(abuf &ab) {
 
   char status[80], rstatus[80];
   int len = snprintf(status, sizeof(status), "%.20s - %d lines %.20s",
-                     E.filepath ? E.filepath : "[No Name]",
-                     E.numrows,
-                     E.dirty ? "(DIRTY)"  : "(CLEAN)");
+                     E.filepath ? E.filepath : "[No Name]", E.numrows,
+                     E.dirty ? "(DIRTY)" : "(CLEAN)");
 
   len = std::min<int>(len, E.screencols);
   ab.appendstr(status);
@@ -656,7 +714,9 @@ void editorProcessKeypress() {
 
   case CTRL_KEY('q'): {
     if (E.dirty && quit_times > 0) {
-      editorSetStatusMessage("File has unsaved changes. Press <C-q> %d more times to quit", quit_times);
+      editorSetStatusMessage(
+          "File has unsaved changes. Press <C-q> %d more times to quit",
+          quit_times);
       quit_times--;
       return;
     }
@@ -677,9 +737,11 @@ void editorProcessKeypress() {
   case PAGE_UP:
     editorMoveCursor(c);
     break;
-  case BACKSPACE:
+  case DEL_CHAR: {
+    editorDelChar();
     // TODO:
     break;
+  }
   case '\x1b':
     // escape
     break;
