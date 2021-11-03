@@ -70,6 +70,21 @@ struct erow {
   int rsize = 0;
   char *render = nullptr;
 
+  
+
+  int rxToCx(int rx) const {
+    int cur_rx = 0;
+    for (int cx = 0; cx < this->size; cx++) {
+      if (this->chars[cx] == '\t') {
+        cur_rx += (NSPACES_PER_TAB - 1) - (cur_rx % NSPACES_PER_TAB);
+      }
+      cur_rx++;
+      if (cur_rx > rx) { return cx; }
+    }
+    assert(false && "rx value that is out of range!");
+    // return cx;
+  }
+
   int cxToRx(int cx) const {
     int rx = 0;
     for (int j = 0; j < cx; ++j) {
@@ -245,7 +260,8 @@ int editorReadKey() {
     };
 
     return '\x1b';
-  } else if (c == CTRL_KEY('d')) {
+  } 
+  else if (c == CTRL_KEY('d')) {
     return PAGE_DOWN;
   } else if (c == CTRL('u')) {
     return PAGE_UP;
@@ -506,6 +522,26 @@ void editorSave() {
   editorSetStatusMessage("Saved file");
   E.dirty = false;
 }
+
+/** find **/
+
+void editorFind() {
+  char *query = editorPrompt("Search: %s (ESC to cancel)");
+  if (query == NULL) return;
+  int i;
+  for (i = 0; i < E.numrows; i++) {
+    erow *row = &E.row[i];
+    char *match = strstr(row->render, query);
+    if (match) {
+      E.cy = i;
+      E.cx = match - row->render;
+      E.rowoff = E.numrows;
+      break;
+    }
+  }
+  free(query);
+}
+
 
 /*** append buffer ***/
 struct abuf {
@@ -779,6 +815,9 @@ void editorProcessKeypress() {
   }
   case CTRL_KEY('s'):
     editorSave();
+    break;
+  case CTRL_KEY('f'):
+    editorFind();
     break;
   case ARROW_UP:
   case ARROW_DOWN:
