@@ -12,6 +12,7 @@
 #include <sys/ttydefaults.h>
 #include <termios.h>
 #include <unistd.h>
+#include "include/lean_server.h"
 static const int NSPACES_PER_TAB = 2;
 /*** defines ***/
 
