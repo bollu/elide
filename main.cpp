@@ -53,6 +53,7 @@ struct erow;
 
 struct editorConfig {
   FileMode file_mode = FM_VIEW;
+  bool dirty = false;
   int cx = 0, cy = 0; // cursor location
   struct termios orig_termios;
   int screenrows;
@@ -125,6 +126,7 @@ struct erow {
     }
     render[ix] = '\0';
     rsize = ix;
+    E.dirty = true;
   }
 
   void insertChar(int at, int c) {
@@ -147,6 +149,7 @@ struct erow {
     size += len;
     chars[size] = '\0';
     this->update();
+    E.dirty = true;
   }
 };
 
@@ -269,13 +272,13 @@ int editorReadKey() {
     return PAGE_DOWN;
   } else if (c == CTRL('u')) {
     return PAGE_UP;
-  } else if (c == 'h') {
+  } else if (c == 'h' && E.file_mode == FM_VIEW) {
     return ARROW_LEFT;
-  } else if (c == 'j') {
+  } else if (c == 'j' && E.file_mode == FM_VIEW) {
     return ARROW_DOWN;
-  } else if (c == 'k') {
+  } else if (c == 'k' && E.file_mode == FM_VIEW) {
     return ARROW_UP;
-  } else if (c == 'l') {
+  } else if (c == 'l' && E.file_mode == FM_VIEW) {
     return ARROW_RIGHT;
   } else if (c == 127) {
     return DEL_CHAR;
@@ -354,6 +357,7 @@ void editorInsertRow(int at, const char *s, size_t len) {
   E.row[at].update();
 
   E.numrows++;
+  E.dirty = true;
 }
 
 // functionality superceded by |editorInsertRow|
@@ -379,6 +383,7 @@ void editorFreeRow(erow *row) {
 }
 
 void editorDelRow(int at) {
+  E.dirty = true;
   if (at < 0 || at >= E.numrows)
     return;
   editorFreeRow(&E.row[at]);
@@ -387,6 +392,7 @@ void editorDelRow(int at) {
 }
 
 void editorRowDelChar(erow *row, int at) {
+  E.dirty = true;
   assert(at >= 0);
   assert(at < row->size);
   if (at < 0 || at >= row->size) {
@@ -404,6 +410,7 @@ bool is_space_or_tab(char c) {
 
 /*** editor operations ***/
 void editorInsertNewline() {
+  E.dirty = true;
   if (E.cx == 0) {
     // at first column, insert new row.
     editorInsertRow(E.cy, "", 0);
@@ -445,6 +452,7 @@ void editorInsertNewline() {
 }
 
 void editorInsertChar(int c) {
+  E.dirty = true;
   if (E.cy == E.numrows) {
     // editorAppendRow("", 0);
     editorInsertRow(E.numrows, "", 0);
@@ -454,6 +462,7 @@ void editorInsertChar(int c) {
 }
 
 void editorDelChar() {
+  E.dirty = true;
   if (E.cy == E.numrows) {
     return;
   }
@@ -520,7 +529,7 @@ char *editorRowsToString(int *buflen) {
 
 
 void editorSave() {
-  if (E.filepath == NULL) {
+  if (E.filepath == NULL || !E.dirty) {
     return;
   }
   int len;
@@ -538,6 +547,8 @@ void editorSave() {
   assert(err != -1 && "unable to truncate");
   int nwritten = write(fd, buf, len);
   assert(nwritten == len && "wasn't able to write enough bytes");
+  editorSetStatusMessage("Saved file");
+  E.dirty = false;
   close(fd);
   free(buf);
 }
@@ -868,7 +879,7 @@ void editorProcessKeypress() {
   switch (c) {
   case CTRL_KEY('q'): {
     editorSave();
-    exit(0);
+    die("bye!");
     return;
   }
   case CTRL_KEY('f'):
@@ -904,9 +915,10 @@ void editorProcessKeypress() {
       editorDelChar();
       return;
     }
-    case '\x1b': // escape key
+    case '\x1b': {// escape key
       E.file_mode = FM_VIEW;
       return;
+   }
     default:
       editorInsertChar(c);
       return;
