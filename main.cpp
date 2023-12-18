@@ -20,6 +20,12 @@ char *editorPrompt(const char *prompt);
 
 const char *VERSION = "0.0.1";
 
+
+enum FileMode {
+  FM_VIEW, // mode where code is only viewed and locked for editing.
+  FM_EDIT, // mode where code is edited.
+};
+
 enum editorKey {
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
@@ -46,6 +52,7 @@ int clamp(int lo, int val, int hi) {
 struct erow;
 
 struct editorConfig {
+  FileMode file_mode = FM_VIEW;
   int cx = 0, cy = 0; // cursor location
   struct termios orig_termios;
   int screenrows;
@@ -594,6 +601,33 @@ void editorScroll() {
   }
 }
 
+int num_digits(int n) {
+  if (n < 0) { n = -n; }
+  if (n == 0) { return 1; }
+  int ndigits = 0;
+  while(n > 0) { n = n / 10; ndigits++; }
+  return ndigits;
+}
+
+// 0 = ones place, 1 = tens place, and so on.
+int get_digit(int n, int ix) {
+  for(int i = 0; i < ix; ++i) {
+    n = n / 10;
+  }
+  return n % 10;
+}
+
+// write the number 'num' into the string and return the length of the string.
+int write_int_to_str(char *s, int num) {
+  assert (num >= 0);
+  int ndigits = num_digits(num);
+  for(int i = 0; i < ndigits; ++i) {
+    s[ndigits - 1 - i] = '0' + get_digit(num, i);
+  }
+  s[ndigits] = 0;
+  return ndigits;
+}
+
 void editorDrawRows(abuf &ab) {
 
   // When we print the nal tilde, we then print a
@@ -602,11 +636,31 @@ void editorDrawRows(abuf &ab) {
   // exception when we print our
   // "\r\n" ’s.
 
+  // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
+  const int LINE_NUMBER_NUM_CHARS = num_digits(E.screenrows + E.rowoff + 1) + 1;
   for (int y = 0; y < E.screenrows; y++) {
     int filerow = y + E.rowoff;
 
+    // convert the line number into a string, and write it.
+    {
+      char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
+      int ix = write_int_to_str(line_number_str, filerow + 1);
+      while(ix < LINE_NUMBER_NUM_CHARS - 1) {
+        line_number_str[ix] = ' ';
+	ix++;
+      }
+      line_number_str[ix] = '|';
+      ab.appendstr(line_number_str);
+      free(line_number_str);
+    }
+
+    // code in view mode is renderered gray
+    if (E.file_mode == FM_VIEW) {
+	ab.appendstr("\x1b[90;40m"); // gray on black
+    }
+
     if (filerow < E.numrows) {
-      int len = clamp(0, E.row[filerow].rsize - E.coloff, E.screencols);
+      int len = clamp(0, E.row[filerow].rsize - E.coloff, E.screencols - LINE_NUMBER_NUM_CHARS);
 
       // int len = E.row[filerow].size;
       // if (len > E.screencols)
@@ -638,11 +692,16 @@ void editorDrawRows(abuf &ab) {
     // by default, arg is 0, which erases everything to the right of the
     // cursor.
     ab.appendstr("\x1b[K");
+
     // always append a space, since we decrement a row from screen rows
     // to make space for status bar.
     // if (y < E.screenrows - 1) {
     ab.appendstr("\r\n");
-    // }
+    
+    // code in view mode is renderered gray
+    if (E.file_mode == FM_VIEW) {
+	ab.appendstr("\x1b[0m"); // reset.
+    }
   }
 }
 
@@ -730,7 +789,8 @@ void editorRefreshScreen() {
 
   // move cursor to correct row;col.
   char buf[32];
-  sprintf(buf, "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.rx - E.coloff + 1);
+  const int LINE_NUMBER_NUM_CHARS = num_digits(E.screenrows + E.rowoff + 1) + 1;
+  sprintf(buf, "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.rx - E.coloff + 1 + LINE_NUMBER_NUM_CHARS);
   ab.appendstr(buf);
   // ab.appendstr("\x1b[H"); < now place cursor at right location!
 
@@ -786,10 +846,10 @@ void editorMoveCursor(int key) {
     }
     break;
   case PAGE_DOWN:
-    E.cy = std::min<int>(E.cy + E.screenrows / 2, E.numrows);
+    E.cy = std::min<int>(E.cy + E.screenrows / 4, E.numrows);
     break;
   case PAGE_UP:
-    E.cy = std::max<int>(E.cy - E.screenrows / 2, 0);
+    E.cy = std::max<int>(E.cy - E.screenrows / 4, 0);
     break;
   }
 
@@ -802,24 +862,18 @@ void editorMoveCursor(int key) {
 }
 
 void editorProcessKeypress() {
-  int c = editorReadKey();
-  switch (c) {
-  case '\r':
-    editorInsertNewline();
-    break;
+  const int c = editorReadKey();
 
+  // behaviours common to both modes
+  switch (c) {
   case CTRL_KEY('q'): {
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
-    exit(0);
-    break;
-  }
-  case CTRL_KEY('s'):
     editorSave();
-    break;
+    exit(0);
+    return;
+  }
   case CTRL_KEY('f'):
     editorFind();
-    break;
+    return;
   case ARROW_UP:
   case ARROW_DOWN:
   case ARROW_RIGHT:
@@ -827,19 +881,37 @@ void editorProcessKeypress() {
   case PAGE_DOWN:
   case PAGE_UP:
     editorMoveCursor(c);
-    break;
-  case DEL_CHAR: {
-    editorDelChar();
-    // TODO:
-    break;
+    return;
   }
-  case '\x1b':
-    // escape
-    break;
-  default:
-    editorInsertChar(c);
-    break;
-  }
+
+  if (E.file_mode == FM_VIEW) { // behaviours only in  view mode
+    switch (c) {
+    case 'i':
+      E.file_mode = FM_EDIT; return;
+    } // end switch over key.
+  } // end mode == FM_VIEW
+  else {
+    assert (E.file_mode == FM_EDIT); 
+    switch (c) { // behaviors only in edit mode.
+    case '\r':
+      editorInsertNewline();
+      return;
+    case CTRL_KEY('c'): {
+      E.file_mode = FM_VIEW;
+      return;
+    }
+    case DEL_CHAR: {
+      editorDelChar();
+      return;
+    }
+    case '\x1b': // escape key
+      E.file_mode = FM_VIEW;
+      return;
+    default:
+      editorInsertChar(c);
+      return;
+    } // end switch case.
+  } // end mode == FM_EDIT
 }
 
 char *editorPrompt(const char *prompt) {
