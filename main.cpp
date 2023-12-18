@@ -46,7 +46,7 @@ int clamp(int lo, int val, int hi) {
 struct erow;
 
 struct editorConfig {
-  int cx = 0, cy = 0;
+  int cx = 0, cy = 0; // cursor location
   struct termios orig_termios;
   int screenrows;
   int screencols;
@@ -58,7 +58,6 @@ struct editorConfig {
   char *filepath = nullptr;
   char statusmsg[80];
   time_t statusmsg_time = 0;
-  bool dirty = false;
 
   editorConfig() { statusmsg[0] = '\0'; }
 
@@ -133,7 +132,6 @@ struct erow {
     size++;
     chars[at] = c;
     this->update();
-    E.dirty = true;
   }
   void appendString(char *s, size_t len) {
     chars = (char *)realloc(chars, size + len + 1);
@@ -142,7 +140,6 @@ struct erow {
     size += len;
     chars[size] = '\0';
     this->update();
-    E.dirty = true;
   }
 };
 
@@ -332,6 +329,7 @@ int getWindowSize(int *rows, int *cols) {
 
 // insert a new row at location `at`, and store `s` at that row.
 // so rows'[at] = <new str>, rows'[at+k] = rows[at + k - 1];
+// This also copies the indentation from the previous line into the new line.
 void editorInsertRow(int at, const char *s, size_t len) {
   if (at < 0 || at > E.numrows) {
     return;
@@ -349,7 +347,6 @@ void editorInsertRow(int at, const char *s, size_t len) {
   E.row[at].update();
 
   E.numrows++;
-  E.dirty = true;
 }
 
 // functionality superceded by |editorInsertRow|
@@ -380,7 +377,6 @@ void editorDelRow(int at) {
   editorFreeRow(&E.row[at]);
   memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
   E.numrows--;
-  E.dirty = true;
 }
 
 void editorRowDelChar(erow *row, int at) {
@@ -392,7 +388,11 @@ void editorRowDelChar(erow *row, int at) {
   memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
   row->size--;
   row->update();
-  E.dirty = true;
+}
+
+
+bool is_space_or_tab(char c) {
+  return c == ' ' || c == '\t';
 }
 
 /*** editor operations ***/
@@ -400,11 +400,29 @@ void editorInsertNewline() {
   if (E.cx == 0) {
     // at first column, insert new row.
     editorInsertRow(E.cy, "", 0);
+    // place cursor at next row (E.cy + 1), first column (cx=0)
+    E.cy++;
+    E.cx = 0;
   } else {
     // at column other than first, so chop row and insert new row.
     erow *row = &E.row[E.cy];
+    // legal previous row, copy the indentation.
+    // note that the checks 'num_indent < row.size' and 'num_indent < E.cx' are *not* redundant.
+    // We only want to copy as much indent exists upto the cursor.
+    int num_indent = 0;
+    for (num_indent = 0;
+	 num_indent < row->size &&
+	 num_indent < E.cx && is_space_or_tab(row->chars[num_indent]);
+	 num_indent++) {};
+    char *new_row_contents = (char *)malloc(sizeof(char)*(row->size - E.cx + num_indent));
+    for(int i = 0; i < num_indent; ++i) {
+      new_row_contents[i] = row->chars[i]; // copy the spaces over.
+    }
+    for(int i = E.cx; i < row->size; ++i) {
+      new_row_contents[num_indent + (i - E.cx)] = row->chars[i];
+    }
     // create a row at E.cy + 1 containing data row[E.cx:...]
-    editorInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+    editorInsertRow(E.cy + 1, new_row_contents, row->size - E.cx + num_indent);
 
     // pointer invalidated, get pointer to current row again,
     row = &E.row[E.cy];
@@ -412,10 +430,11 @@ void editorInsertNewline() {
     row->size = E.cx;
     row->chars[row->size] = '\0';
     row->update();
+
+    // place cursor at next row (E.cy + 1), column of the indent.
+    E.cy++;
+    E.cx = num_indent;
   }
-  // place cursor at next row (E.cy + 1), first column (cx=0)
-  E.cy++;
-  E.cx = 0;
 }
 
 void editorInsertChar(int c) {
@@ -473,7 +492,6 @@ void editorOpen(const char *filename) {
   }
   free(line);
   fclose(fp);
-  E.dirty = false;
 }
 
 char *editorRowsToString(int *buflen) {
@@ -496,11 +514,7 @@ char *editorRowsToString(int *buflen) {
 
 void editorSave() {
   if (E.filepath == NULL) {
-    E.filepath = editorPrompt("Save as: %s");
-    if (E.filepath == NULL) { 
-      editorSetStatusMessage("Save aborted");
-      return;
-    }
+    return;
   }
   int len;
   char *buf = editorRowsToString(&len);
@@ -519,8 +533,6 @@ void editorSave() {
   assert(nwritten == len && "wasn't able to write enough bytes");
   close(fd);
   free(buf);
-  editorSetStatusMessage("Saved file");
-  E.dirty = false;
 }
 
 /** find **/
@@ -645,9 +657,8 @@ void editorDrawStatusBar(abuf &ab) {
   ab.appendstr("\x1b[7m");
 
   char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines %.20s",
-                     E.filepath ? E.filepath : "[No Name]", E.numrows,
-                     E.dirty ? "(DIRTY)" : "(CLEAN)");
+  int len = snprintf(status, sizeof(status), "%.20s - 5%d lines",
+                     E.filepath ? E.filepath : "[No Name]", E.numrows);
 
   len = std::min<int>(len, E.screencols);
   ab.appendstr(status);
@@ -791,9 +802,6 @@ void editorMoveCursor(int key) {
 }
 
 void editorProcessKeypress() {
-  static const int N_QUIT_CONFIRMS = 1;
-  static int quit_times = N_QUIT_CONFIRMS;
-
   int c = editorReadKey();
   switch (c) {
   case '\r':
@@ -801,13 +809,6 @@ void editorProcessKeypress() {
     break;
 
   case CTRL_KEY('q'): {
-    if (E.dirty && quit_times > 0) {
-      editorSetStatusMessage(
-          "File has unsaved changes. Press <C-q> %d more times to quit",
-          quit_times);
-      quit_times--;
-      return;
-    }
     write(STDOUT_FILENO, "\x1b[2J", 4);
     write(STDOUT_FILENO, "\x1b[H", 3);
     exit(0);
@@ -839,10 +840,6 @@ void editorProcessKeypress() {
     editorInsertChar(c);
     break;
   }
-
-  // TODO: find some better way to restructure control flow.
-  // TODO: ask pedu maybe?
-  quit_times = N_QUIT_CONFIRMS;
 }
 
 char *editorPrompt(const char *prompt) {
@@ -882,17 +879,22 @@ void initEditor() {
   E.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv){
   enableRawMode();
   initEditor();
 
   editorSetStatusMessage("HELP: Ctrl-Q = quit");
 
+  char *filepath = NULL;
   if (argc >= 2) {
-    editorOpen(argv[1]);
+    filepath = argv[1];
+  } else {
+    filepath = "/tmp/edtr-scratch";
   }
+  editorOpen(filepath);
 
   while (1) {
+    editorSave();
     editorRefreshScreen();
     editorProcessKeypress();
   };
