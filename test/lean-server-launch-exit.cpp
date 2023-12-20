@@ -24,15 +24,8 @@ int main() {
   fprintf(stderr, "PARENT: writing '%s'\n", json_object_to_json_string(req));
   state.write_request_to_child_blocking("initialize", req);
   fprintf(stderr, "PARENT: sleeping...\n");
-  sleep(3);
-
-  // fprintf(stderr, "PARENT: reading child (stderr)...\n");
-  // nread = state.read_stderr_from_child(BUF, BUF_SIZE);
-  // BUF[nread] = 0;
-  // fprintf(stderr, "PARENT: child response (stderr): '%s'.\n", BUF);
-  // sleep(1);
-  
   sleep(1);
+
   fprintf(stderr, "PARENT: reading child (stdout)...\n");
   json_object *response1 = state.read_json_response_from_child_blocking();
   fprintf(stderr, "PARENT: child response 1: '%s'\n",
