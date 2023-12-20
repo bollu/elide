@@ -1,6 +1,6 @@
 // APIs to create objects for the lean LSP
 #include <json-c/json.h>
-
+#include "uri_encode.h"
 
 
 // == toplevel capabilities ==
@@ -79,13 +79,38 @@ json_object *lspCreateInitializeRequest() {
 
 
 
+
+
+
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
 struct TextDocumentItem {
   const char *uri;
   const char *languageId;
   int version; // version of the document. (it will increase after each change, including undo/redo).
   const char *text; // text of the document
+
+  static TextDocumentItem create_from_file_path(const char *file_path);
 };
+
+TextDocumentItem TextDocumentItem::create_from_file_path(const char *file_path) {
+  TextDocumentItem item;
+
+  // file://
+  const char *file_segment_uri = "file://";
+  const int file_uri_unencoded_len = strlen(file_segment_uri) + strlen(file_path) + 1;
+  char *file_uri_unencoded = (char *)calloc(sizeof(char), file_uri_unencoded_len);
+  sprintf(file_uri_unencoded, "%s%s", file_segment_uri, file_path);
+
+  const int file_uri_encoded_len = file_uri_unencoded_len *4;
+  item.uri = (char *)calloc(sizeof(char), file_uri_encoded_len); // at most 8 -> 32 blowup.
+  uri_decode(item.uri, file_uri_encoded_len, file_uri_unencoded);
+  free(file_uri_unencoded); // song and dance...
+
+  item.languageId = "lean";
+  item.version = 0;
+  return item;
+}
+
 
 json_object *json_object_new_text_document_item(TextDocumentItem item) {
   json_object *o = json_object_new_object();

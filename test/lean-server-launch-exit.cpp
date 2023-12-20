@@ -37,12 +37,8 @@ int main() {
   json_object *response1 = state.read_response_from_child_blocking();
   fprintf(stderr, "PARENT: child response 1: '%s'\n",
     json_object_to_json_string(response1));
-  // json_object *response2 = state.read_response_from_child_blocking();
-  // nread = state.read_stdout_str_from_child(BUF, BUF_SIZE);
-  // BUF[nread] = 0;
-  // fprintf(stderr, "PARENT: child response (stdout): '%s'\n", BUF);
   fprintf(stderr, "PARENT: quitting...\n");
-  exit(1);
+  exit(0);
 
   return 0;
 };

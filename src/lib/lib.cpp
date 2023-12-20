@@ -17,9 +17,10 @@
 #include <unistd.h>
 #include <errno.h>
 #include "lib.h"
+#include "uri_encode.h"
 
 
-void  disableRawMode();
+void disableRawMode();
 
 void write_to_child(const char *buf, int len);
 int read_stdout_from_child(const char *buf, int bufsize);
