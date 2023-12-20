@@ -61,7 +61,16 @@ LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
   (void)pipe(state.parent_buffer_to_child_stdin);
   (void)pipe(state.child_stdout_to_parent_buffer);
   (void)pipe(state.child_stderr_to_parent_buffer);
-  
+
+  // open debug logging files.
+  state.child_stdin_log_file = fopen("/tmp/edtr-child-stdin", "a+");
+  state.child_stdout_log_file = fopen("/tmp/edtr-child-stdout", "a+");
+  state.child_stderr_log_file = fopen("/tmp/edtr-child-stderr", "a+");
+
+  fputs("\n===\n", state.child_stdin_log_file);  
+  fputs("\n===\n", state.child_stdout_log_file);
+  fputs("\n===\n", state.child_stderr_log_file);
+
   pid_t childpid = fork();
   if(childpid == -1) {
     perror("ERROR: fork failed.");
@@ -70,20 +79,6 @@ LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
 
   if(childpid == 0) {
     disableRawMode(); // go back to normal mode of I/O.
-
-    // open debug logging files.
-    const char *SEP = "\n====\n";
-    {
-      int handle = open("/tmp/edtr-child-stdout", O_WRONLY | O_CREAT | O_APPEND, 0644);
-      write(handle, SEP, strlen(SEP));
-      dup2(STDOUT_FILENO, handle);
-    }
-
-    {
-      int debug_log_stderr = open("/tmp/edtr-child-stderr", O_WRONLY | O_CREAT | O_APPEND, 0644);
-      write(debug_log_stderr, SEP, strlen(SEP));
-      dup2(STDERR_FILENO, debug_log_stderr);
-    }
 
 
     // child->parent, child will only write to this pipe, so close read end.
@@ -141,12 +136,31 @@ LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
   return state;
 };
 
-// tactic mode goal.
-void lean_server_get_tactic_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
-// term mode goal
-void lean_server_get_term_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
-// autocomplete.
-void lean_server_get_completion_at_point(LeanServerState state, LeanServerCursorInfo cinfo);
+int LeanServerState::write_to_child(const char *buf, int len) const {
+  int nwritten = write(this->parent_buffer_to_child_stdin[PIPE_WRITE_IX], buf, len);
+  // flush(this->parent_buffer_to_child_stdin[PIPE_WRITE_IX]);
+
+  (void)fwrite(buf, len, 1, this->child_stdin_log_file);
+  fflush(this->child_stdin_log_file);
+  return nwritten;
+};
+
+int LeanServerState::read_stdout_from_child(char *buf, int bufsize) const {
+  int nread = read(this->child_stdout_to_parent_buffer[PIPE_READ_IX], buf, bufsize);
+
+  (void)fwrite(buf, nread, 1, this->child_stdout_log_file);
+  fflush(this->child_stdout_log_file);
+  return nread;
+};
+
+int LeanServerState::read_stderr_from_child(char *buf, int bufsize) const {
+  int nread = read(this->child_stderr_to_parent_buffer[PIPE_READ_IX], buf, bufsize);
+
+  (void)fwrite(buf, nread, 1, this->child_stderr_log_file);
+  fflush(this->child_stderr_log_file);
+  return nread;
+};
+
 
 
 

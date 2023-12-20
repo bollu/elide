@@ -39,13 +39,21 @@ struct LeanServerState {
   int parent_buffer_to_child_stdin[2];
   int child_stdout_to_parent_buffer[2];
   int child_stderr_to_parent_buffer[2];
-  int stdout_log_file; // file handle of stdout logging
-  int stderr_log_file; // file handle of stderr logging
+  FILE *child_stdin_log_file; // file handle of stdout logging
+  FILE *child_stdout_log_file; // file handle of stdout logging
+  FILE *child_stderr_log_file; // file handle of stderr logging
   pid_t childpid;
 
-  void write_to_child(const char *buf, int len) const;
-  int read_stdout_from_child(const char *buf, int bufsize) const;
-  int read_stderr_from_child(const char *buf, int bufsize) const;
+  // low-level APIs
+  int write_to_child(const char *buf, int len) const;
+  int read_stdout_from_child(char *buf, int bufsize) const;
+  int read_stderr_from_child(char *buf, int bufsize) const;
+
+  // high level APIs
+  void get_tactic_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
+  void get_term_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
+  void get_completion_at_point(LeanServerState state, LeanServerCursorInfo cinfo);
+
   static LeanServerState init(LeanServerInitKind init_kind);
 };
 
@@ -200,12 +208,6 @@ void  disableRawMode();
 void write_to_child(const char *buf, int len);
 int read_stdout_from_child(const char *buf, int bufsize);
 int read_stderr_from_child(const char *buf, int bufsize);
-// tactic mode goal.
-void lean_server_get_tactic_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
-// term mode goal
-void lean_server_get_term_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
-// autocomplete.
-void lean_server_get_completion_at_point(LeanServerState state, LeanServerCursorInfo cinfo);
 void editorSetStatusMessage(const char *fmt, ...);
 char *editorPrompt(const char *prompt);
 int clamp(int lo, int val, int hi);
