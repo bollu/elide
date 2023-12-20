@@ -134,3 +134,46 @@ json_object *lspCreateDidCloseTextDocumentRequest(const char *uri) {
   json_object_object_add(o, "textDocument", textDocument);
   return o;
 }
+
+
+struct Position {
+  int row; // zero indexed line number.
+  int col; // utf-8 offset for column.
+};
+
+json_object *json_object_new_position(Position position) {
+  json_object *o  = json_object_new_object();
+  json_object_object_add(o, "line", json_object_new_int64(position.row));
+  json_object_object_add(o, "character", json_object_new_int64(position.col));
+  return o;
+}
+
+// $/lean/plainTermGoal
+json_object *lspCreateLeanPlainTermGoalRequest(const char *uri, Position position) {
+  json_object *o = json_object_new_object();
+  // textDocumentIdentifier
+  json_object *textDocument = json_object_new_object();
+  json_object_object_add(textDocument, "uri", json_object_new_string(uri));
+  json_object_object_add(o, "textDocument", textDocument);
+  
+  json_object_object_add(o, "position", json_object_new_position(position));
+  return o;
+};
+
+
+// $/lean/plainGoal
+json_object *lspCreateLeanPlainGoalRequest(const char *uri, Position position) {
+  json_object *o = json_object_new_object();
+  // textDocumentIdentifier
+  json_object *textDocument = json_object_new_object();
+  json_object_object_add(textDocument, "uri", json_object_new_string(uri));
+  json_object_object_add(o, "textDocument", textDocument);
+  
+  json_object_object_add(o, "position", json_object_new_position(position));
+  return o;
+};
+
+
+// struct PlainTermGoalResponse {};
+
+// struct PlainGoalResponse {};
