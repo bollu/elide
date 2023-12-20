@@ -26,8 +26,7 @@ int main() {
   state.write_request_to_child_blocking("initialize", req);
   sleep(1);
   fprintf(stderr, "PARENT: reading child (stdout)...\n");
-  
-  response = state.read_response_from_child_blocking();
+  response = state.read_json_response_from_child_blocking();
   fprintf(stderr, "PARENT: response 1: '%s'\n",
   json_object_to_json_string(response));
 
@@ -35,6 +34,9 @@ int main() {
   const char *file_path = "/home/bollu/software/edtr/test/test_file.lean";
   req = lspCreateDidOpenTextDocumentRequest(TextDocumentItem::create_from_file_path(file_path));
   fprintf(stderr, "PARENT: writing '%s'\n", json_object_to_json_string(req));
+  state.write_request_to_child_blocking("textDocument/didOpen", req);
+  sleep(1);
+  state.read_empty_response_from_child_blocking();
 
   return 0;
 };

@@ -55,7 +55,8 @@ struct LeanServerState {
 
   // high level APIs. 
   void write_request_to_child_blocking(const char * method, json_object *params);
-  json_object *read_response_from_child_blocking();
+  void read_empty_response_from_child_blocking();
+  json_object *read_json_response_from_child_blocking();
 
   // high level APIs
   void get_tactic_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);

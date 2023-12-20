@@ -188,11 +188,11 @@ json_object *convert_response_string_to_json_object(const char *str, int len) {
 }
 
 
-json_object *LeanServerState::read_response_from_child_blocking() {
+json_object *LeanServerState::read_json_response_from_child_blocking() {
   assert(this->nresponses_read < this->next_request_id);
   this->nresponses_read++;
   
-  const int BUFSIZE = 8196;
+  const int BUFSIZE = 1000000;
   char *buf = (char *)calloc(BUFSIZE, sizeof(char));
   int nread = read_stdout_str_from_child(buf, BUFSIZE);
   assert(nread < BUFSIZE);
@@ -201,6 +201,20 @@ json_object *LeanServerState::read_response_from_child_blocking() {
   json_object *o = convert_response_string_to_json_object(buf, nread);
   free(buf);
   return o;
+}
+
+void LeanServerState::read_empty_response_from_child_blocking() {
+  assert(this->nresponses_read < this->next_request_id);
+  this->nresponses_read++;
+  
+  const int BUFSIZE = 1000000;
+  char *buf = (char *)calloc(BUFSIZE, sizeof(char));
+  int nread = read_stdout_str_from_child(buf, BUFSIZE);
+  assert(nread < BUFSIZE);
+  buf[nread] = 0;
+  fprintf(stderr, "> read response: '%s'\n", buf);
+
+  assert (nread == 0);
 }
 
 

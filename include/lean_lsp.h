@@ -84,10 +84,10 @@ json_object *lspCreateInitializeRequest() {
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
 struct TextDocumentItem {
-  const char *uri;
-  const char *languageId;
-  int version; // version of the document. (it will increase after each change, including undo/redo).
-  const char *text; // text of the document
+  char *uri = NULL;
+  char *languageId = NULL;
+  int version = -42; // version of the document. (it will increase after each change, including undo/redo).
+  char *text = NULL; // text of the document
 
   static TextDocumentItem create_from_file_path(const char *file_path);
 };
@@ -95,18 +95,32 @@ struct TextDocumentItem {
 TextDocumentItem TextDocumentItem::create_from_file_path(const char *file_path) {
   TextDocumentItem item;
 
+  FILE *fp = NULL;
+  if ((fp = fopen(file_path, "r")) == NULL) {
+      die("unable to create file from path.");
+  }
+
+  fseek(fp, 0, SEEK_END);
+  int file_len = ftell(fp);
+  fseek(fp, 0, SEEK_SET);
+
+  item.text = (char *)calloc(sizeof(char), file_len + 1);
+  int nread = fread(item.text, 1, file_len, fp);
+  assert(nread == file_len && "unable to read file");
+  fclose(fp);
+
   // file://
   const char *file_segment_uri = "file://";
   const int file_uri_unencoded_len = strlen(file_segment_uri) + strlen(file_path) + 1;
   char *file_uri_unencoded = (char *)calloc(sizeof(char), file_uri_unencoded_len);
   sprintf(file_uri_unencoded, "%s%s", file_segment_uri, file_path);
 
-  const int file_uri_encoded_len = file_uri_unencoded_len *4;
+  const int file_uri_encoded_len = file_uri_unencoded_len *4 + 1;
   item.uri = (char *)calloc(sizeof(char), file_uri_encoded_len); // at most 8 -> 32 blowup.
-  uri_decode(item.uri, file_uri_encoded_len, file_uri_unencoded);
+  uri_encode(file_uri_unencoded, file_uri_unencoded_len, (char *)item.uri);
   free(file_uri_unencoded); // song and dance...
 
-  item.languageId = "lean";
+  item.languageId = strdup("lean");
   item.version = 0;
   return item;
 }
@@ -115,7 +129,7 @@ TextDocumentItem TextDocumentItem::create_from_file_path(const char *file_path) 
 json_object *json_object_new_text_document_item(TextDocumentItem item) {
   json_object *o = json_object_new_object();
   json_object_object_add(o, "uri", json_object_new_string(item.uri));
-  json_object_object_add(o, "languageId", json_object_new_string(item.uri));
+  json_object_object_add(o, "languageId", json_object_new_string(item.languageId));
   json_object_object_add(o, "version", json_object_new_int(item.version));
   json_object_object_add(o, "text", json_object_new_string(item.text));
   return o;

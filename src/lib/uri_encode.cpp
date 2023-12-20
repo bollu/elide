@@ -15,7 +15,8 @@ size_t uri_encode (const char *src, const size_t len, char *dst)
     const char octet = src[i++];
     const int32_t code = ((int32_t*)uri_encode_tbl)[ (unsigned char)octet ];
     if (code) {
-        *((int32_t*)&dst[j]) = code;
+        memcpy(dst + j, &code, sizeof(int32_t));
+        // *((int32_t*)&dst[j]) = code;
         j += 3;
     }
     else dst[j++] = octet;
