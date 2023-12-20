@@ -12,30 +12,129 @@
 #include <sys/ttydefaults.h>
 #include <termios.h>
 #include <unistd.h>
-#include "include/lean_server.h"
-static const int NSPACES_PER_TAB = 2;
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include "data_structures.h"
+
+
+void  disableRawMode();
+
+/*** lean server state ***/
+// quick refresher on how pipes work:
+// 1. pipe(fds) creates a pipe, where fds[0] is the read fd, fds[1] is the write fd.
+//   one can only write to fds[1], and one can only read from fds[0].
+// 2. dup2(x, y) ties the two file descriptors together, making a write to one equal to writing to the other.
+// 2a. If we want to write into the STDIN of a process via the output of a pipe, we would use
+//      `dup2(STDIN_FILENO, fds[PIPE_READ_IX])`;
+// 3. for cleanliness, we close() the sides of the pipes that must be left unsused on each side.
+//    so on the producer side `write(fds[1], data)`, we close the consumer fd `close(fds[0])` and vice versa.
+void _exec_lean_server_on_child(LeanServerInitKind init_kind) {
+
+  int process_error = 0;
+  if (init_kind == LST_LEAN_SERVER) {
+    fprintf(stderr, "starting 'lean --server'...\n");
+    const char *process_name = "lean";
+    char * const argv[] = { strdup(process_name), "--server", NULL };
+    process_error = execvp(process_name, argv);
+  } else if (init_kind == LST_LAKE_SERVE) {
+    const char * process_name = "lake";
+    char * const argv[] = { strdup(process_name), "serve", NULL };
+    process_error = execvp(process_name, argv);
+  } else {
+    assert(false && "unhandled LeanServerInitKind.");
+  }
+
+  if (process_error == -1) {
+    perror("failed to launch lean server");
+    abort();
+  }
+}
+// create a new lean server.
+LeanServerState init_lean_server(LeanServerInitKind init_kind) {
+  LeanServerState state;
+  (void)pipe(state.parent_buffer_to_child_stdin);
+  (void)pipe(state.child_stdout_to_parent_buffer);
+  (void)pipe(state.child_stderr_to_parent_buffer);
+  
+  pid_t childpid = fork();
+  if(childpid == -1) {
+    perror("ERROR: fork failed.");
+    exit(1);
+  };
+
+  if(childpid == 0) {
+    disableRawMode(); // go back to normal mode of I/O.
+
+    // child->parent, child will only write to this pipe, so close read end.
+    close(state.child_stdout_to_parent_buffer[PIPE_READ_IX]);
+    // child->parent, child will only write to this pipe, so close read end.
+    close(state.child_stderr_to_parent_buffer[PIPE_READ_IX]);
+
+    // parent->child, child will only read from this end, so close write end.
+    close(state.parent_buffer_to_child_stdin[PIPE_WRITE_IX]);
+
+    // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDIN`
+    dup2(state.child_stderr_to_parent_buffer[PIPE_WRITE_IX], STDERR_FILENO);
+    // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDIN`
+    dup2(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
+    // it is only legal to call `read()` on stdin. So we tie the `PIPE_READ_IX` to `STDIN`
+    dup2(state.parent_buffer_to_child_stdin[PIPE_READ_IX], STDIN_FILENO);
+
+    _exec_lean_server_on_child(init_kind);
+  } else {
+    // parent will only write into this pipe, so close the read end.
+    close(state.parent_buffer_to_child_stdin[PIPE_READ_IX]);
+    // parent will only read from this pipe so close the wite end.
+    close(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX]);
+    // parent will only read from this pipe so close the wite end.
+    close(state.child_stderr_to_parent_buffer[PIPE_WRITE_IX]);
+
+    fprintf(stderr, "\nPARENT: sleeping for 3s\n");
+    sleep(3);
+    fprintf(stderr, "\nPARENT: writing data into buffer\n");
+    const char *data = "{ vscode }\n";
+    write(state.parent_buffer_to_child_stdin[PIPE_WRITE_IX], data, strlen(data));
+    // flush(state.parent_buffer_to_child_stdin[PIPE_WRITE_IX]);
+    fprintf(stderr, "\nPARENT: sleeping...\n");
+    sleep(3);
+    fprintf(stderr, "\nPARENT: reading from pipe...\n");
+    static const int BUF_SIZE = 4096;
+    char BUF[BUF_SIZE];
+    int nread;
+
+    nread = read(state.child_stdout_to_parent_buffer[PIPE_READ_IX], BUF, BUF_SIZE);
+    BUF[nread] = 0;
+    fprintf(stderr, "\nPARENT: child response (stdout): '%s'\n", BUF);
+    sleep(1);
+
+    nread = read(state.child_stderr_to_parent_buffer[PIPE_READ_IX], BUF, BUF_SIZE);
+    BUF[nread] = 0;
+    fprintf(stderr, "\nPARENT: child response (stderr): '%s'\n", BUF);
+    sleep(1);
+
+    fprintf(stderr, "\nPARENT: quitting...\n");
+    exit(1);
+
+  }
+  // return lean server state to the parent process.
+  return state;
+};
+
+// tactic mode goal.
+void lean_server_get_tactic_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
+// term mode goal
+void lean_server_get_term_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
+// autocomplete.
+void lean_server_get_completion_at_point(LeanServerState state, LeanServerCursorInfo cinfo);
+
+
+
 /*** defines ***/
 
 void editorSetStatusMessage(const char *fmt, ...);
 char *editorPrompt(const char *prompt);
-
-const char *VERSION = "0.0.1";
-
-
-enum FileMode {
-  FM_VIEW, // mode where code is only viewed and locked for editing.
-  FM_EDIT, // mode where code is edited.
-};
-
-enum editorKey {
-  ARROW_LEFT = 1000,
-  ARROW_RIGHT,
-  ARROW_UP,
-  ARROW_DOWN,
-  PAGE_UP,
-  PAGE_DOWN,
-  DEL_CHAR,
-};
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
 
@@ -49,115 +148,11 @@ int clamp(int lo, int val, int hi) {
 }
 
 /*** data ***/
-
-struct erow;
-
-struct editorConfig {
-  FileMode file_mode = FM_VIEW;
-  bool dirty = false;
-  int cx = 0, cy = 0; // cursor location
-  struct termios orig_termios;
-  int screenrows;
-  int screencols;
-  int rx = 0;
-  erow *row;
-  int rowoff = 0;
-  int coloff = 0;
-  int numrows = 0;
-  char *filepath = nullptr;
-  char statusmsg[80];
-  time_t statusmsg_time = 0;
-
-  editorConfig() { statusmsg[0] = '\0'; }
-
-} E;
-
-struct erow {
-  int size = 0;
-  char *chars = nullptr;
-  int rsize = 0;
-  char *render = nullptr;
-
-  
-
-  int rxToCx(int rx) const {
-    int cur_rx = 0;
-    for (int cx = 0; cx < this->size; cx++) {
-      if (this->chars[cx] == '\t') {
-        cur_rx += (NSPACES_PER_TAB - 1) - (cur_rx % NSPACES_PER_TAB);
-      }
-      cur_rx++;
-      if (cur_rx > rx) { return cx; }
-    }
-    assert(false && "rx value that is out of range!");
-    // return cx;
-  }
-
-  int cxToRx(int cx) const {
-    int rx = 0;
-    for (int j = 0; j < cx; ++j) {
-      if (chars[j] == '\t') {
-        rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
-      } else {
-        rx++;
-      }
-    }
-    return rx;
-  }
-  // should be private? since it updates info cache.
-  void update() {
-
-    int ntabs = 0;
-    for (int j = 0; j < size; ++j) {
-      ntabs += chars[j] == '\t';
-    }
-
-    free(render);
-    render = (char *)malloc(size + ntabs * NSPACES_PER_TAB + 1);
-    int ix = 0;
-    for (int j = 0; j < size; ++j) {
-      if (chars[j] == '\t') {
-        render[ix++] = ' ';
-        while (ix % NSPACES_PER_TAB != 0) {
-          render[ix++] = ' ';
-        }
-      } else {
-        render[ix++] = chars[j];
-      }
-    }
-    render[ix] = '\0';
-    rsize = ix;
-    E.dirty = true;
-  }
-
-  void insertChar(int at, int c) {
-    assert(at >= 0);
-    assert(at <= size);
-    // +2, one for new char, one for null.
-    chars = (char *)realloc(chars, size + 2);
-    // nchars: [chars+at...chars+size)
-    // TODO: why +1 at end?
-    // memmove(chars + at + 1, chars + at, size - at + 1);
-    memmove(chars + at + 1, chars + at, size - at);
-    size++;
-    chars[at] = c;
-    this->update();
-  }
-  void appendString(char *s, size_t len) {
-    chars = (char *)realloc(chars, size + len + 1);
-    // copy string s into chars.
-    memcpy(&chars[size], s, len);
-    size += len;
-    chars[size] = '\0';
-    this->update();
-    E.dirty = true;
-  }
-};
+editorConfig E;
 
 /*** terminal ***/
 
 void die(const char *s) {
-
   // clear screen
   write(STDOUT_FILENO, "\x1b[2J", 4);
   write(STDOUT_FILENO, "\x1b[H", 3);
@@ -355,7 +350,7 @@ void editorInsertRow(int at, const char *s, size_t len) {
 
   E.row[at].rsize = 0;
   E.row[at].render = NULL;
-  E.row[at].update();
+  E.row[at].update(E);
 
   E.numrows++;
   E.dirty = true;
@@ -401,7 +396,7 @@ void editorRowDelChar(erow *row, int at) {
   }
   memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
   row->size--;
-  row->update();
+  row->update(E);
 }
 
 
@@ -426,9 +421,9 @@ void editorInsertNewline() {
     // We only want to copy as much indent exists upto the cursor.
     int num_indent = 0;
     for (num_indent = 0;
-	 num_indent < row->size &&
-	 num_indent < E.cx && is_space_or_tab(row->chars[num_indent]);
-	 num_indent++) {};
+   num_indent < row->size &&
+   num_indent < E.cx && is_space_or_tab(row->chars[num_indent]);
+   num_indent++) {};
     char *new_row_contents = (char *)malloc(sizeof(char)*(row->size - E.cx + num_indent));
     for(int i = 0; i < num_indent; ++i) {
       new_row_contents[i] = row->chars[i]; // copy the spaces over.
@@ -444,7 +439,7 @@ void editorInsertNewline() {
     // chop off at row[...:E.cx]
     row->size = E.cx;
     row->chars[row->size] = '\0';
-    row->update();
+    row->update(E);
 
     // place cursor at next row (E.cy + 1), column of the indent.
     E.cy++;
@@ -458,7 +453,7 @@ void editorInsertChar(int c) {
     // editorAppendRow("", 0);
     editorInsertRow(E.numrows, "", 0);
   }
-  E.row[E.cy].insertChar(E.cx, c);
+  E.row[E.cy].insertChar(E.cx, c, E);
   E.cx++;
 }
 
@@ -478,7 +473,7 @@ void editorDelChar() {
     // place cursor at last column of prev row.
     E.cx = E.row[E.cy - 1].size;
     // append string.
-    E.row[E.cy - 1].appendString(row->chars, row->size);
+    E.row[E.cy - 1].appendString(row->chars, row->size, E);
     // delete current row
     editorDelRow(E.cy);
     // go to previous row.
@@ -491,10 +486,11 @@ void editorOpen(const char *filename) {
   free(E.filepath);
   E.filepath = strdup(filename);
 
-  FILE *fp = fopen(filename, "r");
+  FILE *fp = fopen(filename, "a+");
   if (!fp) {
     die("fopen");
   }
+  fseek(fp, 0, /*whence=*/SEEK_SET);
 
   char *line = nullptr;
   size_t linecap = 0; // allocate memory for line read.
@@ -575,22 +571,6 @@ void editorFind() {
 
 
 /*** append buffer ***/
-struct abuf {
-  char *b = nullptr;
-  int len = 0;
-  abuf() {}
-
-  void appendbuf(const char *s, int slen) {
-    this->b = (char *)realloc(b, len + slen);
-    assert(this->b && "unable to append string");
-    memcpy(this->b + len, s, slen);
-    this->len += slen;
-  }
-
-  void appendstr(const char *s) { appendbuf(s, strlen(s)); }
-
-  ~abuf() { free(b); }
-};
 
 /*** output ***/
 
@@ -659,7 +639,7 @@ void editorDrawRows(abuf &ab) {
       int ix = write_int_to_str(line_number_str, filerow + 1);
       while(ix < LINE_NUMBER_NUM_CHARS - 1) {
         line_number_str[ix] = ' ';
-	ix++;
+        ix++;
       }
       line_number_str[ix] = '|';
       ab.appendstr(line_number_str);
@@ -668,7 +648,7 @@ void editorDrawRows(abuf &ab) {
 
     // code in view mode is renderered gray
     if (E.file_mode == FM_VIEW) {
-	ab.appendstr("\x1b[90;40m"); // gray on black
+      ab.appendstr("\x1b[90;40m"); // gray on black
     }
 
     if (filerow < E.numrows) {
@@ -712,7 +692,7 @@ void editorDrawRows(abuf &ab) {
     
     // code in view mode is renderered gray
     if (E.file_mode == FM_VIEW) {
-	ab.appendstr("\x1b[0m"); // reset.
+      ab.appendstr("\x1b[0m"); // reset.
     }
   }
 }
@@ -968,13 +948,16 @@ int main(int argc, char **argv){
   enableRawMode();
   initEditor();
 
+  
+  E.lean_sever_state = init_lean_server(LST_LEAN_SERVER); // start lean --server.  
+
   editorSetStatusMessage("HELP: Ctrl-Q = quit");
 
   char *filepath = NULL;
   if (argc >= 2) {
     filepath = argv[1];
   } else {
-    filepath = "/tmp/edtr-scratch";
+    filepath = strdup("/tmp/edtr-scratch");
   }
   editorOpen(filepath);
 

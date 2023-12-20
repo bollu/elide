@@ -15,5 +15,6 @@ pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing)
 
 find_package(json-c CONFIG)
 target_include_directories(edtr PRIVATE json-c::json-c PkgConfig::URING)
+target_include_directories(edtr PRIVATE "include/")
 target_link_libraries(edtr PRIVATE json-c::json-c PkgConfig::URING)
 install(TARGETS edtr DESTINATION bin)
