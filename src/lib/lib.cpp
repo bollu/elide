@@ -104,48 +104,20 @@ LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
     close(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX]);
     // parent will only read from this pipe so close the wite end.
     close(state.child_stderr_to_parent_buffer[PIPE_WRITE_IX]);
-
-    fprintf(stderr, "\nPARENT: sleeping...\n");
-    sleep(1);
-    fprintf(stderr, "\nPARENT: writing data into buffer\n");
-    const char *data = "{ vscode }\n";
-    write(state.parent_buffer_to_child_stdin[PIPE_WRITE_IX], data, strlen(data));
-    // flush(state.parent_buffer_to_child_stdin[PIPE_WRITE_IX]);
-    fprintf(stderr, "\nPARENT: sleeping...\n");
-    sleep(1);
-    fprintf(stderr, "\nPARENT: reading from pipe...\n");
-    static const int BUF_SIZE = 4096;
-    char BUF[BUF_SIZE];
-    int nread;
-
-    nread = read(state.child_stdout_to_parent_buffer[PIPE_READ_IX], BUF, BUF_SIZE);
-    BUF[nread] = 0;
-    fprintf(stderr, "\nPARENT: child response (stdout): '%s'\n", BUF);
-    sleep(1);
-
-    nread = read(state.child_stderr_to_parent_buffer[PIPE_READ_IX], BUF, BUF_SIZE);
-    BUF[nread] = 0;
-    fprintf(stderr, "\nPARENT: child response (stderr): '%s'\n", BUF);
-    sleep(1);
-
-    fprintf(stderr, "\nPARENT: quitting...\n");
-    exit(1);
-
   }
   // return lean server state to the parent process.
   return state;
 };
 
-int LeanServerState::write_to_child(const char *buf, int len) const {
+int LeanServerState::write_str_to_child(const char *buf, int len) const {
   int nwritten = write(this->parent_buffer_to_child_stdin[PIPE_WRITE_IX], buf, len);
-  // flush(this->parent_buffer_to_child_stdin[PIPE_WRITE_IX]);
 
   (void)fwrite(buf, len, 1, this->child_stdin_log_file);
   fflush(this->child_stdin_log_file);
   return nwritten;
 };
 
-int LeanServerState::read_stdout_from_child(char *buf, int bufsize) const {
+int LeanServerState::read_stdout_str_from_child(char *buf, int bufsize) const {
   int nread = read(this->child_stdout_to_parent_buffer[PIPE_READ_IX], buf, bufsize);
 
   (void)fwrite(buf, nread, 1, this->child_stdout_log_file);
@@ -153,7 +125,7 @@ int LeanServerState::read_stdout_from_child(char *buf, int bufsize) const {
   return nread;
 };
 
-int LeanServerState::read_stderr_from_child(char *buf, int bufsize) const {
+int LeanServerState::read_stderr_str_from_child(char *buf, int bufsize) const {
   int nread = read(this->child_stderr_to_parent_buffer[PIPE_READ_IX], buf, bufsize);
 
   (void)fwrite(buf, nread, 1, this->child_stderr_log_file);
@@ -161,7 +133,74 @@ int LeanServerState::read_stderr_from_child(char *buf, int bufsize) const {
   return nread;
 };
 
+void LeanServerState::write_request_to_child_blocking(const char * method, json_object *params) {
+  const int id = this->next_request_id++;
 
+  json_object *o = json_object_new_object();
+  json_object_object_add(o, "jsonrpc", json_object_new_string("2.0"));
+  json_object_object_add(o, "id", json_object_new_int(id));
+  json_object_object_add(o, "method", json_object_new_string(method));
+  if (params) {
+    json_object_object_add(o, "params", params);
+  }
+
+  const char *obj_str = json_object_to_json_string(o);
+  const int obj_strlen = strlen(obj_str);
+
+
+  char *request_str = (char*)calloc(sizeof(char), obj_strlen + 128);
+  const int req_len = sprintf(request_str, "Content-Length: %d\r\n\r\n%s", obj_strlen, obj_str);
+  this->write_str_to_child(request_str, req_len);
+}
+
+
+// TODO: add test.
+json_object *convert_response_string_to_json_object(const char *str, int len) {
+  const char *CONTENT_LENGTH_STR = "Content-Length:";
+  assert(0 == strncmp(CONTENT_LENGTH_STR, str, strlen(CONTENT_LENGTH_STR)));
+  long long content_length = atoi(str + strlen(CONTENT_LENGTH_STR));
+  int num_newlines_found = 0;
+  const char *json_str = str;
+  while(*json_str != 0) {
+    if (*json_str == '\n') {
+      num_newlines_found += 1;
+      json_str++;
+      // we found the second newline.
+      if (num_newlines_found == 2) { break; }
+    } else {
+      // we found no newline. increment string.
+      json_str++;
+    }
+  }
+  // fprintf(stderr, "> json_str[0] : %d | json_str: '%s'\n", json_str[0], json_str);
+
+  assert(*json_str == '{'); // we should have an { right after  the `\n`.
+  
+  // TODO: do I care about the content length?
+  // fprintf(stderr, "> json string length: %d | content length: %lld | json string - content length: %lld"
+  //   " | full string - content_length %lld\n",
+  //   strlen(json_str),
+  //   content_length,
+  //   strlen(json_str) - content_length);
+  //   strlen(str) - content_length;
+  return json_tokener_parse(json_str);
+}
+
+
+json_object *LeanServerState::read_response_from_child_blocking() {
+  assert(this->nresponses_read < this->next_request_id);
+  this->nresponses_read++;
+  
+  const int BUFSIZE = 8196;
+  char *buf = (char *)calloc(BUFSIZE, sizeof(char));
+  int nread = read_stdout_str_from_child(buf, BUFSIZE);
+  assert(nread < BUFSIZE);
+  buf[nread] = 0;
+  // fprintf(stderr, "> read response: '%s'\n", buf);
+  json_object *o = convert_response_string_to_json_object(buf, nread);
+  free(buf);
+  return o;
+}
 
 
 /*** defines ***/

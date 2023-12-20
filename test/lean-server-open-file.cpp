@@ -1,6 +1,35 @@
 #include "lib.h"
-#include "lean_lsp.h"
 
+json_object *lspCreateClientCapabilities() {
+  json_object *o = json_object_new_object();
+  return o;  
+}
+
+
+// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#lifeCycleMessages
+// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+json_object *lspCreateInitializeRequest() {
+  // processId
+  json_object *o = json_object_new_object();
+  json_object_object_add(o, "processId", json_object_new_int(getpid()));
+    
+  const int CWD_BUF_SIZE = 4096;
+  char CWD[CWD_BUF_SIZE];
+  if (getcwd(CWD, CWD_BUF_SIZE) == NULL) {
+      perror("unable to get cwd.");
+  }
+
+  json_object *clientInfo = json_object_new_object();
+  json_object_object_add(clientInfo, "name", json_object_new_string("edtr"));
+  json_object_object_add(clientInfo, "version", json_object_new_string(VERSION));
+
+  json_object_object_add(o, "clientInfo", clientInfo);
+
+  // json_object_object_add(o, "rootUri", json_object_new_string(CWD));
+  json_object_object_add(o, "rootUri", json_object_new_null());
+  json_object_object_add(o, "capabilities", lspCreateClientCapabilities());
+  return o;
+};
 
 // TODO: think about how to make all of this non-blocking.
 int main() {
@@ -46,4 +75,5 @@ int main() {
 
   return 0;
 };
+
 

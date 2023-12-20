@@ -17,7 +17,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include "lib.h"
+#include <json-c/json.h>
 
 struct LeanServerCursorInfo {
   const char *file_path;
@@ -43,11 +43,19 @@ struct LeanServerState {
   FILE *child_stdout_log_file; // file handle of stdout logging
   FILE *child_stderr_log_file; // file handle of stderr logging
   pid_t childpid;
+  int next_request_id = 0; // ID that will be assigned to the next request.
+  // number of responses that have been read.
+  // invariant: nresponses_read < next_request_id. Otherwise we will deadlock.
+  int nresponses_read = 0;
 
   // low-level APIs
-  int write_to_child(const char *buf, int len) const;
-  int read_stdout_from_child(char *buf, int bufsize) const;
-  int read_stderr_from_child(char *buf, int bufsize) const;
+  int write_str_to_child(const char *buf, int len) const;
+  int read_stdout_str_from_child(char *buf, int bufsize) const;
+  int read_stderr_str_from_child(char *buf, int bufsize) const;
+
+  // high level APIs. 
+  void write_request_to_child_blocking(const char * method, json_object *params);
+  json_object *read_response_from_child_blocking();
 
   // high level APIs
   void get_tactic_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);

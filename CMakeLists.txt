@@ -16,8 +16,8 @@ add_library(libedtr src/lib/lib.cpp)
 find_package(json-c CONFIG)
 target_include_directories(libedtr PUBLIC json-c::json-c PkgConfig::URING)
 target_include_directories(libedtr PUBLIC "include/")
+target_link_libraries(libedtr PUBLIC json-c::json-c PkgConfig::URING)
 install(TARGETS libedtr DESTINATION lib)
-
 
 # edtr
 add_executable(edtr src/main.cpp)
