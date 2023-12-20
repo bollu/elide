@@ -1,3 +1,24 @@
+#pragma once
+#include <assert.h>
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <iostream>
+#include <iterator>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/ttydefaults.h>
+#include <termios.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include "lib.h"
+
 struct LeanServerCursorInfo {
   const char *file_path;
   int row;
@@ -8,22 +29,29 @@ struct LeanServerCursorInfo {
 #define PIPE_WRITE_IX 1
 #define PIPE_READ_IX 0
 
-// https://tldp.org/LDP/lpg/node11.html
-struct LeanServerState {
-  int parent_buffer_to_child_stdin[2];
-  int child_stdout_to_parent_buffer[2];
-  int child_stderr_to_parent_buffer[2];
-  pid_t childpid;
-};
-
 enum LeanServerInitKind {
     LST_LEAN_SERVER, // lean --servver
     LST_LAKE_SERVE, // lake serve
 }; 
 
+// https://tldp.org/LDP/lpg/node11.html
+struct LeanServerState {
+  int parent_buffer_to_child_stdin[2];
+  int child_stdout_to_parent_buffer[2];
+  int child_stderr_to_parent_buffer[2];
+  int stdout_log_file; // file handle of stdout logging
+  int stderr_log_file; // file handle of stderr logging
+  pid_t childpid;
+
+  void write_to_child(const char *buf, int len) const;
+  int read_stdout_from_child(const char *buf, int bufsize) const;
+  int read_stderr_from_child(const char *buf, int bufsize) const;
+  static LeanServerState init(LeanServerInitKind init_kind);
+};
+
 
 static const int NSPACES_PER_TAB = 2;
-const char *VERSION = "0.0.1";
+static const char *VERSION = "0.0.1";
 
 
 enum FileMode {
@@ -165,3 +193,52 @@ struct abuf {
 
   ~abuf() { free(b); }
 };
+
+void  enableRawMode();
+void  disableRawMode();
+
+void write_to_child(const char *buf, int len);
+int read_stdout_from_child(const char *buf, int bufsize);
+int read_stderr_from_child(const char *buf, int bufsize);
+// tactic mode goal.
+void lean_server_get_tactic_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
+// term mode goal
+void lean_server_get_term_mode_goal_state(LeanServerState state, LeanServerCursorInfo cinfo);
+// autocomplete.
+void lean_server_get_completion_at_point(LeanServerState state, LeanServerCursorInfo cinfo);
+void editorSetStatusMessage(const char *fmt, ...);
+char *editorPrompt(const char *prompt);
+int clamp(int lo, int val, int hi);
+
+
+/*** data ***/
+extern editorConfig E; // from lib.
+
+
+/*** terminal ***/
+void die(const char *s);
+int editorReadKey();
+void getCursorPosition(int *rows, int *cols);
+int getWindowSize(int *rows, int *cols);
+void editorInsertRow(int at, const char *s, size_t len);
+void editorFreeRow(erow *row);
+void editorDelRow(int at);
+void editorRowDelChar(erow *row, int at);
+bool is_space_or_tab(char c);
+void editorInsertNewline();
+void editorInsertChar(int c);
+void editorDelChar();
+void editorOpen(const char *filename);
+char *editorRowsToString(int *buflen);
+void editorSave();
+void editorFind();
+void editorScroll();
+void editorDrawRows(abuf &ab);
+void editorDrawStatusBar(abuf &ab);
+void editorDrawMessageBar(abuf &ab);
+void editorRefreshScreen();
+void editorSetStatusMessage(const char *fmt, ...);
+void editorMoveCursor(int key);
+void editorProcessKeypress();
+char *editorPrompt(const char *prompt);
+void initEditor();

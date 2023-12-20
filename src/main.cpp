@@ -16,7 +16,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include "data_structures.h"
+#include "lib.h"
 
 int main(int argc, char **argv){
   enableRawMode();
