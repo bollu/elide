@@ -51,7 +51,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing)
 
 # libedtr
-add_library(libedtr src/lib/lib.cpp src/lib/uri_encode.cpp)
+add_library(libedtr src/lib/lib.cpp src/lean_lsp.cpp src/lib/uri_encode.cpp)
 find_package(json-c CONFIG)
 target_include_directories(libedtr PUBLIC json-c::json-c PkgConfig::URING)
 target_include_directories(libedtr PUBLIC include/)

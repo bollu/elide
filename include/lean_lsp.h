@@ -1,6 +1,24 @@
 // APIs to create objects for the lean LSP
+#pragma once
+#include <assert.h>
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <iostream>
+#include <iterator>
 #include <json-c/json.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/ttydefaults.h>
+#include <termios.h>
+#include <unistd.h>
+#include <vector>
+#include <unordered_map>
 #include "uri_encode.h"
+
 
 
 // == toplevel capabilities ==
@@ -47,7 +65,7 @@
 //  showDocument? : Option ShowDocumentClientCapabilities := none
 // deriving ToJson, FromJson
 
-json_object *lspCreateClientCapabilities() {
+static json_object *lspCreateClientCapabilities() {
   json_object *o = json_object_new_object();
 
   json_object * text_document_capabilities = json_object_new_object();
@@ -58,31 +76,7 @@ json_object *lspCreateClientCapabilities() {
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#lifeCycleMessages
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
-json_object *lspCreateInitializeRequest() {
-  // processId
-  json_object *o = json_object_new_object();
-  json_object_object_add(o, "processId", json_object_new_int(getpid()));
-    
-  const int CWD_BUF_SIZE = 4096;
-  char CWD[CWD_BUF_SIZE];
-  if (getcwd(CWD, CWD_BUF_SIZE) == NULL) {
-      perror("unable to get cwd.");
-  }
-
-  json_object *clientInfo = json_object_new_object();
-  json_object_object_add(clientInfo, "name", json_object_new_string("edtr"));
-  json_object_object_add(clientInfo, "version", json_object_new_string(VERSION));
-
-  json_object_object_add(o, "clientInfo", clientInfo);
-
-  // json_object_object_add(o, "rootUri", json_object_new_string(CWD));
-  json_object_object_add(o, "rootUri", json_object_new_null());
-  json_object_object_add(o, "capabilities", lspCreateClientCapabilities());
-  return o;
-};
-
-
-
+json_object *lspCreateInitializeRequest();
 
 
 struct Uri {
@@ -113,7 +107,7 @@ struct Uri {
 
 };
 
-json_object *json_object_new_uri(Uri uri) {
+static json_object *json_object_new_uri(Uri uri) {
   return json_object_new_string(uri.uri);
 }
 
@@ -141,27 +135,7 @@ struct TextDocumentItem {
 };
 
 
-TextDocumentItem TextDocumentItem::create_from_file_path(const char *file_path) {
-
-  FILE *fp = NULL;
-  if ((fp = fopen(file_path, "r")) == NULL) {
-      die("unable to create file from path.");
-  }
-
-  fseek(fp, 0, SEEK_END);
-  int file_len = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
-
-  char *text = (char *)calloc(sizeof(char), file_len + 1);
-  int nread = fread(text, 1, file_len, fp);
-  assert(nread == file_len && "unable to read file");
-  fclose(fp);
-
-  return TextDocumentItem(Uri::from_file_path(file_path), "lean", 0, text);
-}
-
-
-json_object *json_object_new_text_document_item(TextDocumentItem item) {
+static json_object *json_object_new_text_document_item(TextDocumentItem item) {
   json_object *o = json_object_new_object();
   json_object_object_add(o, "uri", json_object_new_uri(item.uri));
   json_object_object_add(o, "languageId", json_object_new_string(item.languageId));
@@ -171,7 +145,7 @@ json_object *json_object_new_text_document_item(TextDocumentItem item) {
 }
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didOpen
-json_object *lspCreateDidOpenTextDocumentNotifiation(TextDocumentItem item) {
+static json_object *lspCreateDidOpenTextDocumentNotifiation(TextDocumentItem item) {
   json_object *o = json_object_new_object();
   json_object_object_add(o, "textDocument", json_object_new_text_document_item(item));
   return o;
@@ -179,7 +153,7 @@ json_object *lspCreateDidOpenTextDocumentNotifiation(TextDocumentItem item) {
 
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didChange
-json_object *lspCreateDidChangeTextDocumentRequest(TextDocumentItem item) {
+static json_object *lspCreateDidChangeTextDocumentRequest(TextDocumentItem item) {
   json_object *o = json_object_new_object();
   // VersionedTextDocumentIdentifier
   json_object *textDocument = json_object_new_object();
@@ -199,12 +173,12 @@ json_object *lspCreateDidChangeTextDocumentRequest(TextDocumentItem item) {
 }
 
 // TODO:
-json_object *lspCreateInitializedNotification() {
+static json_object *lspCreateInitializedNotification() {
   return json_object_new_object();
 }
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didChange
-json_object *lspCreateDidCloseTextDocumentRequest(const char *uri) {
+static json_object *lspCreateDidCloseTextDocumentRequest(const char *uri) {
 
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
@@ -222,7 +196,7 @@ struct Position {
   Position(int row, int col) : row(row), col(col) {};
 };
 
-json_object *json_object_new_position(Position position) {
+static json_object *json_object_new_position(Position position) {
   json_object *o  = json_object_new_object();
   json_object_object_add(o, "line", json_object_new_int64(position.row));
   json_object_object_add(o, "character", json_object_new_int64(position.col));
@@ -230,7 +204,7 @@ json_object *json_object_new_position(Position position) {
 }
 
 // $/lean/plainTermGoal
-json_object *lspCreateLeanPlainTermGoalRequest(Uri uri, const Position position) {
+static json_object *lspCreateLeanPlainTermGoalRequest(Uri uri, const Position position) {
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
   json_object *textDocument = json_object_new_object();
@@ -243,7 +217,7 @@ json_object *lspCreateLeanPlainTermGoalRequest(Uri uri, const Position position)
 
 
 // $/lean/plainGoal
-json_object *lspCreateLeanPlainGoalRequest(Uri uri, const Position position) {
+static json_object *lspCreateLeanPlainGoalRequest(Uri uri, const Position position) {
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
   json_object *textDocument = json_object_new_object();

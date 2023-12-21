@@ -18,6 +18,7 @@
 #include <errno.h>
 #include "lib.h"
 #include "uri_encode.h"
+#include "lean_lsp.h"
 
 #define CHECK_POSIX_CALL_0(x) { do { int success = x == 0; if(!success) { perror("POSIX call failed"); }; assert(success); } while(0); }
 // check that minus 1 is notreturned.
@@ -71,6 +72,7 @@ void _exec_lean_server_on_child(LeanServerInitKind init_kind) {
 // create a new lean server.
 LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
   LeanServerState state;
+
   CHECK_POSIX_CALL_0(pipe(state.parent_buffer_to_child_stdin));
   CHECK_POSIX_CALL_0(pipe2(state.child_stdout_to_parent_buffer, O_NONBLOCK));
   CHECK_POSIX_CALL_0(pipe(state.child_stderr_to_parent_buffer));
@@ -91,7 +93,7 @@ LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
   };
 
   if(childpid == 0) {
-    disableRawMode(); // go back to normal mode of I/O.
+    // disableRawMode(); // go back to normal mode of I/O.
 
 
     // child->parent, child will only write to this pipe, so close read end.
@@ -120,6 +122,7 @@ LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
 
   }
   // return lean server state to the parent process.
+  state.initialized = true; 
   return state;
 };
 
@@ -627,6 +630,22 @@ void editorDelChar() {
   }
 }
 
+
+void editorLaunchLeanServer() {
+  assert(g_editor.curFile.lean_server_state.initialized == false);
+  g_editor.curFile.lean_server_state = LeanServerState::init(LST_LEAN_SERVER); // start lean --server.  
+
+  json_object *req = lspCreateInitializeRequest();
+  LspRequestId request_id = g_editor.curFile.lean_server_state.write_request_to_child_blocking("initialize", req);
+
+  json_object *response = g_editor.curFile.lean_server_state.read_json_response_from_child_blocking(request_id);
+
+  // initialize: send initialized
+  req = lspCreateInitializedNotification();
+  g_editor.curFile.lean_server_state.write_notification_to_child_blocking("initialized", req);
+
+}
+
 /*** file i/o ***/
 void editorOpen(const char *filename) {
   free(g_editor.curFile.filepath);
@@ -652,6 +671,7 @@ void editorOpen(const char *filename) {
   free(line);
   fclose(fp);
 }
+
 
 char *editorRowsToString(int *buflen) {
   int totlen = 0;

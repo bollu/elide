@@ -125,6 +125,7 @@ struct LspRequestId {
 
 // https://tldp.org/LDP/lpg/node11.html
 struct LeanServerState {
+  bool initialized = false; // whether this lean server has been initalized.
   int parent_buffer_to_child_stdin[2];  // pipe.
   int child_stdout_to_parent_buffer[2]; // pipe.
   int child_stderr_to_parent_buffer[2]; // pipe.
@@ -224,11 +225,9 @@ struct FileConfig {
   char *filepath = nullptr;
 
   // lean server for file.
-  // LeanServerState lean_sever_state;
+  LeanServerState lean_server_state;
 
-  // info view information.
-  // json_object *infoViewGoal = nullptr;
-
+  void launchLeanSever();
 };
 
 struct EditorConfig {
@@ -372,3 +371,4 @@ void editorMoveCursor(int key);
 void editorProcessKeypress();
 char *editorPrompt(const char *prompt);
 void initEditor();
+void editorLaunchLeanServer();
