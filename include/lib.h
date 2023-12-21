@@ -187,6 +187,7 @@ static const char *VERSION = "0.0.1";
 enum VimMode {
   VM_VIEW, // mode where code is only viewed and locked for editing.
   VM_EDIT, // mode where code is edited.
+  VM_INFOVIEW_DISPLAY_GOAL, // mode where infoview is shown.
 };
 
 enum editorKey {

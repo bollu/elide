@@ -1047,8 +1047,21 @@ void editorProcessKeypress() {
     return;
   }
 
+  if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
+    switch (c) {
+    case 'g':
+    case '?':
+      g_editor.vim_mode = VM_VIEW; return;
+    default:
+      return;
+    }
+  }
+
   if (g_editor.vim_mode == VM_VIEW) { // behaviours only in  view mode
     switch (c) {
+    case 'g':
+    case '?':
+      g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL; return;
     case 'i':
       g_editor.vim_mode = VM_EDIT; return;
     } // end switch over key.
