@@ -7,30 +7,34 @@ int main() {
   static const int BUF_SIZE = 4096;
   char BUF[BUF_SIZE];
   int nread = 0;
-
+  LspRequestId request_id(-1);
+  json_object *response = NULL;
 
   enableRawMode();
   LeanServerState state = LeanServerState::init(LeanServerInitKind::LST_LEAN_SERVER);
 
-  fprintf(stderr, "PARENT: reading child (stderr), expecting 'starting lean --server'...\n");
-  nread = state.read_stderr_str_from_child(BUF, BUF_SIZE);
-  BUF[nread] = 0;
-  fprintf(stderr, "PARENT: child response (stderr): '%s'.\n", BUF);
-  sleep(1);
-  fprintf(stderr, "PARENT: sleeping...\n");
-  sleep(1);
-  fprintf(stderr, "PARENT: writing req into buffer\n");
-  json_object *req = lspCreateInitializeRequest();
-  fprintf(stderr, "PARENT: writing '%s'\n", json_object_to_json_string(req));
-  state.write_request_to_child_blocking("initialize", req);
-  fprintf(stderr, "PARENT: sleeping...\n");
-  sleep(1);
+  fprintf(stderr, "### reading child [stderr], expecting 'starting lean --server'...\n");
+  nread = state._read_stderr_str_from_child_blocking();
+  fprintf(stderr, "   child response [stderr]: '%s'.\n",
+    state.child_stderr_buffer.to_string_len(nread));
+  state.child_stderr_buffer.drop_prefix(nread); 
 
-  fprintf(stderr, "PARENT: reading child (stdout)...\n");
-  json_object *response1 = state.read_json_response_from_child_blocking();
-  fprintf(stderr, "PARENT: child response 1: '%s'\n",
-    json_object_to_json_string(response1));
-  fprintf(stderr, "PARENT: quitting...\n");
+  fprintf(stderr, "### request [initialize]\n");
+  json_object *req = lspCreateInitializeRequest();
+  fprintf(stderr, "     writing '%s'\n", json_object_to_json_string(req));
+  request_id = state.write_request_to_child_blocking("initialize", req);
+
+  fprintf(stderr, "### response [initialize]...\n");
+  response = state.read_json_response_from_child_blocking(request_id);
+  fprintf(stderr, "    child response: '%s'\n",
+    json_object_to_json_string(response));
+
+  // initialize: send initialized
+  req = lspCreateInitializedNotification();
+  fprintf(stderr, "### writing [initialized] '%s'\n", json_object_to_json_string(req));
+  state.write_notification_to_child_blocking("initialized", req);
+
+  fprintf(stderr, "### quitting...\n");
   exit(0);
 
   return 0;

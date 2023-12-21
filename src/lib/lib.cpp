@@ -19,13 +19,11 @@
 #include "lib.h"
 #include "uri_encode.h"
 
+#define CHECK_POSIX_CALL(x) { do { int errcode = x; if(errcode != 0) { perror("POSIX call failed"); }; assert(errcode == 0); } while(0); }
+
 
 void disableRawMode();
 void enableRawMode();
-
-void write_to_child(const char *buf, int len);
-int read_stdout_from_child(const char *buf, int bufsize);
-int read_stderr_from_child(const char *buf, int bufsize);
 
 /*** lean server state ***/
 // quick refresher on how pipes work:
@@ -42,11 +40,11 @@ void _exec_lean_server_on_child(LeanServerInitKind init_kind) {
   if (init_kind == LST_LEAN_SERVER) {
     fprintf(stderr, "starting 'lean --server'...\n");
     const char *process_name = "lean";
-    char * const argv[] = { strdup(process_name), "--server", NULL };
+    char * const argv[] = { strdup(process_name), strdup("--server"), NULL };
     process_error = execvp(process_name, argv);
   } else if (init_kind == LST_LAKE_SERVE) {
     const char * process_name = "lake";
-    char * const argv[] = { strdup(process_name), "serve", NULL };
+    char * const argv[] = { strdup(process_name), strdup("serve"), NULL };
     process_error = execvp(process_name, argv);
   } else {
     assert(false && "unhandled LeanServerInitKind.");
@@ -57,12 +55,23 @@ void _exec_lean_server_on_child(LeanServerInitKind init_kind) {
     abort();
   }
 }
+
+// void set_fd_nonblocking(int fd) {
+//   int ret = fcntl( fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+//   assert(ret != -1 && "unable to change fd to nonblocking mode.");
+// }
+
+// void set_fd_blocking(int fd) {
+//   int ret = fcntl( fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
+//   assert(ret != -1 && "unable to change fd to nonblocking mode.");
+// }
+
 // create a new lean server.
 LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
   LeanServerState state;
-  (void)pipe(state.parent_buffer_to_child_stdin);
-  (void)pipe(state.child_stdout_to_parent_buffer);
-  (void)pipe(state.child_stderr_to_parent_buffer);
+  CHECK_POSIX_CALL(pipe(state.parent_buffer_to_child_stdin));
+  CHECK_POSIX_CALL(pipe2(state.child_stdout_to_parent_buffer, O_NONBLOCK));
+  CHECK_POSIX_CALL(pipe(state.child_stderr_to_parent_buffer));
 
   // open debug logging files.
   state.child_stdin_log_file = fopen("/tmp/edtr-child-stdin", "a+");
@@ -106,12 +115,19 @@ LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
     close(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX]);
     // parent will only read from this pipe so close the wite end.
     close(state.child_stderr_to_parent_buffer[PIPE_WRITE_IX]);
+
   }
   // return lean server state to the parent process.
   return state;
 };
 
-int LeanServerState::write_str_to_child(const char *buf, int len) const {
+
+struct LspResponse {
+  int content_length = -1;
+  json_object *response_obj = NULL;
+};
+
+int LeanServerState::_write_str_to_child(const char *buf, int len) const {
   int nwritten = write(this->parent_buffer_to_child_stdin[PIPE_WRITE_IX], buf, len);
 
   (void)fwrite(buf, len, 1, this->child_stdin_log_file);
@@ -119,23 +135,37 @@ int LeanServerState::write_str_to_child(const char *buf, int len) const {
   return nwritten;
 };
 
-int LeanServerState::read_stdout_str_from_child(char *buf, int bufsize) const {
-  int nread = read(this->child_stdout_to_parent_buffer[PIPE_READ_IX], buf, bufsize);
+int LeanServerState::_read_stdout_str_from_child_nonblocking() {
+  const int BUFSIZE = 4096;
+  char buf[BUFSIZE];
+  int nread = read(this->child_stdout_to_parent_buffer[PIPE_READ_IX], buf, BUFSIZE);
+  if (nread == -1) {
+
+    if (errno == EAGAIN) {
+      // EAGAIN = non-blocking I/O, there was no data ro read.
+      return 0;
+    }
+    die("unable to read from stdout of child lean server");
+  }
+  this->child_stdout_buffer.appendbuf(buf, nread);
 
   (void)fwrite(buf, nread, 1, this->child_stdout_log_file);
   fflush(this->child_stdout_log_file);
   return nread;
 };
 
-int LeanServerState::read_stderr_str_from_child(char *buf, int bufsize) const {
-  int nread = read(this->child_stderr_to_parent_buffer[PIPE_READ_IX], buf, bufsize);
+int LeanServerState::_read_stderr_str_from_child_blocking() {
+  const int BUFSIZE = 4096;
+  char buf[BUFSIZE];
+  int nread = read(this->child_stderr_to_parent_buffer[PIPE_READ_IX], buf, BUFSIZE);
+  this->child_stderr_buffer.appendbuf(buf, nread);
 
   (void)fwrite(buf, nread, 1, this->child_stderr_log_file);
   fflush(this->child_stderr_log_file);
   return nread;
 };
 
-void LeanServerState::write_request_to_child_blocking(const char * method, json_object *params) {
+LspRequestId LeanServerState::write_request_to_child_blocking(const char * method, json_object *params) {
   const int id = this->next_request_id++;
 
   json_object *o = json_object_new_object();
@@ -152,7 +182,9 @@ void LeanServerState::write_request_to_child_blocking(const char * method, json_
 
   char *request_str = (char*)calloc(sizeof(char), obj_strlen + 128);
   const int req_len = sprintf(request_str, "Content-Length: %d\r\n\r\n%s", obj_strlen, obj_str);
-  this->write_str_to_child(request_str, req_len);
+  this->_write_str_to_child(request_str, req_len);
+  free(request_str);
+  return LspRequestId(id);
 }
 
 void LeanServerState::write_notification_to_child_blocking(const char * method, json_object *params) {
@@ -169,72 +201,80 @@ void LeanServerState::write_notification_to_child_blocking(const char * method, 
 
   char *request_str = (char*)calloc(sizeof(char), obj_strlen + 128);
   const int req_len = sprintf(request_str, "Content-Length: %d\r\n\r\n%s", obj_strlen, obj_str);
-  this->write_str_to_child(request_str, req_len);
+  this->_write_str_to_child(request_str, req_len);
+  free(request_str);
 }
 
+// tries to read the next JSON record from the buffer, in a nonblocking fashion.
+json_object *LeanServerState::_read_next_json_record_from_buffer_nonblocking() {
 
-// TODO: add test.
-json_object *convert_response_string_to_json_object(const char *str, int len) {
   const char *CONTENT_LENGTH_STR = "Content-Length:";
-  assert(0 == strncmp(CONTENT_LENGTH_STR, str, strlen(CONTENT_LENGTH_STR)));
-  long long content_length = atoi(str + strlen(CONTENT_LENGTH_STR));
-  int num_newlines_found = 0;
-  const char *json_str = str;
-  while(*json_str != 0) {
-    if (*json_str == '\n') {
-      num_newlines_found += 1;
-      json_str++;
-      // we found the second newline.
-      if (num_newlines_found == 2) { break; }
-    } else {
-      // we found no newline. increment string.
-      json_str++;
-    }
+  const char *DOUBLE_NEWLINE_STR = "\r\n\r\n";
+
+
+  const int content_length_begin_ix = child_stdout_buffer.find_substr(CONTENT_LENGTH_STR, 0);
+  const int header_line_begin_ix = child_stdout_buffer.find_substr(DOUBLE_NEWLINE_STR, 0);
+
+
+  if (header_line_begin_ix == -1) { return NULL; }
+  assert (content_length_begin_ix != -1);
+
+  // yay, found content length.
+  int content_length = atoi(child_stdout_buffer.b + content_length_begin_ix + strlen(CONTENT_LENGTH_STR));
+
+  // we don't have enough data in the buffer to read the content length
+  const int header_line_end_ix = header_line_begin_ix + strlen(DOUBLE_NEWLINE_STR);
+  if (child_stdout_buffer.len < header_line_end_ix + content_length) {
+    return NULL;
   }
-  // fprintf(stderr, "> json_str[0] : %d | json_str: '%s'\n", json_str[0], json_str);
 
-  assert(*json_str == '{'); // we should have an { right after  the `\n`.
-  
-  // TODO: do I care about the content length?
-  // fprintf(stderr, "> json string length: %d | content length: %lld | json string - content length: %lld"
-  //   " | full string - content_length %lld\n",
-  //   strlen(json_str),
-  //   content_length,
-  //   strlen(json_str) - content_length);
-  //   strlen(str) - content_length;
-  return json_tokener_parse(json_str);
-}
+  // parse.
+  json_tokener *tok = json_tokener_new(); // TODO: do not create/destroy this object each time.
+  json_object *o = json_tokener_parse_ex(tok,
+    child_stdout_buffer.b + header_line_end_ix, content_length);
+  assert(o != NULL);
+  json_tokener_free(tok);
 
+  // drop the response from the buffer, now that we have correctly consumes the json request.
+  child_stdout_buffer.drop_prefix(header_line_end_ix + content_length);
 
-json_object *LeanServerState::read_json_response_from_child_blocking() {
-  assert(this->nresponses_read < this->next_request_id);
-  this->nresponses_read++;
-  
-  const int BUFSIZE = 1000000;
-  char *buf = (char *)calloc(BUFSIZE, sizeof(char));
-  int nread = read_stdout_str_from_child(buf, BUFSIZE);
-  assert(nread < BUFSIZE);
-  buf[nread] = 0;
-  // fprintf(stderr, "> read response: '%s'\n", buf);
-  json_object *o = convert_response_string_to_json_object(buf, nread);
-  free(buf);
   return o;
 }
 
-void LeanServerState::read_empty_response_from_child_blocking() {
-  assert(this->nresponses_read < this->next_request_id);
-  this->nresponses_read++;
-  
-  const int BUFSIZE = 1000000;
-  char *buf = (char *)calloc(BUFSIZE, sizeof(char));
-  int nread = read_stdout_str_from_child(buf, BUFSIZE);
-  assert(nread < BUFSIZE);
-  buf[nread] = 0;
-  // fprintf(stderr, "> read response: '%s'\n", buf);
-
-  assert (nread == 0);
+// tries to read the next JSON record from the buffer, in a blocking fashion.
+// It busy waits on the nonblocking version.
+json_object *LeanServerState::_read_next_json_record_from_buffer_blocking() {
+  while(1) {
+    json_object *o = _read_next_json_record_from_buffer_nonblocking(); 
+    if (o) { return o; }
+    _read_stdout_str_from_child_nonblocking(); // consume input to read.
+  }
 }
 
+json_object *LeanServerState::read_json_response_from_child_blocking(LspRequestId request_id) {
+  assert(request_id.id < this->next_request_id); // check that it is a valid request ID.
+
+  // TODO: the request needs to be looked for in the vector of unprocessed requests.
+  while(1) {
+    assert(this->nresponses_read < this->next_request_id);
+    json_object *o = _read_next_json_record_from_buffer_blocking();
+    // only records with a key called "id" are responses.
+    // other records are status messages which we silently discard
+    // TODO: do not silently discard!
+    json_object *response_id = NULL;
+    if (json_object_object_get_ex(o, "id", &response_id) && 
+        json_object_get_type(response_id) == json_type_int) {
+        if (json_object_get_int(response_id) != request_id.id) {
+          // TODO: store responses in a queue.
+          assert(false && "unexpected response, got a non-matching response to the ID we wanted.");
+        }
+        this->nresponses_read++;
+        return o;
+    } else {
+        this->unhandled_server_requests.push_back(o);
+    }
+  }
+}
 
 /*** defines ***/
 
@@ -259,9 +299,8 @@ editorConfig E;
 
 void die(const char *s) {
   // clear screen
-  write(STDOUT_FILENO, "\x1b[2J", 4);
-  write(STDOUT_FILENO, "\x1b[H", 3);
-
+  // CHECK_POSIX_CALL(write(STDOUT_FILENO, "\x1b[2J", 4));
+  // CHECK_POSIX_CALL(write(STDOUT_FILENO, "\x1b[H", 3));
   // explain errno before dying with mesasge s.
   perror(s);
   exit(1);
@@ -759,7 +798,6 @@ void editorDrawRows(abuf &ab) {
       if (E.file_mode == FM_VIEW) { ab.appendstr("\x1b[0m"); }
 
     }
-
     // code in view mode is renderered gray
     if (E.file_mode == FM_VIEW) { ab.appendstr("\x1b[37;40m"); }
 
@@ -879,7 +917,7 @@ void editorRefreshScreen() {
   // show hidden cursor
   ab.appendstr("\x1b[?25h");
 
-  write(STDOUT_FILENO, ab.b, ab.len);
+  CHECK_POSIX_CALL(write(STDOUT_FILENO, ab.b, ab.len));
 }
 
 void editorSetStatusMessage(const char *fmt, ...) {
