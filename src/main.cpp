@@ -22,7 +22,7 @@ int main(int argc, char **argv){
   enableRawMode();
   initEditor();
 
-  E.lean_sever_state = LeanServerState::init(LST_LEAN_SERVER); // start lean --server.  
+  // E.lean_sever_state = LeanServerState::init(LST_LEAN_SERVER); // start lean --server.  
   editorSetStatusMessage("HELP: Ctrl-Q = quit");
 
   char *filepath = NULL;

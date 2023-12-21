@@ -225,6 +225,8 @@ struct FileConfig {
   FileConfig() { statusmsg[0] = '\0'; }
 };
 
+extern FileConfig g_curFile; // from lib.
+
 struct erow {
   int size = 0;
   char *chars = nullptr;
@@ -319,8 +321,6 @@ void editorSetStatusMessage(const char *fmt, ...);
 char *editorPrompt(const char *prompt);
 int clamp(int lo, int val, int hi);
 
-/*** data ***/
-extern FileConfig E; // from lib.
 
 /*** terminal ***/
 void die(const char *s);
