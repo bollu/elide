@@ -209,14 +209,18 @@ struct Cursor {
 struct FileConfig {
   bool dirty = false;
   Cursor cursor;
+
+  // cache of row[cursor.y].cxToRx(cursor.x)
   int rx = 0;
   
+  // total number of rows.  
   FileRow *row;
-  
+  int numrows = 0;
+    
+  // offset for scrolling.
   int scroll_row_offset = 0;
   int scroll_col_offset = 0;
   
-  int numrows = 0;
   char *filepath = nullptr;
 
   // lean server for file.

@@ -19,7 +19,9 @@
 #include "lib.h"
 #include "uri_encode.h"
 
-#define CHECK_POSIX_CALL(x) { do { int errcode = x; if(errcode != 0) { perror("POSIX call failed"); }; assert(errcode == 0); } while(0); }
+#define CHECK_POSIX_CALL_0(x) { do { int success = x == 0; if(!success) { perror("POSIX call failed"); }; assert(success); } while(0); }
+// check that minus 1 is notreturned.
+#define CHECK_POSIX_CALL_M1(x) { do { int fail = x == -1; if(fail) { perror("POSIX call failed"); }; assert(!fail); } while(0); }
 
 
 void disableRawMode();
@@ -69,9 +71,9 @@ void _exec_lean_server_on_child(LeanServerInitKind init_kind) {
 // create a new lean server.
 LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
   LeanServerState state;
-  CHECK_POSIX_CALL(pipe(state.parent_buffer_to_child_stdin));
-  CHECK_POSIX_CALL(pipe2(state.child_stdout_to_parent_buffer, O_NONBLOCK));
-  CHECK_POSIX_CALL(pipe(state.child_stderr_to_parent_buffer));
+  CHECK_POSIX_CALL_0(pipe(state.parent_buffer_to_child_stdin));
+  CHECK_POSIX_CALL_0(pipe2(state.child_stdout_to_parent_buffer, O_NONBLOCK));
+  CHECK_POSIX_CALL_0(pipe(state.child_stderr_to_parent_buffer));
 
   // open debug logging files.
   state.child_stdin_log_file = fopen("/tmp/edtr-child-stdin", "a+");
@@ -299,8 +301,8 @@ EditorConfig g_editor;
 
 void die(const char *s) {
   // clear screen
-  // CHECK_POSIX_CALL(write(STDOUT_FILENO, "\x1b[2J", 4));
-  // CHECK_POSIX_CALL(write(STDOUT_FILENO, "\x1b[H", 3));
+  // CHECK_POSIX_CALL_0(write(STDOUT_FILENO, "\x1b[2J", 4));
+  // CHECK_POSIX_CALL_0(write(STDOUT_FILENO, "\x1b[H", 3));
   // explain errno before dying with mesasge s.
   perror(s);
   exit(1);
@@ -916,8 +918,7 @@ void editorRefreshScreen() {
   // show hidden cursor
   ab.appendstr("\x1b[?25h");
 
-  write(STDOUT_FILENO, ab.b, ab.len);
-  // CHECK_POSIX_CALL(write(STDOUT_FILENO, ab.b, ab.len));
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.b, ab.len));
 }
 
 void editorSetStatusMessage(const char *fmt, ...) {
