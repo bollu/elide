@@ -213,8 +213,8 @@ struct FileConfig {
   
   FileRow *row;
   
-  int rowoff = 0;
-  int coloff = 0;
+  int scroll_row_offset = 0;
+  int scroll_col_offset = 0;
   
   int numrows = 0;
   char *filepath = nullptr;

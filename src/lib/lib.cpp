@@ -706,7 +706,7 @@ void editorFind() {
     if (match) {
       g_editor.curFile.cursor.y = i;
       g_editor.curFile.cursor.x = match - row->render;
-      g_editor.curFile.rowoff = g_editor.curFile.numrows;
+      g_editor.curFile.scroll_row_offset = g_editor.curFile.numrows;
       break;
     }
   }
@@ -724,17 +724,17 @@ void editorScroll() {
   if (g_editor.curFile.cursor.y < g_editor.curFile.numrows) {
     g_editor.curFile.rx = g_editor.curFile.row[g_editor.curFile.cursor.y].cxToRx(g_editor.curFile.cursor.x);
   }
-  if (g_editor.curFile.cursor.y < g_editor.curFile.rowoff) {
-    g_editor.curFile.rowoff = g_editor.curFile.cursor.y;
+  if (g_editor.curFile.cursor.y < g_editor.curFile.scroll_row_offset) {
+    g_editor.curFile.scroll_row_offset = g_editor.curFile.cursor.y;
   }
-  if (g_editor.curFile.cursor.y >= g_editor.curFile.rowoff + g_editor.screenrows) {
-    g_editor.curFile.rowoff = g_editor.curFile.cursor.y - g_editor.screenrows + 1;
+  if (g_editor.curFile.cursor.y >= g_editor.curFile.scroll_row_offset + g_editor.screenrows) {
+    g_editor.curFile.scroll_row_offset = g_editor.curFile.cursor.y - g_editor.screenrows + 1;
   }
-  if (g_editor.curFile.rx < g_editor.curFile.coloff) {
-    g_editor.curFile.coloff = g_editor.curFile.rx;
+  if (g_editor.curFile.rx < g_editor.curFile.scroll_col_offset) {
+    g_editor.curFile.scroll_col_offset = g_editor.curFile.rx;
   }
-  if (g_editor.curFile.rx >= g_editor.curFile.coloff + g_editor.screencols) {
-    g_editor.curFile.coloff = g_editor.curFile.rx - g_editor.screencols + 1;
+  if (g_editor.curFile.rx >= g_editor.curFile.scroll_col_offset + g_editor.screencols) {
+    g_editor.curFile.scroll_col_offset = g_editor.curFile.rx - g_editor.screencols + 1;
   }
 }
 
@@ -774,9 +774,9 @@ void editorDrawRows(abuf &ab) {
   // "\r\n" ’s.
 
   // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
-  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.rowoff + 1) + 1;
+  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
   for (int y = 0; y < g_editor.screenrows; y++) {
-    int filerow = y + g_editor.curFile.rowoff;
+    int filerow = y + g_editor.curFile.scroll_row_offset;
 
     // convert the line number into a string, and write it.
     {
@@ -801,11 +801,11 @@ void editorDrawRows(abuf &ab) {
     if (g_editor.vim_mode == VM_VIEW) { ab.appendstr("\x1b[37;40m"); }
 
     if (filerow < g_editor.curFile.numrows) {
-      int len = clamp(0, g_editor.curFile.row[filerow].rsize - g_editor.curFile.coloff, g_editor.screencols - LINE_NUMBER_NUM_CHARS);
+      int len = clamp(0, g_editor.curFile.row[filerow].rsize - g_editor.curFile.scroll_col_offset, g_editor.screencols - LINE_NUMBER_NUM_CHARS);
       // int len = g_editor.curFile.row[filerow].size;
       // if (len > g_editor.screencols)
       //   len = g_editor.screencols;
-      ab.appendbuf(g_editor.curFile.row[filerow].render + g_editor.curFile.coloff, len);
+      ab.appendbuf(g_editor.curFile.row[filerow].render + g_editor.curFile.scroll_col_offset, len);
 
     } else {
         ab.appendstr("~");
@@ -909,8 +909,8 @@ void editorRefreshScreen() {
 
   // move cursor to correct row;col.
   char buf[32];
-  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.rowoff + 1) + 1;
-  sprintf(buf, "\x1b[%d;%dH", g_editor.curFile.cursor.y - g_editor.curFile.rowoff + 1, g_editor.curFile.rx - g_editor.curFile.coloff + 1 + LINE_NUMBER_NUM_CHARS);
+  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
+  sprintf(buf, "\x1b[%d;%dH", g_editor.curFile.cursor.y - g_editor.curFile.scroll_row_offset + 1, g_editor.curFile.rx - g_editor.curFile.scroll_col_offset + 1 + LINE_NUMBER_NUM_CHARS);
   ab.appendstr(buf);
 
   // show hidden cursor
