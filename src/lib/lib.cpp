@@ -417,21 +417,22 @@ void getCursorPosition(int *rows, int *cols) {
     die("unable to parse cursor string");
   };
 
-  printf("\r\n&buf[1]: '%s'\r\n", &buf[1]);
 }
 
 int getWindowSize(int *rows, int *cols) {
 
-  getCursorPosition(rows, cols);
-  printf("\r\nrows: %d | cols: %d\r\n", *rows, *cols);
+  // getCursorPosition(rows, cols);
 
   struct winsize ws;
   // TIOCGWINSZ: terminal IOctl get window size.
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+    die("unable to get window size");
     return -1;
   } else {
     *cols = ws.ws_col;
     *rows = ws.ws_row;
+    fprintf(stderr, "cols: %d | rows: %d\n", *cols, *rows);
+    // die("foo");
   }
   return 0;
 }
@@ -681,6 +682,7 @@ void editorFind() {
 
 void editorScroll() {
   E.rx = 0;
+  assert (E.cy >= 0 && E.cy <= E.numrows);
   if (E.cy < E.numrows) {
     E.rx = E.row[E.cy].cxToRx(E.cx);
   }
@@ -727,7 +729,7 @@ int write_int_to_str(char *s, int num) {
 
 void editorDrawRows(abuf &ab) {
 
-  // When we print the nal tilde, we then print a
+  // When we print the line number, tilde, we then print a
   // "\r\n" like on any other line, but this causes the terminal to scroll in
   // order to make room for a new, blank line. Let’s make the last line an
   // exception when we print our
@@ -739,17 +741,17 @@ void editorDrawRows(abuf &ab) {
     int filerow = y + E.rowoff;
 
     // convert the line number into a string, and write it.
-    {
-      char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
-      int ix = write_int_to_str(line_number_str, filerow + 1);
-      while(ix < LINE_NUMBER_NUM_CHARS - 1) {
-        line_number_str[ix] = ' ';
-        ix++;
-      }
-      line_number_str[ix] = '|';
-      ab.appendstr(line_number_str);
-      free(line_number_str);
-    }
+    // {
+    //   char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
+    //   int ix = write_int_to_str(line_number_str, filerow + 1);
+    //   while(ix < LINE_NUMBER_NUM_CHARS - 1) {
+    //     line_number_str[ix] = ' ';
+    //     ix++;
+    //   }
+    //   line_number_str[ix] = '|';
+    //   ab.appendstr(line_number_str);
+    //   free(line_number_str);
+    // }
 
     // code in view mode is renderered gray
     if (E.file_mode == FM_VIEW) {
@@ -758,31 +760,13 @@ void editorDrawRows(abuf &ab) {
 
     if (filerow < E.numrows) {
       int len = clamp(0, E.row[filerow].rsize - E.coloff, E.screencols - LINE_NUMBER_NUM_CHARS);
-
       // int len = E.row[filerow].size;
       // if (len > E.screencols)
       //   len = E.screencols;
       ab.appendbuf(E.row[filerow].render + E.coloff, len);
 
     } else {
-      if (E.numrows == 0 && y == E.screenrows / 3) {
-        char welcome[80];
-        int welcomelen = sprintf(welcome, "Kilo editor -- version %s", VERSION);
-        welcomelen = std::min<int>(welcomelen, E.screencols);
-
-        int padding = (E.screencols - welcomelen) / 2;
-        if (padding) {
-          ab.appendstr("~");
-          padding--;
-        }
-        while (padding--) {
-          ab.appendstr(" ");
-        };
-
-        ab.appendbuf(welcome, welcomelen);
-      } else {
         ab.appendstr("~");
-      }
     }
 
     // The K command (Erase In Line) erases part of the current line.
@@ -790,15 +774,14 @@ void editorDrawRows(abuf &ab) {
     // cursor.
     ab.appendstr("\x1b[K");
 
-    // always append a space, since we decrement a row from screen rows
-    // to make space for status bar.
-    // if (y < E.screenrows - 1) {
-    ab.appendstr("\r\n");
-    
     // code in view mode is renderered gray
     if (E.file_mode == FM_VIEW) {
       ab.appendstr("\x1b[0m"); // reset.
     }
+
+    // always append a space, since we decrement a row from screen rows
+    // to make space for status bar.
+    ab.appendstr("\r\n");
   }
 }
 
@@ -851,6 +834,7 @@ void editorDrawMessageBar(abuf &ab) {
 
 void editorRefreshScreen() {
 
+  initEditor();
   editorScroll();
   abuf ab;
 
@@ -873,23 +857,22 @@ void editorRefreshScreen() {
   // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
   // cursor to bottom
   //          0 is default arg, so [J: clear screen from cursor to bottom
-  // ab.appendstr("\x1b[2J");
+  ab.appendstr("\x1b[2J");
 
   // H: cursor position
   // [<row>;<col>H   (args separated by ;).
   // Default arguments for H is 1, so it's as if we had sent [1;1H
-  ab.appendstr("\x1b[H");
+  ab.appendstr("\x1b[1;1H");
 
   editorDrawRows(ab);
-  editorDrawStatusBar(ab);
-  editorDrawMessageBar(ab);
+  // editorDrawStatusBar(ab);
+  // editorDrawMessageBar(ab);
 
   // move cursor to correct row;col.
   char buf[32];
   const int LINE_NUMBER_NUM_CHARS = num_digits(E.screenrows + E.rowoff + 1) + 1;
   sprintf(buf, "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.rx - E.coloff + 1 + LINE_NUMBER_NUM_CHARS);
   ab.appendstr(buf);
-  // ab.appendstr("\x1b[H"); < now place cursor at right location!
 
   // show hidden cursor
   ab.appendstr("\x1b[?25h");
@@ -933,7 +916,7 @@ void editorMoveCursor(int key) {
 
     break;
   case ARROW_UP:
-    if (E.cy != 0) {
+    if (E.cy > 0) {
       E.cy--;
     }
     break;
@@ -951,11 +934,11 @@ void editorMoveCursor(int key) {
   }
 
   // snap to next line.
-  row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
-  int rowlen = row ? row->size : 0;
-  if (E.cx > rowlen) {
-    E.cx = rowlen;
-  }
+  // row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  // int rowlen = row ? row->size : 0;
+  // if (E.cx > rowlen) {
+  //   E.cx = rowlen;
+  // }
 }
 
 void editorProcessKeypress() {
@@ -1045,6 +1028,5 @@ void initEditor() {
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
     die("getWindowSize");
   };
-  static const int BOTTOM_INFO_PANE_HEIGHT = 2;
-  E.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
+  static const int BOTTOM_INFO_PANE_HEIGHT = 2; E.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
 }

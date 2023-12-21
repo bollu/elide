@@ -96,8 +96,8 @@ struct editorConfig {
   bool dirty = false;
   int cx = 0, cy = 0; // cursor location
   struct termios orig_termios;
-  int screenrows;
-  int screencols;
+  int screenrows = 0;
+  int screencols = 0;
   int rx = 0;
   erow *row;
   int rowoff = 0;
