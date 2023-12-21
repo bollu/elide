@@ -88,7 +88,7 @@ json_object *lspCreateInitializeRequest() {
 struct Uri {
   char *uri; // owned by uri;
 
-  Uri(Uri &uri) {
+  Uri(const Uri &uri) {
     this->uri = strdup(uri.uri);
   }
 
@@ -121,13 +121,23 @@ json_object *json_object_new_uri(Uri uri) {
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
 struct TextDocumentItem {
   Uri uri;
-  const char *languageId;
+  const char *languageId; // kept pointer of the language.
   int version; // version of the document. (it will increase after each change, including undo/redo).
-  char *text; // text of the document
+  char *text; // owned pointer of the text of the document
 
   TextDocumentItem(Uri uri, const char *languageId, int version, char *text) : 
     uri(uri), languageId(languageId), version(version), text(text) {};
+
+  TextDocumentItem(const TextDocumentItem &other) : 
+  	uri(Uri(other.uri)), 
+	languageId(other.languageId),
+	version(other.version),
+  	text(strdup(other.text)) {}
   static TextDocumentItem create_from_file_path(const char *file_path);
+
+  ~TextDocumentItem() {
+    free(text);
+  }
 };
 
 
