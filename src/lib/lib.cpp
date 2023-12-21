@@ -486,13 +486,12 @@ void editorInsertRow(int at, const char *s, size_t len) {
     return;
   }
 
-  g_curFile.row = (erow *)realloc(g_curFile.row, sizeof(erow) * (g_curFile.numrows + 1));
-  memmove(&g_curFile.row[at + 1], &g_curFile.row[at], sizeof(erow) * (g_curFile.numrows - at));
+  g_curFile.row = (FileRow *)realloc(g_curFile.row, sizeof(FileRow) * (g_curFile.numrows + 1));
+  memmove(&g_curFile.row[at + 1], &g_curFile.row[at], sizeof(FileRow) * (g_curFile.numrows - at));
   g_curFile.row[at].size = len;
   g_curFile.row[at].chars = (char *)malloc(len + 1);
   memcpy(g_curFile.row[at].chars, s, len);
   g_curFile.row[at].chars[len] = '\0';
-
   g_curFile.row[at].rsize = 0;
   g_curFile.row[at].render = NULL;
   g_curFile.row[at].update(g_curFile);
@@ -503,7 +502,7 @@ void editorInsertRow(int at, const char *s, size_t len) {
 
 // functionality superceded by |editorInsertRow|
 // void editorAppendRow(const char *s, size_t len) {
-//   g_curFile.row = (erow *)realloc(g_curFile.row, sizeof(erow) * (g_curFile.numrows + 1));
+//   g_curFile.row = (FileRow *)realloc(g_curFile.row, sizeof(FileRow) * (g_curFile.numrows + 1));
 //   const int at = g_curFile.numrows;
 //   // TODO: placement-new.
 //   g_curFile.row[at].size = len;
@@ -518,7 +517,7 @@ void editorInsertRow(int at, const char *s, size_t len) {
 //   g_curFile.dirty = true;
 // }
 
-void editorFreeRow(erow *row) {
+void editorFreeRow(FileRow *row) {
   free(row->render);
   free(row->chars);
 }
@@ -528,11 +527,11 @@ void editorDelRow(int at) {
   if (at < 0 || at >= g_curFile.numrows)
     return;
   editorFreeRow(&g_curFile.row[at]);
-  memmove(&g_curFile.row[at], &g_curFile.row[at + 1], sizeof(erow) * (g_curFile.numrows - at - 1));
+  memmove(&g_curFile.row[at], &g_curFile.row[at + 1], sizeof(FileRow) * (g_curFile.numrows - at - 1));
   g_curFile.numrows--;
 }
 
-void editorRowDelChar(erow *row, int at) {
+void editorRowDelChar(FileRow *row, int at) {
   g_curFile.dirty = true;
   assert(at >= 0);
   assert(at < row->size);
@@ -560,7 +559,7 @@ void editorInsertNewline() {
     g_curFile.cursor.x = 0;
   } else {
     // at column other than first, so chop row and insert new row.
-    erow *row = &g_curFile.row[g_curFile.cursor.y];
+    FileRow *row = &g_curFile.row[g_curFile.cursor.y];
     // legal previous row, copy the indentation.
     // note that the checks 'num_indent < row.size' and 'num_indent < g_curFile.cursor.x' are *not* redundant.
     // We only want to copy as much indent exists upto the cursor.
@@ -610,7 +609,7 @@ void editorDelChar() {
   if (g_curFile.cursor.x == 0 && g_curFile.cursor.y == 0)
     return;
 
-  erow *row = &g_curFile.row[g_curFile.cursor.y];
+  FileRow *row = &g_curFile.row[g_curFile.cursor.y];
   if (g_curFile.cursor.x > 0) {
     editorRowDelChar(row, g_curFile.cursor.x - 1);
     g_curFile.cursor.x--;
@@ -702,7 +701,7 @@ void editorFind() {
   if (query == NULL) return;
   int i;
   for (i = 0; i < g_curFile.numrows; i++) {
-    erow *row = &g_curFile.row[i];
+    FileRow *row = &g_curFile.row[i];
     char *match = strstr(row->render, query);
     if (match) {
       g_curFile.cursor.y = i;
@@ -931,7 +930,7 @@ void editorSetStatusMessage(const char *fmt, ...) {
 /*** input ***/
 
 void editorMoveCursor(int key) {
-  erow *row = (g_curFile.cursor.y >= g_curFile.numrows) ? NULL : &g_curFile.row[g_curFile.cursor.y];
+  FileRow *row = (g_curFile.cursor.y >= g_curFile.numrows) ? NULL : &g_curFile.row[g_curFile.cursor.y];
 
   switch (key) {
   case ARROW_LEFT:

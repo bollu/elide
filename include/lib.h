@@ -197,7 +197,7 @@ enum editorKey {
   DEL_CHAR,
 };
 
-struct erow;
+struct FileRow;
 
 
 struct Cursor {
@@ -214,7 +214,7 @@ struct FileConfig {
   int screenrows = 0;
   int screencols = 0;
   int rx = 0;
-  erow *row;
+  FileRow *row;
   int rowoff = 0;
   int coloff = 0;
   int numrows = 0;
@@ -227,7 +227,7 @@ struct FileConfig {
 
 extern FileConfig g_curFile; // from lib.
 
-struct erow {
+struct FileRow {
   int size = 0;
   char *chars = nullptr;
   int rsize = 0;
@@ -328,9 +328,9 @@ int editorReadKey();
 void getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
 void editorInsertRow(int at, const char *s, size_t len);
-void editorFreeRow(erow *row);
+void editorFreeRow(FileRow *row);
 void editorDelRow(int at);
-void editorRowDelChar(erow *row, int at);
+void editorRowDelChar(FileRow *row, int at);
 bool is_space_or_tab(char c);
 void editorInsertNewline();
 void editorInsertChar(int c);
