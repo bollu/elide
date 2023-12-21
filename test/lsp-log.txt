@@ -1,0 +1,1122 @@
+[Trace - 06:23:34 PM] Sending request 'initialize - (1)'.
+Params: {
+  "processId": 2035,
+  "rootPath": "/home/bollu/software/edtr/test",
+  "clientInfo": {
+    "name": "emacs",
+    "version": "GNU Emacs 28.1 (build 3, x86_64-pc-linux-gnu, GTK+ Version 3.24.33, cairo version 1.16.0)\n of 2023-09-17"
+  },
+  "rootUri": "file:///home/bollu/software/edtr/test",
+  "capabilities": {
+    "general": {
+      "positionEncodings": [
+        "utf-32",
+        "utf-16"
+      ]
+    },
+    "workspace": {
+      "workspaceEdit": {
+        "documentChanges": true,
+        "resourceOperations": [
+          "create",
+          "rename",
+          "delete"
+        ]
+      },
+      "applyEdit": true,
+      "symbol": {
+        "symbolKind": {
+          "valueSet": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26
+          ]
+        }
+      },
+      "executeCommand": {
+        "dynamicRegistration": false
+      },
+      "workspaceFolders": true,
+      "configuration": true,
+      "semanticTokens": {
+        "refreshSupport": false
+      },
+      "codeLens": {
+        "refreshSupport": true
+      },
+      "fileOperations": {
+        "didCreate": false,
+        "willCreate": false,
+        "didRename": true,
+        "willRename": true,
+        "didDelete": false,
+        "willDelete": false
+      }
+    },
+    "textDocument": {
+      "declaration": {
+        "dynamicRegistration": true,
+        "linkSupport": true
+      },
+      "definition": {
+        "dynamicRegistration": true,
+        "linkSupport": true
+      },
+      "references": {
+        "dynamicRegistration": true
+      },
+      "implementation": {
+        "dynamicRegistration": true,
+        "linkSupport": true
+      },
+      "typeDefinition": {
+        "dynamicRegistration": true,
+        "linkSupport": true
+      },
+      "synchronization": {
+        "willSave": true,
+        "didSave": true,
+        "willSaveWaitUntil": true
+      },
+      "documentSymbol": {
+        "symbolKind": {
+          "valueSet": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26
+          ]
+        },
+        "hierarchicalDocumentSymbolSupport": true
+      },
+      "formatting": {
+        "dynamicRegistration": true
+      },
+      "rangeFormatting": {
+        "dynamicRegistration": true
+      },
+      "onTypeFormatting": {
+        "dynamicRegistration": true
+      },
+      "semanticTokens": {
+        "dynamicRegistration": true,
+        "requests": {
+          "range": true,
+          "full": true
+        },
+        "tokenModifiers": [
+          "declaration",
+          "definition",
+          "implementation",
+          "readonly",
+          "static",
+          "deprecated",
+          "abstract",
+          "async",
+          "modification",
+          "documentation",
+          "defaultLibrary"
+        ],
+        "overlappingTokenSupport": true,
+        "multilineTokenSupport": true,
+        "tokenTypes": [
+          "leanSorryLike",
+          "comment",
+          "keyword",
+          "string",
+          "number",
+          "regexp",
+          "operator",
+          "namespace",
+          "type",
+          "struct",
+          "class",
+          "interface",
+          "enum",
+          "typeParameter",
+          "function",
+          "method",
+          "member",
+          "property",
+          "event",
+          "macro",
+          "variable",
+          "parameter",
+          "label",
+          "enumConstant",
+          "enumMember",
+          "dependent",
+          "concept"
+        ],
+        "formats": [
+          "relative"
+        ]
+      },
+      "rename": {
+        "dynamicRegistration": true,
+        "prepareSupport": true
+      },
+      "codeAction": {
+        "dynamicRegistration": true,
+        "isPreferredSupport": true,
+        "codeActionLiteralSupport": {
+          "codeActionKind": {
+            "valueSet": [
+              "",
+              "quickfix",
+              "refactor",
+              "refactor.extract",
+              "refactor.inline",
+              "refactor.rewrite",
+              "source",
+              "source.organizeImports"
+            ]
+          }
+        },
+        "resolveSupport": {
+          "properties": [
+            "edit",
+            "command"
+          ]
+        },
+        "dataSupport": true
+      },
+      "completion": {
+        "completionItem": {
+          "snippetSupport": false,
+          "documentationFormat": [
+            "markdown",
+            "plaintext"
+          ],
+          "resolveAdditionalTextEditsSupport": true,
+          "insertReplaceSupport": true,
+          "deprecatedSupport": true,
+          "resolveSupport": {
+            "properties": [
+              "documentation",
+              "detail",
+              "additionalTextEdits",
+              "command"
+            ]
+          },
+          "insertTextModeSupport": {
+            "valueSet": [
+              1,
+              2
+            ]
+          }
+        },
+        "contextSupport": true,
+        "dynamicRegistration": true
+      },
+      "signatureHelp": {
+        "signatureInformation": {
+          "parameterInformation": {
+            "labelOffsetSupport": true
+          }
+        },
+        "dynamicRegistration": true
+      },
+      "documentLink": {
+        "dynamicRegistration": true,
+        "tooltipSupport": true
+      },
+      "hover": {
+        "contentFormat": [
+          "markdown",
+          "plaintext"
+        ],
+        "dynamicRegistration": true
+      },
+      "foldingRange": {
+        "dynamicRegistration": true
+      },
+      "selectionRange": {
+        "dynamicRegistration": true
+      },
+      "callHierarchy": {
+        "dynamicRegistration": false
+      },
+      "typeHierarchy": {
+        "dynamicRegistration": true
+      },
+      "publishDiagnostics": {
+        "relatedInformation": true,
+        "tagSupport": {
+          "valueSet": [
+            1,
+            2
+          ]
+        },
+        "versionSupport": true
+      },
+      "linkedEditingRange": {
+        "dynamicRegistration": true
+      }
+    },
+    "window": {
+      "workDoneProgress": true,
+      "showDocument": {
+        "support": true
+      }
+    }
+  },
+  "initializationOptions": null,
+  "workDoneToken": "1"
+}
+
+
+[Trace - 06:23:34 PM] Received response 'initialize - (1)' in 410ms.
+Result: {
+  "serverInfo": {
+    "version": "0.1.2",
+    "name": "Lean 4 Server"
+  },
+  "capabilities": {
+    "workspaceSymbolProvider": true,
+    "typeDefinitionProvider": true,
+    "textDocumentSync": {
+      "willSaveWaitUntil": null,
+      "willSave": null,
+      "openClose": true,
+      "change": 2
+    },
+    "semanticTokensProvider": {
+      "range": true,
+      "legend": {
+        "tokenTypes": [
+          "keyword",
+          "variable",
+          "property",
+          "function",
+          "namespace",
+          "type",
+          "class",
+          "enum",
+          "interface",
+          "struct",
+          "typeParameter",
+          "parameter",
+          "enumMember",
+          "event",
+          "method",
+          "macro",
+          "modifier",
+          "comment",
+          "string",
+          "number",
+          "regexp",
+          "operator",
+          "decorator",
+          "leanSorryLike"
+        ],
+        "tokenModifiers": [
+          "declaration",
+          "definition",
+          "readonly",
+          "static",
+          "deprecated",
+          "abstract",
+          "async",
+          "modification",
+          "documentation",
+          "defaultLibrary"
+        ]
+      },
+      "full": true
+    },
+    "referencesProvider": true,
+    "hoverProvider": true,
+    "foldingRangeProvider": true,
+    "documentSymbolProvider": true,
+    "documentHighlightProvider": true,
+    "definitionProvider": true,
+    "declarationProvider": true,
+    "completionProvider": {
+      "triggerCharacters": [
+        "."
+      ],
+      "resolveProvider": null
+    },
+    "codeActionProvider": {
+      "workDoneProgress": null,
+      "resolveProvider": true,
+      "codeActionKinds": [
+        "quickfix",
+        "refactor"
+      ]
+    }
+  }
+}
+
+
+[Trace - 06:23:34 PM] Sending notification 'initialized'.
+Params: {}
+
+
+[Trace - 06:23:34 PM] Sending notification 'textDocument/didOpen'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean",
+    "languageId": "lean",
+    "version": 0,
+    "text": "def foo (y : Int) : Int → Int := by exact (fun z => y + 42)\n"
+  }
+}
+
+
+[Trace - 06:23:34 PM] Sending request 'textDocument/semanticTokens/range - (2)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 0
+    },
+    "end": {
+      "line": 1,
+      "character": 0
+    }
+  }
+}
+
+
+[Trace - 06:23:34 PM] Sending notification '$/cancelRequest'.
+Params: {
+  "id": 2
+}
+
+
+[Trace - 06:23:34 PM] Sending request 'textDocument/semanticTokens/range - (3)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 0
+    },
+    "end": {
+      "line": 1,
+      "character": 0
+    }
+  }
+}
+
+
+[Trace - 06:23:34 PM] Sending notification '$/cancelRequest'.
+Params: {
+  "id": 3
+}
+
+
+[Trace - 06:23:34 PM] Sending request 'textDocument/semanticTokens/range - (4)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 0
+    },
+    "end": {
+      "line": 1,
+      "character": 0
+    }
+  }
+}
+
+
+[Trace - 06:23:34 PM] Received request 'client/registerCapability - (register_ilean_watcher).
+Params: {
+  "registrations": [
+    {
+      "registerOptions": {
+        "watchers": [
+          {
+            "kind": null,
+            "globPattern": "**/*.ilean"
+          }
+        ]
+      },
+      "method": "workspace/didChangeWatchedFiles",
+      "id": "ilean_watcher"
+    }
+  ]
+}
+
+
+[Trace - 06:23:34 PM] Sending response 'client/registerCapability - (register_ilean_watcher)'. Processing request took 0ms
+Params: {
+  "jsonrpc": "2.0",
+  "id": "register_ilean_watcher",
+  "result": null
+}
+
+
+[Trace - 06:23:34 PM] Sending notification '$/cancelRequest'.
+Params: {
+  "id": 4
+}
+
+
+[Trace - 06:23:34 PM] Sending request 'textDocument/semanticTokens/range - (5)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 0
+    },
+    "end": {
+      "line": 1,
+      "character": 0
+    }
+  }
+}
+
+
+[Trace - 06:23:34 PM] Sending request 'textDocument/documentSymbol - (6)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  }
+}
+
+
+[Trace - 06:23:34 PM] Sending request 'textDocument/codeAction - (7)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 35
+    },
+    "end": {
+      "line": 0,
+      "character": 35
+    }
+  },
+  "context": {
+    "diagnostics": []
+  }
+}
+
+
+[Trace - 06:23:34 PM] Received notification '$/lean/fileProgress'.
+Params: {
+  "textDocument": {
+    "version": 0,
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "processing": [
+    {
+      "range": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 1,
+          "character": 0
+        }
+      },
+      "kind": 1
+    }
+  ]
+}
+
+
+[Trace - 06:23:34 PM] Received notification 'textDocument/publishDiagnostics'.
+Params: {
+  "version": 0,
+  "uri": "file:///home/bollu/software/edtr/test/test_file.lean",
+  "diagnostics": []
+}
+
+
+[Trace - 06:23:34 PM] Received notification '$/lean/fileProgress'.
+Params: {
+  "textDocument": {
+    "version": 0,
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "processing": [
+    {
+      "range": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 1,
+          "character": 0
+        }
+      },
+      "kind": 1
+    }
+  ]
+}
+
+
+[Trace - 06:23:34 PM] Received notification 'textDocument/publishDiagnostics'.
+Params: {
+  "version": 0,
+  "uri": "file:///home/bollu/software/edtr/test/test_file.lean",
+  "diagnostics": []
+}
+
+
+[Trace - 06:23:34 PM] Received notification '$/lean/fileProgress'.
+Params: {
+  "textDocument": {
+    "version": 0,
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "processing": [
+    {
+      "range": {
+        "start": {
+          "line": 1,
+          "character": 0
+        },
+        "end": {
+          "line": 1,
+          "character": 0
+        }
+      },
+      "kind": 1
+    }
+  ]
+}
+
+
+[Trace - 06:23:34 PM] Received response 'textDocument/codeAction - (7)' in 122ms.
+Result: []
+
+
+[Trace - 06:23:34 PM] Received notification 'textDocument/publishDiagnostics'.
+Params: {
+  "version": 0,
+  "uri": "file:///home/bollu/software/edtr/test/test_file.lean",
+  "diagnostics": []
+}
+
+
+[Trace - 06:23:34 PM] Received notification 'textDocument/publishDiagnostics'.
+Params: {
+  "version": 0,
+  "uri": "file:///home/bollu/software/edtr/test/test_file.lean",
+  "diagnostics": []
+}
+
+
+[Trace - 06:23:34 PM] Received notification '$/lean/fileProgress'.
+Params: {
+  "textDocument": {
+    "version": 0,
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "processing": []
+}
+
+
+[Trace - 06:23:34 PM] Received response 'nil - (2)' in 0ms.
+Result: {
+  "data": [
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    4,
+    3,
+    3,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    24,
+    2,
+    0,
+    0,
+    0,
+    3,
+    5,
+    0,
+    0,
+    0,
+    7,
+    3,
+    0,
+    0,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0
+  ]
+}
+
+
+[Trace - 06:23:34 PM] Received response 'nil - (3)' in 0ms.
+Result: {
+  "data": [
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    4,
+    3,
+    3,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    24,
+    2,
+    0,
+    0,
+    0,
+    3,
+    5,
+    0,
+    0,
+    0,
+    7,
+    3,
+    0,
+    0,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0
+  ]
+}
+
+
+[Trace - 06:23:34 PM] Received response 'textDocument/semanticTokens/range - (5)' in 124ms.
+Result: {
+  "data": [
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    4,
+    3,
+    3,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    24,
+    2,
+    0,
+    0,
+    0,
+    3,
+    5,
+    0,
+    0,
+    0,
+    7,
+    3,
+    0,
+    0,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0
+  ]
+}
+
+
+[Trace - 06:23:34 PM] Received response 'nil - (4)' in 0ms.
+Result: {
+  "data": [
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    4,
+    3,
+    3,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    24,
+    2,
+    0,
+    0,
+    0,
+    3,
+    5,
+    0,
+    0,
+    0,
+    7,
+    3,
+    0,
+    0,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0
+  ]
+}
+
+
+[Trace - 06:23:34 PM] Received response 'textDocument/documentSymbol - (6)' in 122ms.
+Result: [
+  {
+    "selectionRange": {
+      "start": {
+        "line": 0,
+        "character": 4
+      },
+      "end": {
+        "line": 0,
+        "character": 7
+      }
+    },
+    "range": {
+      "start": {
+        "line": 0,
+        "character": 0
+      },
+      "end": {
+        "line": 0,
+        "character": 59
+      }
+    },
+    "name": "foo",
+    "kind": 6
+  }
+]
+
+
+[Trace - 06:23:34 PM] Sending request 'textDocument/semanticTokens/full - (8)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  }
+}
+
+
+[Trace - 06:23:34 PM] Sending request 'textDocument/codeAction - (9)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 35
+    },
+    "end": {
+      "line": 0,
+      "character": 35
+    }
+  },
+  "context": {
+    "diagnostics": []
+  }
+}
+
+
+[Trace - 06:23:34 PM] Received response 'textDocument/codeAction - (9)' in 1ms.
+Result: []
+
+
+[Trace - 06:23:34 PM] Received response 'textDocument/semanticTokens/full - (8)' in 2ms.
+Result: {
+  "data": [
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    4,
+    3,
+    3,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    24,
+    2,
+    0,
+    0,
+    0,
+    3,
+    5,
+    0,
+    0,
+    0,
+    7,
+    3,
+    0,
+    0,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    5,
+    1,
+    1,
+    0
+  ]
+}
+
+
+[Trace - 06:23:36 PM] Sending request '$/lean/plainGoal - (10)'.
+Params: {
+  "textDocument": { 
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "position": {
+    "line": 0,
+    "character": 35
+  }
+}
+
+
+[Trace - 06:23:36 PM] Sending request '$/lean/plainTermGoal - (11)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "position": {
+    "line": 0,
+    "character": 35
+  }
+}
+
+
+[Trace - 06:23:36 PM] Received response '$/lean/plainTermGoal - (11)' in 1ms.
+Result: null
+
+
+[Trace - 06:23:36 PM] Received response '$/lean/plainGoal - (10)' in 22ms.
+Result: {
+  "rendered": "```lean\ny : Int\n⊢ Int → Int\n```",
+  "goals": [
+    "y : Int\n⊢ Int → Int"
+  ]
+}
+
+
+[Trace - 06:23:37 PM] Sending request 'textDocument/codeAction - (12)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 35
+    },
+    "end": {
+      "line": 0,
+      "character": 35
+    }
+  },
+  "context": {
+    "diagnostics": []
+  }
+}
+
+
+[Trace - 06:23:37 PM] Sending request '$/lean/plainGoal - (13)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "position": {
+    "line": 0,
+    "character": 35
+  }
+}
+
+
+[Trace - 06:23:37 PM] Sending request '$/lean/plainTermGoal - (14)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "position": {
+    "line": 0,
+    "character": 35
+  }
+}
+
+
+[Trace - 06:23:37 PM] Received response 'textDocument/codeAction - (12)' in 1ms.
+Result: []
+
+
+[Trace - 06:23:37 PM] Received response '$/lean/plainGoal - (13)' in 22ms.
+Result: {
+  "rendered": "```lean\ny : Int\n⊢ Int → Int\n```",
+  "goals": [
+    "y : Int\n⊢ Int → Int"
+  ]
+}
+
+
+[Trace - 06:23:37 PM] Received response '$/lean/plainTermGoal - (14)' in 22ms.
+Result: null
+
+
+[Trace - 06:23:38 PM] Sending request 'textDocument/codeAction - (15)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/test/test_file.lean"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 35
+    },
+    "end": {
+      "line": 0,
+      "character": 35
+    }
+  },
+  "context": {
+    "diagnostics": []
+  }
+}
+
+
+[Trace - 06:23:38 PM] Received response 'textDocument/codeAction - (15)' in 1ms.
+Result: []
+
+

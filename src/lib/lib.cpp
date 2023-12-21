@@ -21,6 +21,7 @@
 
 
 void disableRawMode();
+void enableRawMode();
 
 void write_to_child(const char *buf, int len);
 int read_stdout_from_child(const char *buf, int bufsize);
@@ -140,6 +141,23 @@ void LeanServerState::write_request_to_child_blocking(const char * method, json_
   json_object *o = json_object_new_object();
   json_object_object_add(o, "jsonrpc", json_object_new_string("2.0"));
   json_object_object_add(o, "id", json_object_new_int(id));
+  json_object_object_add(o, "method", json_object_new_string(method));
+  if (params) {
+    json_object_object_add(o, "params", params);
+  }
+
+  const char *obj_str = json_object_to_json_string(o);
+  const int obj_strlen = strlen(obj_str);
+
+
+  char *request_str = (char*)calloc(sizeof(char), obj_strlen + 128);
+  const int req_len = sprintf(request_str, "Content-Length: %d\r\n\r\n%s", obj_strlen, obj_str);
+  this->write_str_to_child(request_str, req_len);
+}
+
+void LeanServerState::write_notification_to_child_blocking(const char * method, json_object *params) {
+  json_object *o = json_object_new_object();
+  json_object_object_add(o, "jsonrpc", json_object_new_string("2.0"));
   json_object_object_add(o, "method", json_object_new_string(method));
   if (params) {
     json_object_object_add(o, "params", params);

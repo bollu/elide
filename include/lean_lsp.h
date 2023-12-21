@@ -49,6 +49,10 @@
 
 json_object *lspCreateClientCapabilities() {
   json_object *o = json_object_new_object();
+
+  json_object * text_document_capabilities = json_object_new_object();
+
+  json_object_object_add(o, "textDocument", text_document_capabilities);
   return o;  
 }
 
@@ -93,6 +97,8 @@ struct Uri {
 
   static Uri from_file_path(const char *file_path) {
     const char *file_segment_uri = "file://";
+
+
     const int file_uri_unencoded_len = strlen(file_segment_uri) + strlen(file_path) + 1;
     char *file_uri_unencoded = (char *)calloc(sizeof(char), file_uri_unencoded_len);
     sprintf(file_uri_unencoded, "%s%s", file_segment_uri, file_path);
@@ -155,7 +161,7 @@ json_object *json_object_new_text_document_item(TextDocumentItem item) {
 }
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didOpen
-json_object *lspCreateDidOpenTextDocumentRequest(TextDocumentItem item) {
+json_object *lspCreateDidOpenTextDocumentNotifiation(TextDocumentItem item) {
   json_object *o = json_object_new_object();
   json_object_object_add(o, "textDocument", json_object_new_text_document_item(item));
   return o;
@@ -180,6 +186,11 @@ json_object *lspCreateDidChangeTextDocumentRequest(TextDocumentItem item) {
   json_object_array_add(contentChanges, contentChangeEvent);
   json_object_object_add(o, "contentChanges", contentChanges);
   return o;
+}
+
+// TODO:
+json_object *lspCreateInitializedNotification() {
+  return json_object_new_object();
 }
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didChange
