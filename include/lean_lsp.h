@@ -80,7 +80,13 @@ json_object *lspCreateInitializeRequest();
 
 
 struct Uri {
-  char *uri; // owned by uri;
+  char *uri = nullptr; // owned by uri;
+
+  bool is_initialized() const {
+    return uri != nullptr;
+  }
+
+  Uri() = default;
 
   Uri(const Uri &uri) {
     this->uri = strdup(uri.uri);
@@ -89,9 +95,8 @@ struct Uri {
   Uri(char *uri) : uri(uri) {}
   ~Uri() { free(uri); }
 
-  static Uri from_file_path(const char *file_path) {
+  void init_from_file_path(const char *file_path) {
     const char *file_segment_uri = "file://";
-
 
     const int file_uri_unencoded_len = strlen(file_segment_uri) + strlen(file_path) + 1;
     char *file_uri_unencoded = (char *)calloc(sizeof(char), file_uri_unencoded_len);
@@ -101,7 +106,7 @@ struct Uri {
     char *out = (char *)calloc(sizeof(char), file_uri_encoded_len); // at most 8 -> 32 blowup.
     uri_encode(file_uri_unencoded, file_uri_unencoded_len, out);
     free(file_uri_unencoded); // song and dance...
-    return Uri(out);
+    this->uri = out;
   }
 
 
@@ -115,22 +120,25 @@ static json_object *json_object_new_uri(Uri uri) {
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
 struct TextDocumentItem {
   Uri uri;
-  const char *languageId; // kept pointer of the language.
-  int version; // version of the document. (it will increase after each change, including undo/redo).
-  char *text; // owned pointer of the text of the document
+  char *languageId = nullptr;; // owned pointer of the language.
+  int version = -1; // version of the document. (it will increase after each change, including undo/redo).
+  char *text = nullptr; // owned pointer of the text of the document
+  bool is_initialized = false;
 
-  TextDocumentItem(Uri uri, const char *languageId, int version, char *text) : 
-    uri(uri), languageId(languageId), version(version), text(text) {};
+  TextDocumentItem() = default;
+  TextDocumentItem(Uri uri, char *languageId, int version, char *text) : 
+    uri(uri), languageId(languageId), version(version), text(text), is_initialized(true) {};
 
   TextDocumentItem(const TextDocumentItem &other) : 
-  	uri(Uri(other.uri)), 
-	languageId(other.languageId),
+  	uri(other.uri), 
+	languageId(strdup(other.languageId)),
 	version(other.version),
-  	text(strdup(other.text)) {}
-  static TextDocumentItem create_from_file_path(const char *file_path);
+  	text(strdup(other.text)), is_initialized(true) {}
+  void init_from_file_path(const char *file_path);
 
   ~TextDocumentItem() {
     free(text);
+    free(languageId);
   }
 };
 

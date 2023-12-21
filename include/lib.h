@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <vector>
 #include <unordered_map>
+#include "lean_lsp.h"
 
 struct abuf {
   char *b = nullptr;
@@ -208,7 +209,8 @@ struct Cursor {
 
 
 struct FileConfig {
-  bool dirty = false;
+  bool is_dirty = false;
+  bool is_initialized = false;
   Cursor cursor;
 
   // cache of row[cursor.y].cxToRx(cursor.x)
@@ -227,7 +229,9 @@ struct FileConfig {
   // lean server for file.
   LeanServerState lean_server_state;
 
-  void launchLeanSever();
+  // TextDocument for LSP
+  TextDocumentItem text_document_item;
+
 };
 
 struct EditorConfig {
@@ -304,7 +308,7 @@ struct FileRow {
     }
     render[ix] = '\0';
     rsize = ix;
-    E.dirty = true;
+    E.is_dirty = true;
   }
 
   void insertChar(int at, int c, FileConfig &E) {
@@ -319,7 +323,7 @@ struct FileRow {
     size++;
     chars[at] = c;
     this->update(E);
-    E.dirty = true;
+    E.is_dirty = true;
   }
 
   void appendString(char *s, size_t len, FileConfig &E) {
@@ -329,7 +333,7 @@ struct FileRow {
     size += len;
     chars[size] = '\0';
     this->update(E);
-    E.dirty = true;
+    E.is_dirty = true;
   }
 };
 
@@ -371,4 +375,5 @@ void editorMoveCursor(int key);
 void editorProcessKeypress();
 char *editorPrompt(const char *prompt);
 void initEditor();
-void editorLaunchLeanServer();
+void fileConfigSyncLeanState(FileConfig *file_config);
+void fileConfigLaunchLeanServer(FileConfig *file_config);

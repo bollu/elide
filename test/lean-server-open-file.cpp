@@ -36,17 +36,18 @@ int main() {
 
   // textDocument/didOpen
   const char *file_path = "/home/bollu/software/edtr/test/test_file.lean";
-  req = lspCreateDidOpenTextDocumentNotifiation(TextDocumentItem::create_from_file_path(file_path));
+  TextDocumentItem item; item.init_from_file_path(file_path);
+  req = lspCreateDidOpenTextDocumentNotifiation(item);
   fprintf(stderr, "### notification [textDocument/didOpen]\n");
   fprintf(stderr, " '%s'\n", json_object_to_json_string_ext(req, JSON_C_TO_STRING_NOSLASHESCAPE));
   state.write_notification_to_child_blocking("textDocument/didOpen", req);
 
   // $/lean/plainGoal
-  req = lspCreateLeanPlainGoalRequest(Uri::from_file_path(file_path), Position(0, 35));
+  Uri uri(strdup(file_path));
+  req = lspCreateLeanPlainGoalRequest(uri, Position(0, 35));
   fprintf(stderr, "### writing $/lean/plainGoal\n");
   fprintf(stderr, " '%s'\n", json_object_to_json_string(req));
   request_id = state.write_request_to_child_blocking("$/lean/plainGoal", req);
-
 
   response = state.read_json_response_from_child_blocking(request_id);
   fprintf(stderr, "### [response] $/lean/plainGoal\n");

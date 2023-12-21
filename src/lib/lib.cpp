@@ -502,7 +502,7 @@ void editorInsertRow(int at, const char *s, size_t len) {
   g_editor.curFile.row[at].update(g_editor.curFile);
 
   g_editor.curFile.numrows++;
-  g_editor.curFile.dirty = true;
+  g_editor.curFile.is_dirty = true;
 }
 
 // functionality superceded by |editorInsertRow|
@@ -519,7 +519,7 @@ void editorInsertRow(int at, const char *s, size_t len) {
 //   g_editor.curFile.row[at].render = NULL;
 //   g_editor.curFile.row[at].update();
 //   g_editor.curFile.numrows++;
-//   g_editor.curFile.dirty = true;
+//   g_editor.curFile.is_dirty = true;
 // }
 
 void editorFreeRow(FileRow *row) {
@@ -528,7 +528,7 @@ void editorFreeRow(FileRow *row) {
 }
 
 void editorDelRow(int at) {
-  g_editor.curFile.dirty = true;
+  g_editor.curFile.is_dirty = true;
   if (at < 0 || at >= g_editor.curFile.numrows)
     return;
   editorFreeRow(&g_editor.curFile.row[at]);
@@ -537,7 +537,7 @@ void editorDelRow(int at) {
 }
 
 void editorRowDelChar(FileRow *row, int at) {
-  g_editor.curFile.dirty = true;
+  g_editor.curFile.is_dirty = true;
   assert(at >= 0);
   assert(at < row->size);
   if (at < 0 || at >= row->size) {
@@ -555,7 +555,7 @@ bool is_space_or_tab(char c) {
 
 /*** editor operations ***/
 void editorInsertNewline() {
-  g_editor.curFile.dirty = true;
+  g_editor.curFile.is_dirty = true;
   if (g_editor.curFile.cursor.x == 0) {
     // at first column, insert new row.
     editorInsertRow(g_editor.curFile.cursor.y, "", 0);
@@ -597,7 +597,7 @@ void editorInsertNewline() {
 }
 
 void editorInsertChar(int c) {
-  g_editor.curFile.dirty = true;
+  g_editor.curFile.is_dirty = true;
   if (g_editor.curFile.cursor.y == g_editor.curFile.numrows) {
     // editorAppendRow("", 0);
     editorInsertRow(g_editor.curFile.numrows, "", 0);
@@ -607,7 +607,7 @@ void editorInsertChar(int c) {
 }
 
 void editorDelChar() {
-  g_editor.curFile.dirty = true;
+  g_editor.curFile.is_dirty = true;
   if (g_editor.curFile.cursor.y == g_editor.curFile.numrows) {
     return;
   }
@@ -631,19 +631,40 @@ void editorDelChar() {
 }
 
 
-void editorLaunchLeanServer() {
-  assert(g_editor.curFile.lean_server_state.initialized == false);
-  g_editor.curFile.lean_server_state = LeanServerState::init(LST_LEAN_SERVER); // start lean --server.  
+void fileConfigLaunchLeanServer(FileConfig *file_config) {
+  assert(file_config->lean_server_state.initialized == false);
+  file_config->lean_server_state = LeanServerState::init(LST_LEAN_SERVER); // start lean --server.  
 
   json_object *req = lspCreateInitializeRequest();
-  LspRequestId request_id = g_editor.curFile.lean_server_state.write_request_to_child_blocking("initialize", req);
+  LspRequestId request_id = file_config->lean_server_state.write_request_to_child_blocking("initialize", req);
 
-  json_object *response = g_editor.curFile.lean_server_state.read_json_response_from_child_blocking(request_id);
+  json_object *response = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // initialize: send initialized
   req = lspCreateInitializedNotification();
-  g_editor.curFile.lean_server_state.write_notification_to_child_blocking("initialized", req);
+  file_config->lean_server_state.write_notification_to_child_blocking("initialized", req);
 
+}
+
+void fileConfigSyncLeanState(FileConfig *file_config) {
+  assert(file_config->is_initialized);
+  if (file_config->text_document_item.is_initialized && !file_config->is_dirty) {
+    return; // no point syncing state if it isn't dirty, and the state has been initalized before.
+  }
+
+  assert(file_config->lean_server_state.initialized == true);
+  if (!file_config->text_document_item.is_initialized) {
+    file_config->text_document_item.init_from_file_path(file_config->filepath);
+  } else {
+    file_config->text_document_item.version += 1;
+    free(file_config->text_document_item.text);
+    int len;
+    file_config->text_document_item.text = editorRowsToString(&len);
+  }
+  assert(file_config->text_document_item.is_initialized);
+  // textDocument/didOpen
+  json_object *req = lspCreateDidOpenTextDocumentNotifiation(file_config->text_document_item);
+  file_config->lean_server_state.write_notification_to_child_blocking("textDocument/didOpen", req);
 }
 
 /*** file i/o ***/
@@ -670,6 +691,7 @@ void editorOpen(const char *filename) {
   }
   free(line);
   fclose(fp);
+  g_editor.curFile.is_initialized = true;
 }
 
 
@@ -692,7 +714,7 @@ char *editorRowsToString(int *buflen) {
 
 
 void editorSave() {
-  if (g_editor.curFile.filepath == NULL || !g_editor.curFile.dirty) {
+  if (g_editor.curFile.filepath == NULL || !g_editor.curFile.is_dirty) {
     return;
   }
   int len;
@@ -711,7 +733,7 @@ void editorSave() {
   int nwritten = write(fd, buf, len);
   assert(nwritten == len && "wasn't able to write enough bytes");
   editorSetStatusMessage("Saved file");
-  g_editor.curFile.dirty = false;
+  g_editor.curFile.is_dirty = false;
   close(fd);
   free(buf);
 }
@@ -1037,16 +1059,16 @@ void editorProcessKeypress() {
     case '\r':
       editorInsertNewline();
       return;
-    case CTRL_KEY('c'): {
-      g_editor.vim_mode = VM_VIEW;
-      return;
-    }
     case DEL_CHAR: {
       editorDelChar();
       return;
     }
-    case '\x1b': {// escape key
+    // when switching to normal mode, sync the lean state. 
+    case CTRL_KEY('c'):
+    case '\x1b':  { // escape key
       g_editor.vim_mode = VM_VIEW;
+      editorSave();
+      fileConfigSyncLeanState(&g_editor.curFile);
       return;
    }
     default:

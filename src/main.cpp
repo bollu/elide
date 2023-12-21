@@ -30,11 +30,12 @@ int main(int argc, char **argv){
   } else {
     filepath = strdup("/tmp/edtr-scratch");
   }
-  editorOpen(filepath);
-  editorLaunchLeanServer();
-  
+  editorOpen(filepath); // TODO: refactor to use curFile.
+  fileConfigLaunchLeanServer(&g_editor.curFile);
+  // first sync.
+  fileConfigSyncLeanState(&g_editor.curFile);
+
   while (1) {
-    editorSave();
     editorRefreshScreen();
     editorProcessKeypress();
   };

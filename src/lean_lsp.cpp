@@ -32,7 +32,7 @@ json_object *lspCreateInitializeRequest() {
 
 
 
-TextDocumentItem TextDocumentItem::create_from_file_path(const char *file_path) {
+void TextDocumentItem::init_from_file_path(const char *file_path) {
 
   FILE *fp = NULL;
   if ((fp = fopen(file_path, "r")) == NULL) {
@@ -48,5 +48,9 @@ TextDocumentItem TextDocumentItem::create_from_file_path(const char *file_path) 
   assert(nread == file_len && "unable to read file");
   fclose(fp);
 
-  return TextDocumentItem(Uri::from_file_path(file_path), "lean", 0, text);
+  this->uri.init_from_file_path(file_path);
+  this->languageId = strdup("lean");
+  this->version = 0;
+  this->text = text;
+  this->is_initialized = true;
 }
