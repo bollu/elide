@@ -230,7 +230,7 @@ void LeanServerState::read_empty_response_from_child_blocking() {
   int nread = read_stdout_str_from_child(buf, BUFSIZE);
   assert(nread < BUFSIZE);
   buf[nread] = 0;
-  fprintf(stderr, "> read response: '%s'\n", buf);
+  // fprintf(stderr, "> read response: '%s'\n", buf);
 
   assert (nread == 0);
 }
@@ -431,7 +431,7 @@ int getWindowSize(int *rows, int *cols) {
   } else {
     *cols = ws.ws_col;
     *rows = ws.ws_row;
-    fprintf(stderr, "cols: %d | rows: %d\n", *cols, *rows);
+    // fprintf(stderr, "cols: %d | rows: %d\n", *cols, *rows);
     // die("foo");
   }
   return 0;
@@ -741,22 +741,27 @@ void editorDrawRows(abuf &ab) {
     int filerow = y + E.rowoff;
 
     // convert the line number into a string, and write it.
-    // {
-    //   char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
-    //   int ix = write_int_to_str(line_number_str, filerow + 1);
-    //   while(ix < LINE_NUMBER_NUM_CHARS - 1) {
-    //     line_number_str[ix] = ' ';
-    //     ix++;
-    //   }
-    //   line_number_str[ix] = '|';
-    //   ab.appendstr(line_number_str);
-    //   free(line_number_str);
-    // }
+    {
+      // code in view mode is renderered gray
+      if (E.file_mode == FM_VIEW) { ab.appendstr("\x1b[90;40m"); }
+
+      char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
+      int ix = write_int_to_str(line_number_str, filerow + 1);
+      while(ix < LINE_NUMBER_NUM_CHARS - 1) {
+        line_number_str[ix] = ' ';
+        ix++;
+      }
+      line_number_str[ix] = '|';
+      ab.appendstr(line_number_str);
+      free(line_number_str);
+
+      // code in view mode is renderered gray, so reset.
+      if (E.file_mode == FM_VIEW) { ab.appendstr("\x1b[0m"); }
+
+    }
 
     // code in view mode is renderered gray
-    if (E.file_mode == FM_VIEW) {
-      ab.appendstr("\x1b[90;40m"); // gray on black
-    }
+    if (E.file_mode == FM_VIEW) { ab.appendstr("\x1b[37;40m"); }
 
     if (filerow < E.numrows) {
       int len = clamp(0, E.row[filerow].rsize - E.coloff, E.screencols - LINE_NUMBER_NUM_CHARS);
@@ -769,15 +774,12 @@ void editorDrawRows(abuf &ab) {
         ab.appendstr("~");
     }
 
+     if (E.file_mode == FM_VIEW) { ab.appendstr("\x1b[0m"); }
+
     // The K command (Erase In Line) erases part of the current line.
     // by default, arg is 0, which erases everything to the right of the
     // cursor.
     ab.appendstr("\x1b[K");
-
-    // code in view mode is renderered gray
-    if (E.file_mode == FM_VIEW) {
-      ab.appendstr("\x1b[0m"); // reset.
-    }
 
     // always append a space, since we decrement a row from screen rows
     // to make space for status bar.

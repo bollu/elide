@@ -134,7 +134,7 @@ struct erow {
 
   int cxToRx(int cx) const {
     int rx = 0;
-    for (int j = 0; j < cx; ++j) {
+    for (int j = 0; j < cx && j < this->size; ++j) {
       if (chars[j] == '\t') {
         rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
       } else {
