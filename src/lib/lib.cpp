@@ -293,7 +293,7 @@ int clamp(int lo, int val, int hi) {
 }
 
 /*** data ***/
-editorConfig E;
+FileConfig E;
 
 /*** terminal ***/
 

@@ -205,7 +205,7 @@ struct Cursor {
   int y = 0;
 };
 
-struct editorConfig {
+struct FileConfig {
   LeanServerState lean_sever_state;
   FileMode file_mode = FM_VIEW;
   bool dirty = false;
@@ -222,7 +222,7 @@ struct editorConfig {
   char statusmsg[80];
   time_t statusmsg_time = 0;
 
-  editorConfig() { statusmsg[0] = '\0'; }
+  FileConfig() { statusmsg[0] = '\0'; }
 };
 
 struct erow {
@@ -258,7 +258,7 @@ struct erow {
     return rx;
   }
   // should be private? since it updates info cache.
-  void update(editorConfig &E) {
+  void update(FileConfig &E) {
 
     int ntabs = 0;
     for (int j = 0; j < size; ++j) {
@@ -283,7 +283,7 @@ struct erow {
     E.dirty = true;
   }
 
-  void insertChar(int at, int c, editorConfig &E) {
+  void insertChar(int at, int c, FileConfig &E) {
     assert(at >= 0);
     assert(at <= size);
     // +2, one for new char, one for null.
@@ -298,7 +298,7 @@ struct erow {
     E.dirty = true;
   }
 
-  void appendString(char *s, size_t len, editorConfig &E) {
+  void appendString(char *s, size_t len, FileConfig &E) {
     chars = (char *)realloc(chars, size + len + 1);
     // copy string s into chars.
     memcpy(&chars[size], s, len);
@@ -320,7 +320,7 @@ char *editorPrompt(const char *prompt);
 int clamp(int lo, int val, int hi);
 
 /*** data ***/
-extern editorConfig E; // from lib.
+extern FileConfig E; // from lib.
 
 /*** terminal ***/
 void die(const char *s);
