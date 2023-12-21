@@ -552,77 +552,77 @@ bool is_space_or_tab(char c) {
 /*** editor operations ***/
 void editorInsertNewline() {
   E.dirty = true;
-  if (E.cx == 0) {
+  if (E.cursor.x == 0) {
     // at first column, insert new row.
-    editorInsertRow(E.cy, "", 0);
-    // place cursor at next row (E.cy + 1), first column (cx=0)
-    E.cy++;
-    E.cx = 0;
+    editorInsertRow(E.cursor.y, "", 0);
+    // place cursor at next row (E.cursor.y + 1), first column (cx=0)
+    E.cursor.y++;
+    E.cursor.x = 0;
   } else {
     // at column other than first, so chop row and insert new row.
-    erow *row = &E.row[E.cy];
+    erow *row = &E.row[E.cursor.y];
     // legal previous row, copy the indentation.
-    // note that the checks 'num_indent < row.size' and 'num_indent < E.cx' are *not* redundant.
+    // note that the checks 'num_indent < row.size' and 'num_indent < E.cursor.x' are *not* redundant.
     // We only want to copy as much indent exists upto the cursor.
     int num_indent = 0;
     for (num_indent = 0;
    num_indent < row->size &&
-   num_indent < E.cx && is_space_or_tab(row->chars[num_indent]);
+   num_indent < E.cursor.x && is_space_or_tab(row->chars[num_indent]);
    num_indent++) {};
-    char *new_row_contents = (char *)malloc(sizeof(char)*(row->size - E.cx + num_indent));
+    char *new_row_contents = (char *)malloc(sizeof(char)*(row->size - E.cursor.x + num_indent));
     for(int i = 0; i < num_indent; ++i) {
       new_row_contents[i] = row->chars[i]; // copy the spaces over.
     }
-    for(int i = E.cx; i < row->size; ++i) {
-      new_row_contents[num_indent + (i - E.cx)] = row->chars[i];
+    for(int i = E.cursor.x; i < row->size; ++i) {
+      new_row_contents[num_indent + (i - E.cursor.x)] = row->chars[i];
     }
-    // create a row at E.cy + 1 containing data row[E.cx:...]
-    editorInsertRow(E.cy + 1, new_row_contents, row->size - E.cx + num_indent);
+    // create a row at E.cursor.y + 1 containing data row[E.cursor.x:...]
+    editorInsertRow(E.cursor.y + 1, new_row_contents, row->size - E.cursor.x + num_indent);
 
     // pointer invalidated, get pointer to current row again,
-    row = &E.row[E.cy];
-    // chop off at row[...:E.cx]
-    row->size = E.cx;
+    row = &E.row[E.cursor.y];
+    // chop off at row[...:E.cursor.x]
+    row->size = E.cursor.x;
     row->chars[row->size] = '\0';
     row->update(E);
 
-    // place cursor at next row (E.cy + 1), column of the indent.
-    E.cy++;
-    E.cx = num_indent;
+    // place cursor at next row (E.cursor.y + 1), column of the indent.
+    E.cursor.y++;
+    E.cursor.x = num_indent;
   }
 }
 
 void editorInsertChar(int c) {
   E.dirty = true;
-  if (E.cy == E.numrows) {
+  if (E.cursor.y == E.numrows) {
     // editorAppendRow("", 0);
     editorInsertRow(E.numrows, "", 0);
   }
-  E.row[E.cy].insertChar(E.cx, c, E);
-  E.cx++;
+  E.row[E.cursor.y].insertChar(E.cursor.x, c, E);
+  E.cursor.x++;
 }
 
 void editorDelChar() {
   E.dirty = true;
-  if (E.cy == E.numrows) {
+  if (E.cursor.y == E.numrows) {
     return;
   }
-  if (E.cx == 0 && E.cy == 0)
+  if (E.cursor.x == 0 && E.cursor.y == 0)
     return;
 
-  erow *row = &E.row[E.cy];
-  if (E.cx > 0) {
-    editorRowDelChar(row, E.cx - 1);
-    E.cx--;
+  erow *row = &E.row[E.cursor.y];
+  if (E.cursor.x > 0) {
+    editorRowDelChar(row, E.cursor.x - 1);
+    E.cursor.x--;
   } else {
     // place cursor at last column of prev row.
-    E.cx = E.row[E.cy - 1].size;
+    E.cursor.x = E.row[E.cursor.y - 1].size;
     // append string.
-    E.row[E.cy - 1].appendString(row->chars, row->size, E);
+    E.row[E.cursor.y - 1].appendString(row->chars, row->size, E);
     // delete current row
-    editorDelRow(E.cy);
+    editorDelRow(E.cursor.y);
     // go to previous row.
-    E.cy--;
+    E.cursor.y--;
   }
 }
 
@@ -705,8 +705,8 @@ void editorFind() {
     erow *row = &E.row[i];
     char *match = strstr(row->render, query);
     if (match) {
-      E.cy = i;
-      E.cx = match - row->render;
+      E.cursor.y = i;
+      E.cursor.x = match - row->render;
       E.rowoff = E.numrows;
       break;
     }
@@ -721,15 +721,15 @@ void editorFind() {
 
 void editorScroll() {
   E.rx = 0;
-  assert (E.cy >= 0 && E.cy <= E.numrows);
-  if (E.cy < E.numrows) {
-    E.rx = E.row[E.cy].cxToRx(E.cx);
+  assert (E.cursor.y >= 0 && E.cursor.y <= E.numrows);
+  if (E.cursor.y < E.numrows) {
+    E.rx = E.row[E.cursor.y].cxToRx(E.cursor.x);
   }
-  if (E.cy < E.rowoff) {
-    E.rowoff = E.cy;
+  if (E.cursor.y < E.rowoff) {
+    E.rowoff = E.cursor.y;
   }
-  if (E.cy >= E.rowoff + E.screenrows) {
-    E.rowoff = E.cy - E.screenrows + 1;
+  if (E.cursor.y >= E.rowoff + E.screenrows) {
+    E.rowoff = E.cursor.y - E.screenrows + 1;
   }
   if (E.rx < E.coloff) {
     E.coloff = E.rx;
@@ -842,7 +842,7 @@ void editorDrawStatusBar(abuf &ab) {
   len = std::min<int>(len, E.screencols);
   ab.appendstr(status);
 
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cursor.y + 1, E.numrows);
 
   while (len < E.screencols) {
     if (E.screencols - len == rlen) {
@@ -911,7 +911,7 @@ void editorRefreshScreen() {
   // move cursor to correct row;col.
   char buf[32];
   const int LINE_NUMBER_NUM_CHARS = num_digits(E.screenrows + E.rowoff + 1) + 1;
-  sprintf(buf, "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.rx - E.coloff + 1 + LINE_NUMBER_NUM_CHARS);
+  sprintf(buf, "\x1b[%d;%dH", E.cursor.y - E.rowoff + 1, E.rx - E.coloff + 1 + LINE_NUMBER_NUM_CHARS);
   ab.appendstr(buf);
 
   // show hidden cursor
@@ -931,53 +931,53 @@ void editorSetStatusMessage(const char *fmt, ...) {
 /*** input ***/
 
 void editorMoveCursor(int key) {
-  erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  erow *row = (E.cursor.y >= E.numrows) ? NULL : &E.row[E.cursor.y];
 
   switch (key) {
   case ARROW_LEFT:
-    if (E.cx != 0) {
-      E.cx--;
-    } else if (E.cy > 0) {
+    if (E.cursor.x != 0) {
+      E.cursor.x--;
+    } else if (E.cursor.y > 0) {
       // move back line.
-      assert(E.cx == 0);
-      E.cy--;
-      E.cx = E.row[E.cy].size;
+      assert(E.cursor.x == 0);
+      E.cursor.y--;
+      E.cursor.x = E.row[E.cursor.y].size;
     }
 
     break;
   case ARROW_RIGHT:
-    if (row && E.cx < row->size) {
-      E.cx++;
-    } else if (row && E.cx == row->size) {
-      assert(E.cx == row->size);
-      E.cy++;
-      E.cx = 0;
+    if (row && E.cursor.x < row->size) {
+      E.cursor.x++;
+    } else if (row && E.cursor.x == row->size) {
+      assert(E.cursor.x == row->size);
+      E.cursor.y++;
+      E.cursor.x = 0;
     }
 
     break;
   case ARROW_UP:
-    if (E.cy > 0) {
-      E.cy--;
+    if (E.cursor.y > 0) {
+      E.cursor.y--;
     }
     break;
   case ARROW_DOWN:
-    if (E.cy < E.numrows) {
-      E.cy++;
+    if (E.cursor.y < E.numrows) {
+      E.cursor.y++;
     }
     break;
   case PAGE_DOWN:
-    E.cy = std::min<int>(E.cy + E.screenrows / 4, E.numrows);
+    E.cursor.y = std::min<int>(E.cursor.y + E.screenrows / 4, E.numrows);
     break;
   case PAGE_UP:
-    E.cy = std::max<int>(E.cy - E.screenrows / 4, 0);
+    E.cursor.y = std::max<int>(E.cursor.y - E.screenrows / 4, 0);
     break;
   }
 
   // snap to next line.
-  // row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  // row = (E.cursor.y >= E.numrows) ? NULL : &E.row[E.cursor.y];
   // int rowlen = row ? row->size : 0;
-  // if (E.cx > rowlen) {
-  //   E.cx = rowlen;
+  // if (E.cursor.x > rowlen) {
+  //   E.cursor.x = rowlen;
   // }
 }
 

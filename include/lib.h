@@ -199,11 +199,17 @@ enum editorKey {
 
 struct erow;
 
+
+struct Cursor {
+  int x = 0;
+  int y = 0;
+};
+
 struct editorConfig {
   LeanServerState lean_sever_state;
   FileMode file_mode = FM_VIEW;
   bool dirty = false;
-  int cx = 0, cy = 0; // cursor location
+  Cursor cursor;
   struct termios orig_termios;
   int screenrows = 0;
   int screencols = 0;
