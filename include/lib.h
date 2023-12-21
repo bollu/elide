@@ -182,9 +182,9 @@ private:
 static const int NSPACES_PER_TAB = 2;
 static const char *VERSION = "0.0.1";
 
-enum FileMode {
-  FM_VIEW, // mode where code is only viewed and locked for editing.
-  FM_EDIT, // mode where code is edited.
+enum VimMode {
+  VM_VIEW, // mode where code is only viewed and locked for editing.
+  VM_EDIT, // mode where code is edited.
 };
 
 enum editorKey {
@@ -205,27 +205,46 @@ struct Cursor {
   int y = 0;
 };
 
+
 struct FileConfig {
-  LeanServerState lean_sever_state;
-  FileMode file_mode = FM_VIEW;
   bool dirty = false;
   Cursor cursor;
+  int rx = 0;
+  
+  FileRow *row;
+  
+  int rowoff = 0;
+  int coloff = 0;
+  
+  int numrows = 0;
+  char *filepath = nullptr;
+
+  // lean server for file.
+  // LeanServerState lean_sever_state;
+
+  // info view information.
+  // json_object *infoViewGoal = nullptr;
+
+};
+
+struct EditorConfig {
+  VimMode vim_mode = VM_VIEW;
   struct termios orig_termios;
   int screenrows = 0;
   int screencols = 0;
-  int rx = 0;
-  FileRow *row;
-  int rowoff = 0;
-  int coloff = 0;
-  int numrows = 0;
-  char *filepath = nullptr;
+
   char statusmsg[80];
   time_t statusmsg_time = 0;
 
-  FileConfig() { statusmsg[0] = '\0'; }
+  FileConfig curFile;
+
+  EditorConfig() { statusmsg[0] = '\0'; }
+
 };
 
-extern FileConfig g_curFile; // from lib.
+extern EditorConfig g_editor; // global editor handle.
+
+
 
 struct FileRow {
   int size = 0;

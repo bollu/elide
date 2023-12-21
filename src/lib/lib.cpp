@@ -293,7 +293,7 @@ int clamp(int lo, int val, int hi) {
 }
 
 /*** data ***/
-FileConfig g_curFile;
+EditorConfig g_editor;
 
 /*** terminal ***/
 
@@ -308,18 +308,18 @@ void die(const char *s) {
 
 void disableRawMode() {
 
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_curFile.orig_termios) == -1) {
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_editor.orig_termios) == -1) {
     die("tcsetattr");
   }
 }
 
 void enableRawMode() {
-  if (tcgetattr(STDIN_FILENO, &g_curFile.orig_termios) == -1) {
+  if (tcgetattr(STDIN_FILENO, &g_editor.orig_termios) == -1) {
     die("tcgetattr");
   };
   atexit(disableRawMode);
 
-  struct termios raw = g_curFile.orig_termios;
+  struct termios raw = g_editor.orig_termios;
   int lflags = 0;
   lflags |= ECHO;   // don't echo back.
   lflags |= ICANON; // read byte at a time.
@@ -412,13 +412,13 @@ int editorReadKey() {
     return PAGE_DOWN;
   } else if (c == CTRL('u')) {
     return PAGE_UP;
-  } else if (c == 'h' && g_curFile.file_mode == FM_VIEW) {
+  } else if (c == 'h' && g_editor.vim_mode == VM_VIEW) {
     return ARROW_LEFT;
-  } else if (c == 'j' && g_curFile.file_mode == FM_VIEW) {
+  } else if (c == 'j' && g_editor.vim_mode == VM_VIEW) {
     return ARROW_DOWN;
-  } else if (c == 'k' && g_curFile.file_mode == FM_VIEW) {
+  } else if (c == 'k' && g_editor.vim_mode == VM_VIEW) {
     return ARROW_UP;
-  } else if (c == 'l' && g_curFile.file_mode == FM_VIEW) {
+  } else if (c == 'l' && g_editor.vim_mode == VM_VIEW) {
     return ARROW_RIGHT;
   } else if (c == 127) {
     return DEL_CHAR;
@@ -482,39 +482,39 @@ int getWindowSize(int *rows, int *cols) {
 // so rows'[at] = <new str>, rows'[at+k] = rows[at + k - 1];
 // This also copies the indentation from the previous line into the new line.
 void editorInsertRow(int at, const char *s, size_t len) {
-  if (at < 0 || at > g_curFile.numrows) {
+  if (at < 0 || at > g_editor.curFile.numrows) {
     return;
   }
 
-  g_curFile.row = (FileRow *)realloc(g_curFile.row, sizeof(FileRow) * (g_curFile.numrows + 1));
-  memmove(&g_curFile.row[at + 1], &g_curFile.row[at], sizeof(FileRow) * (g_curFile.numrows - at));
-  g_curFile.row[at].size = len;
-  g_curFile.row[at].chars = (char *)malloc(len + 1);
-  memcpy(g_curFile.row[at].chars, s, len);
-  g_curFile.row[at].chars[len] = '\0';
-  g_curFile.row[at].rsize = 0;
-  g_curFile.row[at].render = NULL;
-  g_curFile.row[at].update(g_curFile);
+  g_editor.curFile.row = (FileRow *)realloc(g_editor.curFile.row, sizeof(FileRow) * (g_editor.curFile.numrows + 1));
+  memmove(&g_editor.curFile.row[at + 1], &g_editor.curFile.row[at], sizeof(FileRow) * (g_editor.curFile.numrows - at));
+  g_editor.curFile.row[at].size = len;
+  g_editor.curFile.row[at].chars = (char *)malloc(len + 1);
+  memcpy(g_editor.curFile.row[at].chars, s, len);
+  g_editor.curFile.row[at].chars[len] = '\0';
+  g_editor.curFile.row[at].rsize = 0;
+  g_editor.curFile.row[at].render = NULL;
+  g_editor.curFile.row[at].update(g_editor.curFile);
 
-  g_curFile.numrows++;
-  g_curFile.dirty = true;
+  g_editor.curFile.numrows++;
+  g_editor.curFile.dirty = true;
 }
 
 // functionality superceded by |editorInsertRow|
 // void editorAppendRow(const char *s, size_t len) {
-//   g_curFile.row = (FileRow *)realloc(g_curFile.row, sizeof(FileRow) * (g_curFile.numrows + 1));
-//   const int at = g_curFile.numrows;
+//   g_editor.curFile.row = (FileRow *)realloc(g_editor.curFile.row, sizeof(FileRow) * (g_editor.curFile.numrows + 1));
+//   const int at = g_editor.curFile.numrows;
 //   // TODO: placement-new.
-//   g_curFile.row[at].size = len;
-//   g_curFile.row[at].chars = (char *)malloc(len + 1);
-//   memcpy(g_curFile.row[at].chars, s, len);
-//   g_curFile.row[at].chars[len] = '\0';
+//   g_editor.curFile.row[at].size = len;
+//   g_editor.curFile.row[at].chars = (char *)malloc(len + 1);
+//   memcpy(g_editor.curFile.row[at].chars, s, len);
+//   g_editor.curFile.row[at].chars[len] = '\0';
 
-//   g_curFile.row[at].rsize = 0;
-//   g_curFile.row[at].render = NULL;
-//   g_curFile.row[at].update();
-//   g_curFile.numrows++;
-//   g_curFile.dirty = true;
+//   g_editor.curFile.row[at].rsize = 0;
+//   g_editor.curFile.row[at].render = NULL;
+//   g_editor.curFile.row[at].update();
+//   g_editor.curFile.numrows++;
+//   g_editor.curFile.dirty = true;
 // }
 
 void editorFreeRow(FileRow *row) {
@@ -523,16 +523,16 @@ void editorFreeRow(FileRow *row) {
 }
 
 void editorDelRow(int at) {
-  g_curFile.dirty = true;
-  if (at < 0 || at >= g_curFile.numrows)
+  g_editor.curFile.dirty = true;
+  if (at < 0 || at >= g_editor.curFile.numrows)
     return;
-  editorFreeRow(&g_curFile.row[at]);
-  memmove(&g_curFile.row[at], &g_curFile.row[at + 1], sizeof(FileRow) * (g_curFile.numrows - at - 1));
-  g_curFile.numrows--;
+  editorFreeRow(&g_editor.curFile.row[at]);
+  memmove(&g_editor.curFile.row[at], &g_editor.curFile.row[at + 1], sizeof(FileRow) * (g_editor.curFile.numrows - at - 1));
+  g_editor.curFile.numrows--;
 }
 
 void editorRowDelChar(FileRow *row, int at) {
-  g_curFile.dirty = true;
+  g_editor.curFile.dirty = true;
   assert(at >= 0);
   assert(at < row->size);
   if (at < 0 || at >= row->size) {
@@ -540,7 +540,7 @@ void editorRowDelChar(FileRow *row, int at) {
   }
   memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
   row->size--;
-  row->update(g_curFile);
+  row->update(g_editor.curFile);
 }
 
 
@@ -550,85 +550,85 @@ bool is_space_or_tab(char c) {
 
 /*** editor operations ***/
 void editorInsertNewline() {
-  g_curFile.dirty = true;
-  if (g_curFile.cursor.x == 0) {
+  g_editor.curFile.dirty = true;
+  if (g_editor.curFile.cursor.x == 0) {
     // at first column, insert new row.
-    editorInsertRow(g_curFile.cursor.y, "", 0);
-    // place cursor at next row (g_curFile.cursor.y + 1), first column (cx=0)
-    g_curFile.cursor.y++;
-    g_curFile.cursor.x = 0;
+    editorInsertRow(g_editor.curFile.cursor.y, "", 0);
+    // place cursor at next row (g_editor.curFile.cursor.y + 1), first column (cx=0)
+    g_editor.curFile.cursor.y++;
+    g_editor.curFile.cursor.x = 0;
   } else {
     // at column other than first, so chop row and insert new row.
-    FileRow *row = &g_curFile.row[g_curFile.cursor.y];
+    FileRow *row = &g_editor.curFile.row[g_editor.curFile.cursor.y];
     // legal previous row, copy the indentation.
-    // note that the checks 'num_indent < row.size' and 'num_indent < g_curFile.cursor.x' are *not* redundant.
+    // note that the checks 'num_indent < row.size' and 'num_indent < g_editor.curFile.cursor.x' are *not* redundant.
     // We only want to copy as much indent exists upto the cursor.
     int num_indent = 0;
     for (num_indent = 0;
    num_indent < row->size &&
-   num_indent < g_curFile.cursor.x && is_space_or_tab(row->chars[num_indent]);
+   num_indent < g_editor.curFile.cursor.x && is_space_or_tab(row->chars[num_indent]);
    num_indent++) {};
-    char *new_row_contents = (char *)malloc(sizeof(char)*(row->size - g_curFile.cursor.x + num_indent));
+    char *new_row_contents = (char *)malloc(sizeof(char)*(row->size - g_editor.curFile.cursor.x + num_indent));
     for(int i = 0; i < num_indent; ++i) {
       new_row_contents[i] = row->chars[i]; // copy the spaces over.
     }
-    for(int i = g_curFile.cursor.x; i < row->size; ++i) {
-      new_row_contents[num_indent + (i - g_curFile.cursor.x)] = row->chars[i];
+    for(int i = g_editor.curFile.cursor.x; i < row->size; ++i) {
+      new_row_contents[num_indent + (i - g_editor.curFile.cursor.x)] = row->chars[i];
     }
-    // create a row at g_curFile.cursor.y + 1 containing data row[g_curFile.cursor.x:...]
-    editorInsertRow(g_curFile.cursor.y + 1, new_row_contents, row->size - g_curFile.cursor.x + num_indent);
+    // create a row at g_editor.curFile.cursor.y + 1 containing data row[g_editor.curFile.cursor.x:...]
+    editorInsertRow(g_editor.curFile.cursor.y + 1, new_row_contents, row->size - g_editor.curFile.cursor.x + num_indent);
 
     // pointer invalidated, get pointer to current row again,
-    row = &g_curFile.row[g_curFile.cursor.y];
-    // chop off at row[...:g_curFile.cursor.x]
-    row->size = g_curFile.cursor.x;
+    row = &g_editor.curFile.row[g_editor.curFile.cursor.y];
+    // chop off at row[...:g_editor.curFile.cursor.x]
+    row->size = g_editor.curFile.cursor.x;
     row->chars[row->size] = '\0';
-    row->update(g_curFile);
+    row->update(g_editor.curFile);
 
-    // place cursor at next row (g_curFile.cursor.y + 1), column of the indent.
-    g_curFile.cursor.y++;
-    g_curFile.cursor.x = num_indent;
+    // place cursor at next row (g_editor.curFile.cursor.y + 1), column of the indent.
+    g_editor.curFile.cursor.y++;
+    g_editor.curFile.cursor.x = num_indent;
   }
 }
 
 void editorInsertChar(int c) {
-  g_curFile.dirty = true;
-  if (g_curFile.cursor.y == g_curFile.numrows) {
+  g_editor.curFile.dirty = true;
+  if (g_editor.curFile.cursor.y == g_editor.curFile.numrows) {
     // editorAppendRow("", 0);
-    editorInsertRow(g_curFile.numrows, "", 0);
+    editorInsertRow(g_editor.curFile.numrows, "", 0);
   }
-  g_curFile.row[g_curFile.cursor.y].insertChar(g_curFile.cursor.x, c, g_curFile);
-  g_curFile.cursor.x++;
+  g_editor.curFile.row[g_editor.curFile.cursor.y].insertChar(g_editor.curFile.cursor.x, c, g_editor.curFile);
+  g_editor.curFile.cursor.x++;
 }
 
 void editorDelChar() {
-  g_curFile.dirty = true;
-  if (g_curFile.cursor.y == g_curFile.numrows) {
+  g_editor.curFile.dirty = true;
+  if (g_editor.curFile.cursor.y == g_editor.curFile.numrows) {
     return;
   }
-  if (g_curFile.cursor.x == 0 && g_curFile.cursor.y == 0)
+  if (g_editor.curFile.cursor.x == 0 && g_editor.curFile.cursor.y == 0)
     return;
 
-  FileRow *row = &g_curFile.row[g_curFile.cursor.y];
-  if (g_curFile.cursor.x > 0) {
-    editorRowDelChar(row, g_curFile.cursor.x - 1);
-    g_curFile.cursor.x--;
+  FileRow *row = &g_editor.curFile.row[g_editor.curFile.cursor.y];
+  if (g_editor.curFile.cursor.x > 0) {
+    editorRowDelChar(row, g_editor.curFile.cursor.x - 1);
+    g_editor.curFile.cursor.x--;
   } else {
     // place cursor at last column of prev row.
-    g_curFile.cursor.x = g_curFile.row[g_curFile.cursor.y - 1].size;
+    g_editor.curFile.cursor.x = g_editor.curFile.row[g_editor.curFile.cursor.y - 1].size;
     // append string.
-    g_curFile.row[g_curFile.cursor.y - 1].appendString(row->chars, row->size, g_curFile);
+    g_editor.curFile.row[g_editor.curFile.cursor.y - 1].appendString(row->chars, row->size, g_editor.curFile);
     // delete current row
-    editorDelRow(g_curFile.cursor.y);
+    editorDelRow(g_editor.curFile.cursor.y);
     // go to previous row.
-    g_curFile.cursor.y--;
+    g_editor.curFile.cursor.y--;
   }
 }
 
 /*** file i/o ***/
 void editorOpen(const char *filename) {
-  free(g_curFile.filepath);
-  g_curFile.filepath = strdup(filename);
+  free(g_editor.curFile.filepath);
+  g_editor.curFile.filepath = strdup(filename);
 
   FILE *fp = fopen(filename, "a+");
   if (!fp) {
@@ -645,7 +645,7 @@ void editorOpen(const char *filename) {
       linelen--;
     }
     // editorAppendRow(line, linelen);
-    editorInsertRow(g_curFile.numrows, line, linelen);
+    editorInsertRow(g_editor.curFile.numrows, line, linelen);
   }
   free(line);
   fclose(fp);
@@ -653,15 +653,15 @@ void editorOpen(const char *filename) {
 
 char *editorRowsToString(int *buflen) {
   int totlen = 0;
-  for (int j = 0; j < g_curFile.numrows; j++) {
-    totlen += g_curFile.row[j].size + 1;
+  for (int j = 0; j < g_editor.curFile.numrows; j++) {
+    totlen += g_editor.curFile.row[j].size + 1;
   }
   *buflen = totlen;
   char *buf = (char *)malloc(totlen);
   char *p = buf;
-  for (int j = 0; j < g_curFile.numrows; j++) {
-    memcpy(p, g_curFile.row[j].chars, g_curFile.row[j].size);
-    p += g_curFile.row[j].size;
+  for (int j = 0; j < g_editor.curFile.numrows; j++) {
+    memcpy(p, g_editor.curFile.row[j].chars, g_editor.curFile.row[j].size);
+    p += g_editor.curFile.row[j].size;
     *p = '\n';
     p++;
   }
@@ -670,7 +670,7 @@ char *editorRowsToString(int *buflen) {
 
 
 void editorSave() {
-  if (g_curFile.filepath == NULL || !g_curFile.dirty) {
+  if (g_editor.curFile.filepath == NULL || !g_editor.curFile.dirty) {
     return;
   }
   int len;
@@ -678,7 +678,7 @@ void editorSave() {
   // | open for read and write
   // | create if does not exist
   // 0644: +r, +w
-  int fd = open(g_curFile.filepath, O_RDWR | O_CREAT, 0644);
+  int fd = open(g_editor.curFile.filepath, O_RDWR | O_CREAT, 0644);
   if (fd != -1) {
     editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
   }
@@ -689,7 +689,7 @@ void editorSave() {
   int nwritten = write(fd, buf, len);
   assert(nwritten == len && "wasn't able to write enough bytes");
   editorSetStatusMessage("Saved file");
-  g_curFile.dirty = false;
+  g_editor.curFile.dirty = false;
   close(fd);
   free(buf);
 }
@@ -700,13 +700,13 @@ void editorFind() {
   char *query = editorPrompt("Search: %s (ESC to cancel)");
   if (query == NULL) return;
   int i;
-  for (i = 0; i < g_curFile.numrows; i++) {
-    FileRow *row = &g_curFile.row[i];
+  for (i = 0; i < g_editor.curFile.numrows; i++) {
+    FileRow *row = &g_editor.curFile.row[i];
     char *match = strstr(row->render, query);
     if (match) {
-      g_curFile.cursor.y = i;
-      g_curFile.cursor.x = match - row->render;
-      g_curFile.rowoff = g_curFile.numrows;
+      g_editor.curFile.cursor.y = i;
+      g_editor.curFile.cursor.x = match - row->render;
+      g_editor.curFile.rowoff = g_editor.curFile.numrows;
       break;
     }
   }
@@ -719,22 +719,22 @@ void editorFind() {
 /*** output ***/
 
 void editorScroll() {
-  g_curFile.rx = 0;
-  assert (g_curFile.cursor.y >= 0 && g_curFile.cursor.y <= g_curFile.numrows);
-  if (g_curFile.cursor.y < g_curFile.numrows) {
-    g_curFile.rx = g_curFile.row[g_curFile.cursor.y].cxToRx(g_curFile.cursor.x);
+  g_editor.curFile.rx = 0;
+  assert (g_editor.curFile.cursor.y >= 0 && g_editor.curFile.cursor.y <= g_editor.curFile.numrows);
+  if (g_editor.curFile.cursor.y < g_editor.curFile.numrows) {
+    g_editor.curFile.rx = g_editor.curFile.row[g_editor.curFile.cursor.y].cxToRx(g_editor.curFile.cursor.x);
   }
-  if (g_curFile.cursor.y < g_curFile.rowoff) {
-    g_curFile.rowoff = g_curFile.cursor.y;
+  if (g_editor.curFile.cursor.y < g_editor.curFile.rowoff) {
+    g_editor.curFile.rowoff = g_editor.curFile.cursor.y;
   }
-  if (g_curFile.cursor.y >= g_curFile.rowoff + g_curFile.screenrows) {
-    g_curFile.rowoff = g_curFile.cursor.y - g_curFile.screenrows + 1;
+  if (g_editor.curFile.cursor.y >= g_editor.curFile.rowoff + g_editor.screenrows) {
+    g_editor.curFile.rowoff = g_editor.curFile.cursor.y - g_editor.screenrows + 1;
   }
-  if (g_curFile.rx < g_curFile.coloff) {
-    g_curFile.coloff = g_curFile.rx;
+  if (g_editor.curFile.rx < g_editor.curFile.coloff) {
+    g_editor.curFile.coloff = g_editor.curFile.rx;
   }
-  if (g_curFile.rx >= g_curFile.coloff + g_curFile.screencols) {
-    g_curFile.coloff = g_curFile.rx - g_curFile.screencols + 1;
+  if (g_editor.curFile.rx >= g_editor.curFile.coloff + g_editor.screencols) {
+    g_editor.curFile.coloff = g_editor.curFile.rx - g_editor.screencols + 1;
   }
 }
 
@@ -774,14 +774,14 @@ void editorDrawRows(abuf &ab) {
   // "\r\n" ’s.
 
   // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
-  const int LINE_NUMBER_NUM_CHARS = num_digits(g_curFile.screenrows + g_curFile.rowoff + 1) + 1;
-  for (int y = 0; y < g_curFile.screenrows; y++) {
-    int filerow = y + g_curFile.rowoff;
+  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.rowoff + 1) + 1;
+  for (int y = 0; y < g_editor.screenrows; y++) {
+    int filerow = y + g_editor.curFile.rowoff;
 
     // convert the line number into a string, and write it.
     {
       // code in view mode is renderered gray
-      if (g_curFile.file_mode == FM_VIEW) { ab.appendstr("\x1b[90;40m"); }
+      if (g_editor.vim_mode == VM_VIEW) { ab.appendstr("\x1b[90;40m"); }
 
       char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
       int ix = write_int_to_str(line_number_str, filerow + 1);
@@ -794,24 +794,24 @@ void editorDrawRows(abuf &ab) {
       free(line_number_str);
 
       // code in view mode is renderered gray, so reset.
-      if (g_curFile.file_mode == FM_VIEW) { ab.appendstr("\x1b[0m"); }
+      if (g_editor.vim_mode == VM_VIEW) { ab.appendstr("\x1b[0m"); }
 
     }
     // code in view mode is renderered gray
-    if (g_curFile.file_mode == FM_VIEW) { ab.appendstr("\x1b[37;40m"); }
+    if (g_editor.vim_mode == VM_VIEW) { ab.appendstr("\x1b[37;40m"); }
 
-    if (filerow < g_curFile.numrows) {
-      int len = clamp(0, g_curFile.row[filerow].rsize - g_curFile.coloff, g_curFile.screencols - LINE_NUMBER_NUM_CHARS);
-      // int len = g_curFile.row[filerow].size;
-      // if (len > g_curFile.screencols)
-      //   len = g_curFile.screencols;
-      ab.appendbuf(g_curFile.row[filerow].render + g_curFile.coloff, len);
+    if (filerow < g_editor.curFile.numrows) {
+      int len = clamp(0, g_editor.curFile.row[filerow].rsize - g_editor.curFile.coloff, g_editor.screencols - LINE_NUMBER_NUM_CHARS);
+      // int len = g_editor.curFile.row[filerow].size;
+      // if (len > g_editor.screencols)
+      //   len = g_editor.screencols;
+      ab.appendbuf(g_editor.curFile.row[filerow].render + g_editor.curFile.coloff, len);
 
     } else {
         ab.appendstr("~");
     }
 
-     if (g_curFile.file_mode == FM_VIEW) { ab.appendstr("\x1b[0m"); }
+     if (g_editor.vim_mode == VM_VIEW) { ab.appendstr("\x1b[0m"); }
 
     // The K command (Erase In Line) erases part of the current line.
     // by default, arg is 0, which erases everything to the right of the
@@ -836,15 +836,15 @@ void editorDrawStatusBar(abuf &ab) {
 
   char status[80], rstatus[80];
   int len = snprintf(status, sizeof(status), "%.20s - 5%d lines",
-                     g_curFile.filepath ? g_curFile.filepath : "[No Name]", g_curFile.numrows);
+                     g_editor.curFile.filepath ? g_editor.curFile.filepath : "[No Name]", g_editor.curFile.numrows);
 
-  len = std::min<int>(len, g_curFile.screencols);
+  len = std::min<int>(len, g_editor.screencols);
   ab.appendstr(status);
 
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", g_curFile.cursor.y + 1, g_curFile.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", g_editor.curFile.cursor.y + 1, g_editor.curFile.numrows);
 
-  while (len < g_curFile.screencols) {
-    if (g_curFile.screencols - len == rlen) {
+  while (len < g_editor.screencols) {
+    if (g_editor.screencols - len == rlen) {
       ab.appendstr(rstatus);
       break;
     } else {
@@ -859,15 +859,15 @@ void editorDrawStatusBar(abuf &ab) {
 void editorDrawMessageBar(abuf &ab) {
   // [K: clear sequence
   ab.appendstr("\x1b[K");
-  int msglen = strlen(g_curFile.statusmsg);
-  if (msglen > g_curFile.screencols) {
-    msglen = g_curFile.screencols;
+  int msglen = strlen(g_editor.statusmsg);
+  if (msglen > g_editor.screencols) {
+    msglen = g_editor.screencols;
   }
 
-  g_curFile.statusmsg[msglen] = '\0';
+  g_editor.statusmsg[msglen] = '\0';
 
-  if (msglen && time(NULL) - g_curFile.statusmsg_time < 5) {
-    ab.appendstr(g_curFile.statusmsg);
+  if (msglen && time(NULL) - g_editor.statusmsg_time < 5) {
+    ab.appendstr(g_editor.statusmsg);
   }
 }
 
@@ -909,74 +909,75 @@ void editorRefreshScreen() {
 
   // move cursor to correct row;col.
   char buf[32];
-  const int LINE_NUMBER_NUM_CHARS = num_digits(g_curFile.screenrows + g_curFile.rowoff + 1) + 1;
-  sprintf(buf, "\x1b[%d;%dH", g_curFile.cursor.y - g_curFile.rowoff + 1, g_curFile.rx - g_curFile.coloff + 1 + LINE_NUMBER_NUM_CHARS);
+  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.rowoff + 1) + 1;
+  sprintf(buf, "\x1b[%d;%dH", g_editor.curFile.cursor.y - g_editor.curFile.rowoff + 1, g_editor.curFile.rx - g_editor.curFile.coloff + 1 + LINE_NUMBER_NUM_CHARS);
   ab.appendstr(buf);
 
   // show hidden cursor
   ab.appendstr("\x1b[?25h");
 
-  CHECK_POSIX_CALL(write(STDOUT_FILENO, ab.b, ab.len));
+  write(STDOUT_FILENO, ab.b, ab.len);
+  // CHECK_POSIX_CALL(write(STDOUT_FILENO, ab.b, ab.len));
 }
 
 void editorSetStatusMessage(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  vsnprintf(g_curFile.statusmsg, sizeof(g_curFile.statusmsg), fmt, ap);
+  vsnprintf(g_editor.statusmsg, sizeof(g_editor.statusmsg), fmt, ap);
   va_end(ap);
-  g_curFile.statusmsg_time = time(NULL);
+  g_editor.statusmsg_time = time(NULL);
 }
 
 /*** input ***/
 
 void editorMoveCursor(int key) {
-  FileRow *row = (g_curFile.cursor.y >= g_curFile.numrows) ? NULL : &g_curFile.row[g_curFile.cursor.y];
+  FileRow *row = (g_editor.curFile.cursor.y >= g_editor.curFile.numrows) ? NULL : &g_editor.curFile.row[g_editor.curFile.cursor.y];
 
   switch (key) {
   case ARROW_LEFT:
-    if (g_curFile.cursor.x != 0) {
-      g_curFile.cursor.x--;
-    } else if (g_curFile.cursor.y > 0) {
+    if (g_editor.curFile.cursor.x != 0) {
+      g_editor.curFile.cursor.x--;
+    } else if (g_editor.curFile.cursor.y > 0) {
       // move back line.
-      assert(g_curFile.cursor.x == 0);
-      g_curFile.cursor.y--;
-      g_curFile.cursor.x = g_curFile.row[g_curFile.cursor.y].size;
+      assert(g_editor.curFile.cursor.x == 0);
+      g_editor.curFile.cursor.y--;
+      g_editor.curFile.cursor.x = g_editor.curFile.row[g_editor.curFile.cursor.y].size;
     }
 
     break;
   case ARROW_RIGHT:
-    if (row && g_curFile.cursor.x < row->size) {
-      g_curFile.cursor.x++;
-    } else if (row && g_curFile.cursor.x == row->size) {
-      assert(g_curFile.cursor.x == row->size);
-      g_curFile.cursor.y++;
-      g_curFile.cursor.x = 0;
+    if (row && g_editor.curFile.cursor.x < row->size) {
+      g_editor.curFile.cursor.x++;
+    } else if (row && g_editor.curFile.cursor.x == row->size) {
+      assert(g_editor.curFile.cursor.x == row->size);
+      g_editor.curFile.cursor.y++;
+      g_editor.curFile.cursor.x = 0;
     }
 
     break;
   case ARROW_UP:
-    if (g_curFile.cursor.y > 0) {
-      g_curFile.cursor.y--;
+    if (g_editor.curFile.cursor.y > 0) {
+      g_editor.curFile.cursor.y--;
     }
     break;
   case ARROW_DOWN:
-    if (g_curFile.cursor.y < g_curFile.numrows) {
-      g_curFile.cursor.y++;
+    if (g_editor.curFile.cursor.y < g_editor.curFile.numrows) {
+      g_editor.curFile.cursor.y++;
     }
     break;
   case PAGE_DOWN:
-    g_curFile.cursor.y = std::min<int>(g_curFile.cursor.y + g_curFile.screenrows / 4, g_curFile.numrows);
+    g_editor.curFile.cursor.y = std::min<int>(g_editor.curFile.cursor.y + g_editor.screenrows / 4, g_editor.curFile.numrows);
     break;
   case PAGE_UP:
-    g_curFile.cursor.y = std::max<int>(g_curFile.cursor.y - g_curFile.screenrows / 4, 0);
+    g_editor.curFile.cursor.y = std::max<int>(g_editor.curFile.cursor.y - g_editor.screenrows / 4, 0);
     break;
   }
 
   // snap to next line.
-  // row = (g_curFile.cursor.y >= g_curFile.numrows) ? NULL : &g_curFile.row[g_curFile.cursor.y];
+  // row = (g_editor.curFile.cursor.y >= g_editor.curFile.numrows) ? NULL : &g_editor.curFile.row[g_editor.curFile.cursor.y];
   // int rowlen = row ? row->size : 0;
-  // if (g_curFile.cursor.x > rowlen) {
-  //   g_curFile.cursor.x = rowlen;
+  // if (g_editor.curFile.cursor.x > rowlen) {
+  //   g_editor.curFile.cursor.x = rowlen;
   // }
 }
 
@@ -1003,20 +1004,20 @@ void editorProcessKeypress() {
     return;
   }
 
-  if (g_curFile.file_mode == FM_VIEW) { // behaviours only in  view mode
+  if (g_editor.vim_mode == VM_VIEW) { // behaviours only in  view mode
     switch (c) {
     case 'i':
-      g_curFile.file_mode = FM_EDIT; return;
+      g_editor.vim_mode = VM_EDIT; return;
     } // end switch over key.
-  } // end mode == FM_VIEW
+  } // end mode == VM_VIEW
   else {
-    assert (g_curFile.file_mode == FM_EDIT); 
+    assert (g_editor.vim_mode == VM_EDIT); 
     switch (c) { // behaviors only in edit mode.
     case '\r':
       editorInsertNewline();
       return;
     case CTRL_KEY('c'): {
-      g_curFile.file_mode = FM_VIEW;
+      g_editor.vim_mode = VM_VIEW;
       return;
     }
     case DEL_CHAR: {
@@ -1024,14 +1025,14 @@ void editorProcessKeypress() {
       return;
     }
     case '\x1b': {// escape key
-      g_curFile.file_mode = FM_VIEW;
+      g_editor.vim_mode = VM_VIEW;
       return;
    }
     default:
       editorInsertChar(c);
       return;
     } // end switch case.
-  } // end mode == FM_EDIT
+  } // end mode == VM_EDIT
 }
 
 char *editorPrompt(const char *prompt) {
@@ -1064,8 +1065,8 @@ char *editorPrompt(const char *prompt) {
 /*** init ***/
 
 void initEditor() {
-  if (getWindowSize(&g_curFile.screenrows, &g_curFile.screencols) == -1) {
+  if (getWindowSize(&g_editor.screenrows, &g_editor.screencols) == -1) {
     die("getWindowSize");
   };
-  static const int BOTTOM_INFO_PANE_HEIGHT = 2; g_curFile.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
+  static const int BOTTOM_INFO_PANE_HEIGHT = 2; g_editor.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
 }

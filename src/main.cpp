@@ -32,7 +32,6 @@ int main(int argc, char **argv){
     filepath = strdup("/tmp/edtr-scratch");
   }
   editorOpen(filepath);
-  enableRawMode();
 
   while (1) {
     editorSave();
