@@ -1003,6 +1003,42 @@ void editorDrawNormalInsertMode() {
 }
 
 
+void editorDrawInfoViewGoal(abuf *ab, const char *str) {
+  const int NINDENT = 2;
+  char INDENT_STR[NINDENT + 1];
+  for(int i = 0; i < NINDENT; ++i) {
+    INDENT_STR[i] = ' ';
+  }
+  INDENT_STR[NINDENT] = '\0';
+
+  // this draws the "goal" object, which is a \n separated list of 'term : type' followed by a final
+  // turnstile goal.
+  int line_end = 0;
+  const int len = strlen(str);
+
+  while(line_end < len) {
+    const int line_begin = line_end;
+    for(; line_end < len && str[line_end] != '\n'; line_end++) {};
+    assert(line_end <= len);
+    if (line_end == len) {
+      // we have reached end of string, so we are showing goal. Just splat directly.
+      // sscanf
+      // TODO: grab the turnstile out and color it.
+      ab->appendfmtstr(120, "%s\x1b[0;36m%s\x1b[0m\x1b[K \r\n",
+        INDENT_STR, str + line_begin);
+    } else {
+      // grab the substring and print out out.
+      assert(line_end < len && str[line_end] == '\n');
+      const int substr_len = line_end - line_begin; // half open interval [line_begin, line_end)     
+      char *substr = strndup(str + line_begin, substr_len);
+      ab->appendfmtstr(120, "%s%s\x1b[K \r\n", INDENT_STR, substr);
+      free(substr);
+    }
+    line_end += 1; // skip over the newline
+    assert(line_end >= line_begin);
+  }
+
+}
 void editorDrawInfoView() {
   abuf ab;
 
@@ -1034,13 +1070,54 @@ void editorDrawInfoView() {
 
   // always append a space, since we decrement a row from screen rows
   // to make space for status bar.
-  ab.appendstr("### LEAN INFOVIEW ### \r\n");
+  ab.appendstr("@@@ LEAN INFOVIEW @@@ \r\n");
   assert(g_editor.curFile.leanInfoViewPlainGoal);
   assert(g_editor.curFile.leanInfoViewPlainTermGoal);
-  ab.appendfmtstr(120, "gl: %s \x1b[K \r\n", 
-    json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
-  ab.appendfmtstr(120, "trmgl: %s \x1b[K \r\n", 
-    json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainTermGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
+  // ab.appendfmtstr(120, "gl: %s \x1b[K \r\n", 
+  //   json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
+  // ab.appendfmtstr(120, "trmgl: %s \x1b[K \r\n", 
+  //   json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainTermGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
+
+  do {
+    json_object  *result = nullptr;
+    json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainTermGoal, "result", &result);
+    if (result == nullptr) {
+      ab.appendstr("## trmgl: --- \x1b[K \r\n");
+    } else {
+      assert(json_object_get_type(result) == json_type_object);
+      json_object *result_goal = nullptr;
+      json_object_object_get_ex(result, "goal", &result_goal);
+      assert(result_goal != nullptr);
+      assert(json_object_get_type(result_goal) == json_type_string);
+
+      ab.appendstr("## trmgl: \x1b[K \r\n");
+      editorDrawInfoViewGoal(&ab, json_object_get_string(result_goal));
+
+    }
+  } while(0); // end info view plain term goal.
+
+  do {
+    json_object  *result = nullptr;
+    json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainGoal, "result", &result);
+    if (result == nullptr) {
+      ab.appendstr("## gl: --- \x1b[K \r\n");
+    } else {
+      json_object *result_goals = nullptr;
+      json_object_object_get_ex(result, "goals", &result_goals);
+      assert(result_goals != nullptr);
+
+      assert(json_object_get_type(result_goals) == json_type_array);
+      assert(json_object_array_length(result_goals) > 0); 
+
+      for(int i = 0; i < json_object_array_length(result_goals); ++i) {
+        ab.appendfmtstr(120, "## goal[%d]: \x1b[K \r\n", i);
+        json_object *result_goals_i = json_object_array_get_idx(result_goals, i);
+        assert(result_goals_i != nullptr);
+        assert(json_object_get_type(result_goals_i) == json_type_string);
+        editorDrawInfoViewGoal(&ab, json_object_get_string(result_goals_i));
+      }
+    }
+  } while(0); // end info view goal.
 
   // The K command (Erase In Line) erases part of the current line.
   // by default, arg is 0, which erases everything to the right of the
