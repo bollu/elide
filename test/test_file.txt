@@ -1,0 +1,2 @@
+A text file that contains no Lean. How does the lean server respond to this file?
+

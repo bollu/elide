@@ -36,7 +36,7 @@ int main(int argc, char **argv){
   fileConfigSyncLeanState(&g_editor.curFile);
 
   while (1) {
-    editorRefreshScreen();
+    editorDraw();
     editorProcessKeypress();
   };
 

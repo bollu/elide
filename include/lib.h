@@ -86,8 +86,21 @@ struct abuf {
   // Return `-1` otherwise.
   int find_char(char c, int begin_ix) { return find_sub_buf(&c, 1, begin_ix); }
 
+
   // append a string onto this string.
   void appendstr(const char *s) { appendbuf(s, strlen(s)); }
+
+  // append a format string onto this string. Truncate to length 'len'.
+  void appendfmtstr(int len, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt); 
+    char *buf = (char*)malloc(sizeof(char) * len);
+    vsnprintf(buf, len, fmt, args);
+    va_end(args);
+    appendstr(buf);
+    free(buf); 
+  }
+
 
   // drop a prefix of the buffer. If `drop_len = 0`, then this operation is a
   // no-op.
@@ -119,7 +132,8 @@ enum LeanServerInitKind {
 // sequence ID of a LSP request. Used to get a matching response
 // when asking for responses.
 struct LspRequestId {
-  int id;
+  int id = -1;;
+  LspRequestId()  = default;
   LspRequestId(int id) : id(id) {};
 };
 
@@ -185,8 +199,8 @@ static const int NSPACES_PER_TAB = 2;
 static const char *VERSION = "0.0.1";
 
 enum VimMode {
-  VM_VIEW, // mode where code is only viewed and locked for editing.
-  VM_EDIT, // mode where code is edited.
+  VM_NORMAL, // mode where code is only viewed and locked for editing.
+  VM_INSERT, // mode where code is edited.
   VM_INFOVIEW_DISPLAY_GOAL, // mode where infoview is shown.
 };
 
@@ -210,7 +224,7 @@ struct Cursor {
 
 
 struct FileConfig {
-  bool is_dirty = false;
+  bool is_dirty = true; // have not synchronized state with Lean server.
   bool is_initialized = false;
   Cursor cursor;
 
@@ -233,10 +247,18 @@ struct FileConfig {
   // TextDocument for LSP
   TextDocumentItem text_document_item;
 
+  // plan goal object.
+  json_object *leanInfoViewPlainGoal = nullptr;
+  json_object *leanInfoViewPlainTermGoal = nullptr;
+
+  void makeDirty() {
+    leanInfoViewPlainGoal = nullptr;
+    is_dirty = true;
+  }
 };
 
 struct EditorConfig {
-  VimMode vim_mode = VM_VIEW;
+  VimMode vim_mode = VM_NORMAL;
   struct termios orig_termios;
   int screenrows = 0;
   int screencols = 0;
@@ -366,11 +388,11 @@ void editorOpen(const char *filename);
 char *editorRowsToString(int *buflen);
 void editorSave();
 void editorFind();
+void editorDraw();
 void editorScroll();
 void editorDrawRows(abuf &ab);
 void editorDrawStatusBar(abuf &ab);
 void editorDrawMessageBar(abuf &ab);
-void editorRefreshScreen();
 void editorSetStatusMessage(const char *fmt, ...);
 void editorMoveCursor(int key);
 void editorProcessKeypress();

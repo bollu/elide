@@ -417,13 +417,13 @@ int editorReadKey() {
     return PAGE_DOWN;
   } else if (c == CTRL('u')) {
     return PAGE_UP;
-  } else if (c == 'h' && g_editor.vim_mode == VM_VIEW) {
+  } else if (c == 'h' && g_editor.vim_mode == VM_NORMAL) {
     return ARROW_LEFT;
-  } else if (c == 'j' && g_editor.vim_mode == VM_VIEW) {
+  } else if (c == 'j' && g_editor.vim_mode == VM_NORMAL) {
     return ARROW_DOWN;
-  } else if (c == 'k' && g_editor.vim_mode == VM_VIEW) {
+  } else if (c == 'k' && g_editor.vim_mode == VM_NORMAL) {
     return ARROW_UP;
-  } else if (c == 'l' && g_editor.vim_mode == VM_VIEW) {
+  } else if (c == 'l' && g_editor.vim_mode == VM_NORMAL) {
     return ARROW_RIGHT;
   } else if (c == 127) {
     return DEL_CHAR;
@@ -502,7 +502,7 @@ void editorInsertRow(int at, const char *s, size_t len) {
   g_editor.curFile.row[at].update(g_editor.curFile);
 
   g_editor.curFile.numrows++;
-  g_editor.curFile.is_dirty = true;
+  g_editor.curFile.makeDirty();
 }
 
 // functionality superceded by |editorInsertRow|
@@ -528,7 +528,7 @@ void editorFreeRow(FileRow *row) {
 }
 
 void editorDelRow(int at) {
-  g_editor.curFile.is_dirty = true;
+  g_editor.curFile.makeDirty();
   if (at < 0 || at >= g_editor.curFile.numrows)
     return;
   editorFreeRow(&g_editor.curFile.row[at]);
@@ -537,7 +537,7 @@ void editorDelRow(int at) {
 }
 
 void editorRowDelChar(FileRow *row, int at) {
-  g_editor.curFile.is_dirty = true;
+  g_editor.curFile.makeDirty();
   assert(at >= 0);
   assert(at < row->size);
   if (at < 0 || at >= row->size) {
@@ -555,7 +555,7 @@ bool is_space_or_tab(char c) {
 
 /*** editor operations ***/
 void editorInsertNewline() {
-  g_editor.curFile.is_dirty = true;
+  g_editor.curFile.makeDirty();
   if (g_editor.curFile.cursor.x == 0) {
     // at first column, insert new row.
     editorInsertRow(g_editor.curFile.cursor.y, "", 0);
@@ -597,7 +597,7 @@ void editorInsertNewline() {
 }
 
 void editorInsertChar(int c) {
-  g_editor.curFile.is_dirty = true;
+  g_editor.curFile.makeDirty();
   if (g_editor.curFile.cursor.y == g_editor.curFile.numrows) {
     // editorAppendRow("", 0);
     editorInsertRow(g_editor.curFile.numrows, "", 0);
@@ -607,7 +607,7 @@ void editorInsertChar(int c) {
 }
 
 void editorDelChar() {
-  g_editor.curFile.is_dirty = true;
+  g_editor.curFile.makeDirty();
   if (g_editor.curFile.cursor.y == g_editor.curFile.numrows) {
     return;
   }
@@ -647,6 +647,7 @@ void fileConfigLaunchLeanServer(FileConfig *file_config) {
 }
 
 void fileConfigSyncLeanState(FileConfig *file_config) {
+  json_object *req = nullptr;
   assert(file_config->is_initialized);
   if (file_config->text_document_item.is_initialized && !file_config->is_dirty) {
     return; // no point syncing state if it isn't dirty, and the state has been initalized before.
@@ -663,9 +664,46 @@ void fileConfigSyncLeanState(FileConfig *file_config) {
   }
   assert(file_config->text_document_item.is_initialized);
   // textDocument/didOpen
-  json_object *req = lspCreateDidOpenTextDocumentNotifiation(file_config->text_document_item);
+  req = lspCreateDidOpenTextDocumentNotifiation(file_config->text_document_item);
   file_config->lean_server_state.write_notification_to_child_blocking("textDocument/didOpen", req);
+
 }
+
+void fileConfigRequestGoalState(FileConfig *file_config) {
+  assert(file_config->is_initialized);
+  assert(file_config->text_document_item.is_initialized);
+
+  json_object *req = nullptr;
+  LspRequestId  request_id;
+
+  // $/lean/plainGoal
+  if (file_config->leanInfoViewPlainGoal) {
+    // TODO: decrease refcount.
+    file_config->leanInfoViewPlainGoal = nullptr;
+  }
+
+  assert(file_config->leanInfoViewPlainGoal == nullptr);
+
+
+  req = lspCreateLeanPlainGoalRequest(file_config->text_document_item.uri, 
+    Position(file_config->cursor.y, file_config->cursor.x));
+  request_id = file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
+  file_config->leanInfoViewPlainGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
+
+  // $/lean/plainTermGoal
+  if (file_config->leanInfoViewPlainTermGoal) {
+    // TODO: decrease refcount.
+    file_config->leanInfoViewPlainTermGoal = nullptr;
+  }
+
+  assert(file_config->leanInfoViewPlainTermGoal == nullptr);
+  req = lspCreateLeanPlainTermGoalRequest(file_config->text_document_item.uri, 
+    Position(file_config->cursor.y, file_config->cursor.x));
+  request_id = file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
+  file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
+
+}
+
 
 /*** file i/o ***/
 void editorOpen(const char *filename) {
@@ -817,6 +855,7 @@ void editorDrawRows(abuf &ab) {
   // exception when we print our
   // "\r\n" ’s.
 
+
   // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
   const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
   for (int y = 0; y < g_editor.screenrows; y++) {
@@ -825,7 +864,7 @@ void editorDrawRows(abuf &ab) {
     // convert the line number into a string, and write it.
     {
       // code in view mode is renderered gray
-      if (g_editor.vim_mode == VM_VIEW) { ab.appendstr("\x1b[90;40m"); }
+      if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[90;40m"); }
 
       char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
       int ix = write_int_to_str(line_number_str, filerow + 1);
@@ -838,11 +877,11 @@ void editorDrawRows(abuf &ab) {
       free(line_number_str);
 
       // code in view mode is renderered gray, so reset.
-      if (g_editor.vim_mode == VM_VIEW) { ab.appendstr("\x1b[0m"); }
+      if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[0m"); }
 
     }
     // code in view mode is renderered gray
-    if (g_editor.vim_mode == VM_VIEW) { ab.appendstr("\x1b[37;40m"); }
+    if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[37;40m"); }
 
     if (filerow < g_editor.curFile.numrows) {
       int len = clamp(0, g_editor.curFile.row[filerow].rsize - g_editor.curFile.scroll_col_offset, g_editor.screencols - LINE_NUMBER_NUM_CHARS);
@@ -855,7 +894,7 @@ void editorDrawRows(abuf &ab) {
         ab.appendstr("~");
     }
 
-     if (g_editor.vim_mode == VM_VIEW) { ab.appendstr("\x1b[0m"); }
+     if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[0m"); }
 
     // The K command (Erase In Line) erases part of the current line.
     // by default, arg is 0, which erases everything to the right of the
@@ -915,7 +954,7 @@ void editorDrawMessageBar(abuf &ab) {
   }
 }
 
-void editorRefreshScreen() {
+void editorDrawNormalInsertMode() {
 
   initEditor();
   editorScroll();
@@ -961,6 +1000,83 @@ void editorRefreshScreen() {
   ab.appendstr("\x1b[?25h");
 
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.b, ab.len));
+}
+
+
+void editorDrawInfoView() {
+  abuf ab;
+
+  // It’s possible that the cursor might be displayed in the middle of the
+  // screen somewhere for a split second while the terminal is drawing to the
+  // screen. To make sure that doesn’t happen, let’s hide the cursor before
+  // refreshing the screen, and show it again immediately after the refresh
+  // finishes.
+  ab.appendstr("\x1b[?25l"); // hide cursor
+
+  // EDIT: no need to refresh screen, screen is cleared
+  // line by line @ editorDrawRows.
+  //
+  // EDIT: I am not sure if this extra complexity is worth it!
+  //
+  // VT100 escapes.
+  // \x1b: escape.
+  // J: erase in display.
+  // [2J: clear entire screen
+  // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
+  // cursor to bottom
+  //          0 is default arg, so [J: clear screen from cursor to bottom
+  ab.appendstr("\x1b[2J");
+
+  // H: cursor position
+  // [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  ab.appendstr("\x1b[1;1H");
+
+  // always append a space, since we decrement a row from screen rows
+  // to make space for status bar.
+  ab.appendstr("### LEAN INFOVIEW ### \r\n");
+  assert(g_editor.curFile.leanInfoViewPlainGoal);
+  assert(g_editor.curFile.leanInfoViewPlainTermGoal);
+  ab.appendfmtstr(120, "gl: %s \x1b[K \r\n", 
+    json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
+  ab.appendfmtstr(120, "trmgl: %s \x1b[K \r\n", 
+    json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainTermGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
+
+  // The K command (Erase In Line) erases part of the current line.
+  // by default, arg is 0, which erases everything to the right of the
+  // cursor.
+  ab.appendstr("\x1b[K");
+
+  // always append a space, since we decrement a row from screen rows
+  // to make space for status bar.
+  ab.appendstr("\r\n");
+
+
+  // move cursor to correct row;col.
+  char buf[32];
+  // H: cursor position
+  // [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  sprintf(buf, "\x1b[%d;%dH", 1, 1);
+  ab.appendstr(buf);
+
+  // show hidden cursor
+  ab.appendstr("\x1b[?25h");
+
+
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.b, ab.len));
+}
+
+
+void editorDraw() {
+  if (g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT) {
+    editorDrawNormalInsertMode();
+    return;
+  } else {
+    assert(g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL);
+    editorDrawInfoView();
+  }
+
 }
 
 void editorSetStatusMessage(const char *fmt, ...) {
@@ -1027,16 +1143,14 @@ void editorMoveCursor(int key) {
 void editorProcessKeypress() {
   const int c = editorReadKey();
 
-  // behaviours common to both modes
+  // behaviours common to all modes
   switch (c) {
+  case 'q':
   case CTRL_KEY('q'): {
     editorSave();
     die("bye!");
     return;
   }
-  case CTRL_KEY('f'):
-    editorFind();
-    return;
   case ARROW_UP:
   case ARROW_DOWN:
   case ARROW_RIGHT:
@@ -1051,23 +1165,26 @@ void editorProcessKeypress() {
     switch (c) {
     case 'g':
     case '?':
-      g_editor.vim_mode = VM_VIEW; return;
+      g_editor.vim_mode = VM_NORMAL; return;
     default:
       return;
     }
   }
 
-  if (g_editor.vim_mode == VM_VIEW) { // behaviours only in  view mode
+  if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in  view mode
     switch (c) {
     case 'g':
-    case '?':
+    case '?': {
+      // TODO: make this more local.
+      fileConfigRequestGoalState(&g_editor.curFile);
       g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL; return;
+    }
     case 'i':
-      g_editor.vim_mode = VM_EDIT; return;
+      g_editor.vim_mode = VM_INSERT; return;
     } // end switch over key.
-  } // end mode == VM_VIEW
+  } // end mode == VM_NORMAL
   else {
-    assert (g_editor.vim_mode == VM_EDIT); 
+    assert (g_editor.vim_mode == VM_INSERT); 
     switch (c) { // behaviors only in edit mode.
     case '\r':
       editorInsertNewline();
@@ -1079,7 +1196,7 @@ void editorProcessKeypress() {
     // when switching to normal mode, sync the lean state. 
     case CTRL_KEY('c'):
     case '\x1b':  { // escape key
-      g_editor.vim_mode = VM_VIEW;
+      g_editor.vim_mode = VM_NORMAL;
       editorSave();
       fileConfigSyncLeanState(&g_editor.curFile);
       return;
@@ -1088,7 +1205,7 @@ void editorProcessKeypress() {
       editorInsertChar(c);
       return;
     } // end switch case.
-  } // end mode == VM_EDIT
+  } // end mode == VM_INSERT
 }
 
 char *editorPrompt(const char *prompt) {
@@ -1098,7 +1215,7 @@ char *editorPrompt(const char *prompt) {
   buf[0] = '\0';
   while (1) {
     editorSetStatusMessage(prompt, buf);
-    editorRefreshScreen();
+    editorDraw();
     int c = editorReadKey();
     if (c == CTRL('g') || c == '\x1b') {
         editorSetStatusMessage(""); free(buf); return NULL;
