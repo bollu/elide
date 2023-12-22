@@ -1107,6 +1107,10 @@ void editorDrawInfoView() {
       assert(result_goals != nullptr);
 
       assert(json_object_get_type(result_goals) == json_type_array);
+      if (json_object_array_length(result_goals) == 0) {
+        ab.appendstr("## gl: in tactic mode with no open tactic goal. \x1b[K \r\n");
+        break;
+      }
       assert(json_object_array_length(result_goals) > 0); 
 
       for(int i = 0; i < json_object_array_length(result_goals); ++i) {
