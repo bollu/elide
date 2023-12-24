@@ -1,6 +1,11 @@
 #include "lib.h"
 #include "lean_lsp.h"
 
+#ifdef __cplusplus
+extern "C"
+#endif
+const char* __asan_default_options() { return "detect_leaks=0"; }
+
 int main() {
   static const int BUF_SIZE = 4096;
   char BUF[BUF_SIZE];
@@ -9,7 +14,7 @@ int main() {
   LspRequestId request_id(-1);
 
   enableRawMode();
-  LeanServerState state = LeanServerState::init(LeanServerInitKind::LST_LEAN_SERVER);
+  LeanServerState state = LeanServerState::init(NULL);
 
   fprintf(stderr, "### reading child (stderr), expecting 'starting lean --server'...\n");
   nread = state._read_stderr_str_from_child_blocking();

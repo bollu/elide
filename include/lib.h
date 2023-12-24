@@ -24,6 +24,7 @@ struct abuf {
 
   void appendbuf(const char *s, int slen) {
     assert(slen >= 0 && "negative length!");
+    if (slen == 0) { return; }
     this->b = (char *)realloc(b, len + slen);
     assert(this->b && "unable to append string");
     memcpy(this->b + len, s, slen);
@@ -124,11 +125,6 @@ struct LeanServerCursorInfo {
 #define PIPE_WRITE_IX 1
 #define PIPE_READ_IX 0
 
-enum LeanServerInitKind {
-  LST_LEAN_SERVER, // lean --servver
-  LST_LAKE_SERVE,  // lake serve
-};
-
 // sequence ID of a LSP request. Used to get a matching response
 // when asking for responses.
 struct LspRequestId {
@@ -190,7 +186,7 @@ struct LeanServerState {
   void get_completion_at_point(LeanServerState state,
                                LeanServerCursorInfo cinfo);
 
-  static LeanServerState init(LeanServerInitKind init_kind);
+  static LeanServerState init(const char *file_path);
 
 private:
 };
@@ -239,7 +235,7 @@ struct FileConfig {
   int scroll_row_offset = 0;
   int scroll_col_offset = 0;
   
-  char *filepath = nullptr;
+  char *absolute_filepath = nullptr;
 
   // lean server for file.
   LeanServerState lean_server_state;

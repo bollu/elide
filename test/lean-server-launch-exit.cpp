@@ -1,6 +1,11 @@
 #include "lib.h"
 #include "lean_lsp.h"
 
+#ifdef __cplusplus
+extern "C"
+#endif
+const char* __asan_default_options() { return "detect_leaks=0"; }
+
 
 // TODO: think about how to make all of this non-blocking.
 int main() {
@@ -15,7 +20,7 @@ int main() {
     json_object *response = NULL;
 
     enableRawMode();
-    LeanServerState state = LeanServerState::init(LeanServerInitKind::LST_LEAN_SERVER);
+    LeanServerState state = LeanServerState::init(NULL);
 
     fprintf(stderr, "### reading child [stderr], expecting 'starting lean --server'...\n");
     nread = state._read_stderr_str_from_child_blocking();

@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -16,6 +17,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <libgen.h>
 #include "lib.h"
 #include "uri_encode.h"
 #include "lean_lsp.h"
@@ -28,6 +30,7 @@
 void disableRawMode();
 void enableRawMode();
 
+
 /*** lean server state ***/
 // quick refresher on how pipes work:
 // 1. pipe(fds) creates a pipe, where fds[0] is the read fd, fds[1] is the write fd.
@@ -37,20 +40,68 @@ void enableRawMode();
 //      `dup2(STDIN_FILENO, fds[PIPE_READ_IX])`;
 // 3. for cleanliness, we close() the sides of the pipes that must be left unsused on each side.
 //    so on the producer side `write(fds[1], data)`, we close the consumer fd `close(fds[0])` and vice versa.
-void _exec_lean_server_on_child(LeanServerInitKind init_kind) {
+// we search the directory tree of 'file_path'. If we find a `lakefile.lean`, then we call `lake --serve`
+// at that cwd. Otherwise, we call `lean --server` at the file working directory.
+void _exec_lean_server_on_child(const char *file_path) {
+  char *lakefile_dirpath = NULL;
+
+  // walk up directory tree of 'file_path' in a loop, printing parents,
+  // until we hit the root directory, then stop.
+  if (file_path) {
+    char *dirpath = strdup(file_path);
+    dirpath = dirname(dirpath);
+    
+    int prev_inode = -1; // inode of child. if it equals inode of parent, then we have hit /. 
+
+    // only iterate this loop a bounded number of times.
+    int NUM_PARENT_DIRS_TO_WALK = 1000;
+    bool hit_root = false;
+    for(int i = 0; i < NUM_PARENT_DIRS_TO_WALK && !hit_root; ++i) {
+      assert(i != NUM_PARENT_DIRS_TO_WALK - 1 && 
+        "ERROR: recursing when walking up parents to find `lakefile.lean`.");
+      DIR *dir = opendir(dirpath);
+      assert(dir && "unable to open directory");
+      dirent *entry = NULL;
+      while ((entry = readdir(dir)) != NULL) {
+        const char *file_name = entry->d_name;
+        if (strcmp(file_name, ".") == 0) {
+          const int cur_inode = entry->d_ino;
+          hit_root = hit_root || (cur_inode == prev_inode);
+          prev_inode = cur_inode;
+        }
+
+        if (strcmp(file_name, "lakefile.lean") == 0) {
+          lakefile_dirpath = dirpath;
+        }
+      } // end readdir() while loop.
+      closedir(dir);
+
+      // walk up parent, free memory.
+      const char *parent_dot_dot_slash = "/../";
+      char *parent_path = (char *)calloc(strlen(dirpath) + strlen(parent_dot_dot_slash) + 1,
+        sizeof(char));
+      sprintf(parent_path, "%s%s", dirpath, parent_dot_dot_slash);
+      free(dirpath);
+      dirpath = parent_path;
+    } // end for loop over directory parents.
+  }  // end if (file_path).
+
 
   int process_error = 0;
-  if (init_kind == LST_LEAN_SERVER) {
+  // no lakefile.
+  if (lakefile_dirpath == NULL) {
     fprintf(stderr, "starting 'lean --server'...\n");
     const char *process_name = "lean";
     char * const argv[] = { strdup(process_name), strdup("--server"), NULL };
     process_error = execvp(process_name, argv);
-  } else if (init_kind == LST_LAKE_SERVE) {
+  } else {
+    if (chdir(lakefile_dirpath) != 0) {
+      die("ERROR: unable to switch to 'lakefile.lean' directory");
+    }; 
+    free(lakefile_dirpath);
     const char * process_name = "lake";
     char * const argv[] = { strdup(process_name), strdup("serve"), NULL };
     process_error = execvp(process_name, argv);
-  } else {
-    assert(false && "unhandled LeanServerInitKind.");
   }
 
   if (process_error == -1) {
@@ -59,18 +110,9 @@ void _exec_lean_server_on_child(LeanServerInitKind init_kind) {
   }
 }
 
-// void set_fd_nonblocking(int fd) {
-//   int ret = fcntl( fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
-//   assert(ret != -1 && "unable to change fd to nonblocking mode.");
-// }
-
-// void set_fd_blocking(int fd) {
-//   int ret = fcntl( fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
-//   assert(ret != -1 && "unable to change fd to nonblocking mode.");
-// }
-
 // create a new lean server.
-LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
+// if file_path == NULL, then create `lean --server`.
+LeanServerState LeanServerState::init(const char *file_path) {
   LeanServerState state;
 
   CHECK_POSIX_CALL_0(pipe(state.parent_buffer_to_child_stdin));
@@ -111,7 +153,7 @@ LeanServerState LeanServerState::init(LeanServerInitKind init_kind) {
     // it is only legal to call `read()` on stdin. So we tie the `PIPE_READ_IX` to `STDIN`
     dup2(state.parent_buffer_to_child_stdin[PIPE_READ_IX], STDIN_FILENO);
 
-    _exec_lean_server_on_child(init_kind);
+    _exec_lean_server_on_child(file_path);
   } else {
     // parent will only write into this pipe, so close the read end.
     close(state.parent_buffer_to_child_stdin[PIPE_READ_IX]);
@@ -632,8 +674,12 @@ void editorDelChar() {
 
 
 void fileConfigLaunchLeanServer(FileConfig *file_config) {
+
+
+  assert(file_config->absolute_filepath != NULL);
   assert(file_config->lean_server_state.initialized == false);
-  file_config->lean_server_state = LeanServerState::init(LST_LEAN_SERVER); // start lean --server.  
+  // file_config->lean_server_state = LeanServerState::init(file_config->absolute_filepath); // start lean --server.  
+  file_config->lean_server_state = LeanServerState::init(NULL); // start lean --server.  
 
   json_object *req = lspCreateInitializeRequest();
   LspRequestId request_id = file_config->lean_server_state.write_request_to_child_blocking("initialize", req);
@@ -655,7 +701,7 @@ void fileConfigSyncLeanState(FileConfig *file_config) {
 
   assert(file_config->lean_server_state.initialized == true);
   if (!file_config->text_document_item.is_initialized) {
-    file_config->text_document_item.init_from_file_path(file_config->filepath);
+    file_config->text_document_item.init_from_file_path(file_config->absolute_filepath);
   } else {
     file_config->text_document_item.version += 1;
     free(file_config->text_document_item.text);
@@ -707,8 +753,8 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
 /*** file i/o ***/
 void editorOpen(const char *filename) {
-  free(g_editor.curFile.filepath);
-  g_editor.curFile.filepath = strdup(filename);
+  free(g_editor.curFile.absolute_filepath);
+  g_editor.curFile.absolute_filepath = strdup(filename);
 
   FILE *fp = fopen(filename, "a+");
   if (!fp) {
@@ -752,7 +798,7 @@ char *editorRowsToString(int *buflen) {
 
 
 void editorSave() {
-  if (g_editor.curFile.filepath == NULL || !g_editor.curFile.is_dirty) {
+  if (g_editor.curFile.absolute_filepath == NULL || !g_editor.curFile.is_dirty) {
     return;
   }
   int len;
@@ -760,7 +806,7 @@ void editorSave() {
   // | open for read and write
   // | create if does not exist
   // 0644: +r, +w
-  int fd = open(g_editor.curFile.filepath, O_RDWR | O_CREAT, 0644);
+  int fd = open(g_editor.curFile.absolute_filepath, O_RDWR | O_CREAT, 0644);
   if (fd != -1) {
     editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
   }
@@ -919,7 +965,7 @@ void editorDrawStatusBar(abuf &ab) {
 
   char status[80], rstatus[80];
   int len = snprintf(status, sizeof(status), "%.20s - 5%d lines",
-                     g_editor.curFile.filepath ? g_editor.curFile.filepath : "[No Name]", g_editor.curFile.numrows);
+                     g_editor.curFile.absolute_filepath ? g_editor.curFile.absolute_filepath : "[No Name]", g_editor.curFile.numrows);
 
   len = std::min<int>(len, g_editor.screencols);
   ab.appendstr(status);
@@ -1082,7 +1128,7 @@ void editorDrawInfoView() {
     json_object  *result = nullptr;
     json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainTermGoal, "result", &result);
     if (result == nullptr) {
-      ab.appendstr("## trmgl: --- \x1b[K \r\n");
+      ab.appendstr("## Expected Type: --- \x1b[K \r\n");
     } else {
       assert(json_object_get_type(result) == json_type_object);
       json_object *result_goal = nullptr;
@@ -1090,7 +1136,7 @@ void editorDrawInfoView() {
       assert(result_goal != nullptr);
       assert(json_object_get_type(result_goal) == json_type_string);
 
-      ab.appendstr("## trmgl: \x1b[K \r\n");
+      ab.appendstr("## Expected Type: \x1b[K \r\n");
       editorDrawInfoViewGoal(&ab, json_object_get_string(result_goal));
 
     }
@@ -1100,7 +1146,7 @@ void editorDrawInfoView() {
     json_object  *result = nullptr;
     json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainGoal, "result", &result);
     if (result == nullptr) {
-      ab.appendstr("## gl: --- \x1b[K \r\n");
+      ab.appendstr("## Tactic State: --- \x1b[K \r\n");
     } else {
       json_object *result_goals = nullptr;
       json_object_object_get_ex(result, "goals", &result_goals);
@@ -1108,7 +1154,7 @@ void editorDrawInfoView() {
 
       assert(json_object_get_type(result_goals) == json_type_array);
       if (json_object_array_length(result_goals) == 0) {
-        ab.appendstr("## gl: in tactic mode with no open tactic goal. \x1b[K \r\n");
+        ab.appendstr("## Tactic State: In tactic mode with no open tactic goal. \x1b[K \r\n");
         break;
       }
       assert(json_object_array_length(result_goals) > 0); 

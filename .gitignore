@@ -1,3 +1,4 @@
+.vscode/
 playground/*.out
 *.sublime-*
 build/

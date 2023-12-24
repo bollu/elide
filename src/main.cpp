@@ -30,6 +30,11 @@ int main(int argc, char **argv){
   } else {
     filepath = strdup("/tmp/edtr-scratch");
   }
+
+  // look for lakefile.lean in directory parents. if available,
+  // then start lean server there. 
+  // If unavailable, then start lean server with lean --server.
+
   editorOpen(filepath); // TODO: refactor to use curFile.
   fileConfigLaunchLeanServer(&g_editor.curFile);
   // first sync.

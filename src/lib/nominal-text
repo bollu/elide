@@ -1,0 +1,32 @@
+One thought that our discussion from yesterday triggered is that ideals aren't only defined in ring theory. There's also a (related, though I never remember how exactly) notion in order theory.
+
+If we have a (not necessarily complete) lattice, we can define an ideal as a set
+ • closed by superelements: x∈I ∧ x⩽y ⇒ y∈I
+ • Closed by meets: x∈I ∧ y∈I ⇒ x∧y ∈ I
+ • inhabited (in particular contains the top element)
+An ideal is called prime if
+ • x∨y∈I ⇒ x∈I ∨ y∈I
+As it happens, finitely supported sets of variables/atoms form a lattice (easy).
+
+Next remark: in the powerset of X, the prime ideals (which are sets of sets!) are isomorphic to the points (+ the whole powerset, which we may or may not want to exclude). Specifically, a prime ideal is the set of all the sets containing a point. (there's also a notion of completely prime ideals where the finite union is replaced by an arbitrary (non-empty) union, maybe we actually want the completely prime ideals to recover the points of the powerset. I'm not sure. I don't think we have an arbitrary union in finitely supported sets, because if I take every the union of every other singleton, then I get a set that I can approximate arbitrarily close by cofinite sets, but never reach, so there's no smallest finitely supported set bigger than this. On the other hand, there are arbitrary unions of cofinite sets, so this may be worth looking into).
+
+These are the ingredients behind Stone duality.
+
+Now, what kind of points do we get with prime ideals of finitely supported sets? How about completely prime ideals of cofinite sets?
+
+We should try and work this out. I need to get back to the rest of my day, now though.
+
+
+----
+
+Some thoughts. Any prime ideal (assumed proper) which contains a finite set {x1,…,xn} contains one of the {xi} as well. At most one (because of the intersection condition), hence must be the set of all finitely supported sets which contain xi. Now the question is: do the cofinite sets add something? Can we have prime ideals with only cofinite sets in them?
+
+Well, at least the set of all cofinite sets is prime. A superset of a cofinite set is cofinite. The intersection of two cofinite sets is cofinite. And if the union of two finitely supported sets is cofinite, then at least one is cofinite (because the alternative is that they're both finite but then the union is finite too).
+
+I think it's the only one. Let I be a prime ideal, It contains the set ⊤ of all variables. Let X be a cofinite set of variables, then X∪X'=⊤(Where X' is the complement of X). Both X and X' are finitely supported, X' is finite. So by the disjunction lemma either I contains a finite set or it contains X, which is arbitrary.
+
+So taking the point of the finitely supported set frames seems to add one variable (or two if we allow for the whole-set ideal). The “fresh” variable
+
+I'm not too sure where to go from there. I imagine that if I'm talking of several variables, then I'm in the product frame or something (or the sum frame. I'm being lost in the direction of all these morphisms). Then I assume there are new generic points at the intersection (like we need to distinguish (fresh1, fresh1) from (fresh2, fresh2), I guess it will arise from some product construction).
+
+--- 
