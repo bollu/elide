@@ -425,11 +425,12 @@ enum AbbrevMatchKind {
 
 // return whether there is a suffix of `buf` that looks like `\<unabbrev_prefix>`. 
 AbbrevMatchKind suffix_is_unabbrev(const char *buf, int finalix, const char *unabbrev, int unabbrevlen);
+const char *abbrev_match_kind_to_str(AbbrevMatchKind);
 
 // return the index of the all matches, for whatever match exists. Sorted to be matches 
 // where the match string has the smallest length to the largest length.
 // This ensures that the AMK_EXACT_MATCHes will occur at the head of the list.
-void AbbreviationDictGetMatchingUnabbrevIxs(AbbreviationDict *dict, const char *buf, int finalix, std::vector<int> *matchixs);
+void abbrev_dict_get_matching_unabbrev_ixs(AbbreviationDict *dict, const char *buf, int finalix, std::vector<int> *matchixs);
 
 // get the path to the executable, so we can build the path to resources.
 char *get_executable_path();

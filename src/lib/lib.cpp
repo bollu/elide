@@ -1418,10 +1418,20 @@ AbbrevMatchKind suffix_is_unabbrev(const char *buf, int finalix, const char *una
   return AMK_NOMATCH;
 }
 
+const char *abbrev_match_kind_to_str(AbbrevMatchKind kind) {
+  switch(kind) {
+  case AMK_NOMATCH: return "nomatch";
+  case AMK_PREFIX_MATCH: return "prefix_match";
+  case AMK_EXACT_MATCH: return "exact_match";
+  }
+  assert(false && "unable to convert abbrev match kind to string");
+}
+
+
 // return the index of the all matches, for whatever match exists. Sorted to be matches 
 // where the match string has the smallest length to the largest length.
 // This ensures that the AMK_EXACT_MATCHes will occur at the head of the list.
-void AbbreviationDictGetMatchingUnabbrevIxs(AbbreviationDict *dict, const char *buf, int finalix, std::vector<int> *matchixs) {
+void abbrev_dict_get_matching_unabbrev_ixs(AbbreviationDict *dict, const char *buf, int finalix, std::vector<int> *matchixs) {
   for(int i = 0; i < dict->nrecords; ++i) {
     if (suffix_is_unabbrev(buf, finalix, dict->unabbrevs[i], dict->unabbrevs_len[i])) {
       matchixs->push_back(i);
