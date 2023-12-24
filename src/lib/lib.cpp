@@ -651,12 +651,39 @@ void editorInsertNewline() {
 
 void editorInsertChar(int c) {
   g_editor.curFile.makeDirty();
+
+  FileRow *row = g_editor.curFile.row + g_editor.curFile.cursor.y;
+
+  std::vector<int> matchixs_before;
+  abbrev_dict_get_matching_unabbrev_ixs(&g_editor.abbrevDict,
+      row->chars,
+      std::max<int>(0, g_editor.curFile.cursor.x - 1),
+      &matchixs_before);
+
+  if(matchixs_before.size() == 1) {
+    const int unabbrev_len = 
+      g_editor.abbrevDict.unabbrevs_len[matchixs_before[0]]; 
+    const char *abbrev = g_editor.abbrevDict.abbrevs[matchixs_before[0]];
+    const int abbrev_len = strlen(abbrev);
+
+    // delete the characters, including '\'.
+    for(int i = 0; i < unabbrev_len; ++i)  {
+      editorDelChar();    
+    }
+    row->insertString(g_editor.curFile.cursor.x, abbrev, strlen(abbrev),
+      g_editor.curFile);
+  }
+
   if (g_editor.curFile.cursor.y == g_editor.curFile.numrows) {
     // editorAppendRow("", 0);
     editorInsertRow(g_editor.curFile.numrows, "", 0);
   }
-  g_editor.curFile.row[g_editor.curFile.cursor.y].insertChar(g_editor.curFile.cursor.x, c, g_editor.curFile);
-  g_editor.curFile.cursor.x++;
+
+  // check if after inserting the character, we no longer have a match ix.
+  row->insertChar(g_editor.curFile.cursor.x, c, g_editor.curFile);  
+  g_editor.curFile.cursor.x++; // move cursor.
+
+
 }
 
 void editorDelChar() {
@@ -943,13 +970,49 @@ void editorDrawRows(abuf &ab) {
     if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[37;40m"); }
 
     if (filerow < g_editor.curFile.numrows) {
-      int len = clamp(0, g_editor.curFile.row[filerow].rsize - g_editor.curFile.scroll_col_offset, g_editor.screencols - LINE_NUMBER_NUM_CHARS);
+      int len = clamp(0, g_editor.curFile.row[filerow].rsize - g_editor.curFile.scroll_col_offset, 
+          g_editor.screencols - LINE_NUMBER_NUM_CHARS);
+      
+      // we are in the row that the current cursor is on.
+      if (filerow == g_editor.curFile.cursor.y) {
         
-      // this is the current cursor row. 
-      // We need to draw an underline if we want to handle '\alph' type situations correctly.
-      // TODO: do we even need to build a trie?
-      if (filerow == g_editor.curFile.cursor.x) {
+        // find all matches for \<lean unabbrev>
+        std::vector<int> matchixs;
+        abbrev_dict_get_matching_unabbrev_ixs(&g_editor.abbrevDict,
+            g_editor.curFile.row[filerow].chars,
+            std::max<int>(0, g_editor.curFile.cursor.x - 1),
+            &matchixs);
 
+        int matchCix = g_editor.curFile.cursor.x; 
+        // we found a match!
+        if (matchixs.size() > 0) { 
+            matchCix -= 
+              suffix_get_unabbrev_len(g_editor.curFile.row[filerow].chars,
+                std::max<int>(0, g_editor.curFile.cursor.x - 1),
+                g_editor.abbrevDict.unabbrevs[matchixs[0]],
+                g_editor.abbrevDict.unabbrevs_len[matchixs[0]]);
+        }
+        // check that the logical match index is inbounds.
+        assert(matchCix <= g_editor.curFile.cursor.x);
+        assert(matchCix >= 0);
+
+        // map to render coord, logical match index should be inbounds.
+        const int matchRix = 
+          g_editor.curFile.row[g_editor.curFile.cursor.y].cxToRx(matchCix);
+        const int cursorRix = g_editor.curFile.rx;
+        assert(matchRix <= cursorRix);
+        assert(matchRix >= 0);
+
+        const int endRix = len;
+
+        // draw the string.
+        const char *row_str_begin = 
+          g_editor.curFile.row[filerow].render + g_editor.curFile.scroll_col_offset;
+        ab.appendbuf(row_str_begin, matchRix);
+        ab.appendstr("\x1b[43m");
+        ab.appendbuf(row_str_begin + matchRix, cursorRix - matchRix);
+        ab.appendstr("\x1b[0m");
+        ab.appendbuf(row_str_begin + cursorRix, endRix - cursorRix);
       } else {
         ab.appendbuf(g_editor.curFile.row[filerow].render + g_editor.curFile.scroll_col_offset, len);
       }
@@ -1020,7 +1083,7 @@ void editorDrawMessageBar(abuf &ab) {
 
 void editorDrawNormalInsertMode() {
 
-  initEditor();
+  // initEditor();
   editorScroll();
   abuf ab;
 
@@ -1387,6 +1450,50 @@ void initEditor() {
     die("getWindowSize");
   };
   static const int BOTTOM_INFO_PANE_HEIGHT = 2; g_editor.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
+  const char *abbrev_path = get_abbreviations_dict_path();
+  printf("[loading abbreviations.json from '%s']\n", abbrev_path);
+  load_abbreviation_dict_from_file(&g_editor.abbrevDict, abbrev_path);
+  assert(g_editor.abbrevDict.is_initialized);
+}
+
+// get length <len> such that
+//    buf[:finalix) = "boo \alpha"
+//    buf[:finalix - len] = "boo" and buf[finalix - len:finalix) = "\alpha".
+// this is such that buf[finalix - len] = '\' if '\' exists,
+//     and otherwise returns len = 0.
+int suffix_get_unabbrev_len(const char *buf, int finalix, const char *unabbrev, int unabbrevlen) {
+    int slashix = -1;
+  for(int i = finalix; i >= 0; --i) {
+    if (buf[i] == '\\') {
+      slashix = i;
+      break;
+    }
+
+    // length 0
+    if (slashix  == finalix) {
+      return 0;
+    }
+
+    // do not cross word boundaries, no match.
+    if (buf[i] == ' ' || buf[i] == '\t') { return 0; }
+  }
+  // no slash found, no match.
+  if (slashix == -1) { return 0; }
+  assert(slashix >= 0 && buf[slashix] == '\\');
+  // (slashix, finalix]
+  const int needlelen = finalix - slashix;
+
+  // we have e.g. '\toba' while abbreviation is 'to'. Do not accept this case.
+  if (needlelen > unabbrevlen) { return 0; }
+  else if (needlelen == unabbrevlen && strncmp(buf + slashix + 1, unabbrev, needlelen) == 0) { 
+    // we have e.g. '\to' while abbreviation is '\to'. return a partial match.
+    return needlelen;
+  }
+  else if (needlelen < unabbrevlen && strncmp(buf + slashix + 1, unabbrev, needlelen) == 0) {
+    // we have e.g. '\t' while abbreviation is '\to'. check for a partial match.
+    return needlelen;
+  }
+  return 0;
 }
 
 AbbrevMatchKind suffix_is_unabbrev(const char *buf, int finalix, const char *unabbrev, int unabbrevlen) {
@@ -1395,6 +1502,11 @@ AbbrevMatchKind suffix_is_unabbrev(const char *buf, int finalix, const char *una
     if (buf[i] == '\\') {
       slashix = i;
       break;
+    }
+
+    // we disallow the empty match.
+    if (slashix  == finalix) {
+      return AbbrevMatchKind::AMK_EMPTY_STRING_MATCH;
     }
 
     // do not cross word boundaries/
@@ -1423,6 +1535,7 @@ const char *abbrev_match_kind_to_str(AbbrevMatchKind kind) {
   case AMK_NOMATCH: return "nomatch";
   case AMK_PREFIX_MATCH: return "prefix_match";
   case AMK_EXACT_MATCH: return "exact_match";
+  case AMK_EMPTY_STRING_MATCH: return "empty_string";
   }
   assert(false && "unable to convert abbrev match kind to string");
 }
@@ -1431,7 +1544,11 @@ const char *abbrev_match_kind_to_str(AbbrevMatchKind kind) {
 // return the index of the all matches, for whatever match exists. Sorted to be matches 
 // where the match string has the smallest length to the largest length.
 // This ensures that the AMK_EXACT_MATCHes will occur at the head of the list.
-void abbrev_dict_get_matching_unabbrev_ixs(AbbreviationDict *dict, const char *buf, int finalix, std::vector<int> *matchixs) {
+void abbrev_dict_get_matching_unabbrev_ixs(AbbreviationDict *dict, 
+  const char *buf,
+  int finalix,
+  std::vector<int> *matchixs) {
+  
   for(int i = 0; i < dict->nrecords; ++i) {
     if (suffix_is_unabbrev(buf, finalix, dict->unabbrevs[i], dict->unabbrevs_len[i])) {
       matchixs->push_back(i);
@@ -1469,7 +1586,7 @@ char *get_abbreviations_dict_path() {
 // Load the abbreviation dictionary from the filesystem.
 void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o) {
   assert(o && "illegal json file");
-  assert(!dict->initialized);
+  assert(!dict->is_initialized);
   dict->nrecords = 0;
 
   json_object_object_foreach(o, key_, val_) {
@@ -1482,13 +1599,14 @@ void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o) {
 
   int i = 0;
   json_object_object_foreach(o, key0, val0) {
-    const char *val_str = json_object_to_json_string(val0);
+    assert(json_object_get_type(val0) == json_type_string);
+    const char *val_str = json_object_get_string(val0);
     dict->unabbrevs[i] = strdup(key0);
     dict->abbrevs[i] = strdup(val_str);
     dict->unabbrevs_len[i] = strlen(dict->unabbrevs[i]);
     i++;
   }
-  dict->initialized = true;
+  dict->is_initialized = true;
 };
 
 // Load the abbreviation dictionary from the filesystem.

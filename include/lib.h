@@ -235,6 +235,7 @@ struct FileConfig {
     
   // offset for scrolling.
   int scroll_row_offset = 0;
+  // column offset for scrolling. will render from col_offset till endof row.
   int scroll_col_offset = 0;
   
   char *absolute_filepath = nullptr;
@@ -255,6 +256,17 @@ struct FileConfig {
   }
 };
 
+// unabbrevs[i] ASCII string maps to abbrevs[i] UTF-8 string.
+struct AbbreviationDict {
+  char **unabbrevs = NULL; 
+  char **abbrevs = NULL;
+  int *unabbrevs_len = NULL; // string lengths of the unabbrevs;
+  int nrecords = 0;
+  bool is_initialized = false;
+};
+
+
+
 struct EditorConfig {
   VimMode vim_mode = VM_NORMAL;
   struct termios orig_termios;
@@ -266,6 +278,7 @@ struct EditorConfig {
 
   FileConfig curFile;
 
+  AbbreviationDict abbrevDict;
   EditorConfig() { statusmsg[0] = '\0'; }
 
 };
@@ -278,7 +291,7 @@ struct FileRow {
   int size = 0;
   char *chars = nullptr;
   int rsize = 0;
-  char *render = nullptr;
+  char *render = nullptr; // convert e.g. characters like `\t` to two spaces.
 
   int rxToCx(int rx) const {
     int cur_rx = 0;
@@ -347,7 +360,25 @@ struct FileRow {
     E.is_dirty = true;
   }
 
-  void appendString(char *s, size_t len, FileConfig &E) {
+  void insertString(int at, const char *s, size_t len,  FileConfig &E) {
+    assert(at >= 0);
+    assert(at <= size);
+    chars = (char *)realloc(chars, this->size + len + 2);
+    // make space [at, at + len).
+    for(int i = size + len - 1; i > at + len; ++i) {
+      chars[i] = chars[i - 1];
+    }
+
+    // copy string.
+    for(int i = 0; i < len; ++i) {
+      chars[at + i] = s[i]; 
+    }
+    size += len;
+    this->update(E);
+    E.is_dirty = true;
+  }
+
+  void appendString(const char *s, size_t len, FileConfig &E) {
     chars = (char *)realloc(chars, size + len + 1);
     // copy string s into chars.
     memcpy(&chars[size], s, len);
@@ -400,15 +431,6 @@ void fileConfigSyncLeanState(FileConfig *file_config);
 void fileConfigLaunchLeanServer(FileConfig *file_config);
 
 
-// unabbrevs[i] ASCII string maps to abbrevs[i] UTF-8 string.
-struct AbbreviationDict {
-  char **unabbrevs = NULL; 
-  char **abbrevs = NULL;
-  int *unabbrevs_len = NULL; // string lengths of the unabbrevs;
-  int nrecords = 0;
-  bool initialized = false;
-};
-
 
 // Load the abbreviation dictionary from the filesystem.
 void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o);
@@ -420,9 +442,16 @@ void load_abbreviation_dict_from_file(AbbreviationDict *dict, const char *abbrev
 enum AbbrevMatchKind {
   AMK_NOMATCH = 0,
   AMK_PREFIX_MATCH = 1,
-  AMK_EXACT_MATCH = 2
+  AMK_EXACT_MATCH = 2, // exact match
+  AMK_EMPTY_STRING_MATCH = 3, // match against the empty string.
 };
 
+// get length <len> such that
+//    buf[:finalix) = "boo \alpha"
+//    buf[:finalix - <len>] = "boo" and buf[finalix - len:finalix) = "\alpha".
+// this is such that buf[finalix - <len>] = '\' if '\' exists,
+//     and otherwise returns <len> = 0.
+int suffix_get_unabbrev_len(const char *buf, int finalix, const char *unabbrev, int unabbrevlen);
 // return whether there is a suffix of `buf` that looks like `\<unabbrev_prefix>`. 
 AbbrevMatchKind suffix_is_unabbrev(const char *buf, int finalix, const char *unabbrev, int unabbrevlen);
 const char *abbrev_match_kind_to_str(AbbrevMatchKind);
@@ -430,8 +459,8 @@ const char *abbrev_match_kind_to_str(AbbrevMatchKind);
 // return the index of the all matches, for whatever match exists. Sorted to be matches 
 // where the match string has the smallest length to the largest length.
 // This ensures that the AMK_EXACT_MATCHes will occur at the head of the list.
-void abbrev_dict_get_matching_unabbrev_ixs(AbbreviationDict *dict, const char *buf, int finalix, std::vector<int> *matchixs);
-
+void abbrev_dict_get_matching_unabbrev_ixs(AbbreviationDict *dict,
+  const char *buf, int finalix, std::vector<int> *matchixs);
 // get the path to the executable, so we can build the path to resources.
 char *get_executable_path();
 // get the path to `/path/to/exe/abbreviations.json`.

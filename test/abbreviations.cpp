@@ -143,11 +143,14 @@ int main() {
   printf("testing [loading abbreviations.json path]\n");
   load_abbreviation_dict_from_file(&dict, abbrev_path);
   printf("  nrecords: %d\n", dict.nrecords);
-  assert(dict.initialized);
+  assert(dict.is_initialized);
 
   for(int i = 0; i < dict.nrecords; ++i) {
-    if (i < 20) {
-      printf("%20s[len=%2d] : %4s\n", dict.unabbrevs[i], dict.unabbrevs_len[i], dict.abbrevs[i]);
+    if (i < 100) {
+      printf("'%s[len=%2d] : '%s'\n",
+        dict.unabbrevs[i],
+        dict.unabbrevs_len[i],
+        dict.abbrevs[i]);
     }
     assert(strlen(dict.unabbrevs[i]) == dict.unabbrevs_len[i]);
   }
