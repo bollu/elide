@@ -361,19 +361,28 @@ struct FileRow {
   }
 
   void insertString(int at, const char *s, size_t len,  FileConfig &E) {
+    // TODO: think of this very carefully.
+    // TODO: understand how to handle unicode editing!
     assert(at >= 0);
     assert(at <= size);
-    chars = (char *)realloc(chars, this->size + len + 2);
-    // make space [at, at + len).
-    for(int i = size + len - 1; i > at + len; ++i) {
-      chars[i] = chars[i - 1];
+    assert(len >= 0);
+
+    size += len;
+    chars = (char *)realloc(chars, this->size);
+
+    for(int i = this->size - 1; i >= at + len; --i) {
+      assert (i - len >= 0);
+      assert(i >= 0);
+      assert(i < this->size);
+      assert(i - len < this->size);
+      chars[i] = chars[i - len];
     }
 
     // copy string.
     for(int i = 0; i < len; ++i) {
       chars[at + i] = s[i]; 
     }
-    size += len;
+
     this->update(E);
     E.is_dirty = true;
   }

@@ -652,6 +652,11 @@ void editorInsertNewline() {
 void editorInsertChar(int c) {
   g_editor.curFile.makeDirty();
 
+  if (g_editor.curFile.cursor.y == g_editor.curFile.numrows) {
+    // editorAppendRow("", 0);
+    editorInsertRow(g_editor.curFile.numrows, "", 0);
+  }
+
   FileRow *row = g_editor.curFile.row + g_editor.curFile.cursor.y;
 
   std::vector<int> matchixs_before;
@@ -667,17 +672,14 @@ void editorInsertChar(int c) {
     const int abbrev_len = strlen(abbrev);
 
     // delete the characters, including '\'.
-    for(int i = 0; i < unabbrev_len; ++i)  {
+    for(int i = 0; i < unabbrev_len + 1; ++i)  {
       editorDelChar();    
     }
+    g_editor.curFile.cursor.x = std::max<int>(g_editor.curFile.cursor.x - 1, 0);
     row->insertString(g_editor.curFile.cursor.x, abbrev, strlen(abbrev),
       g_editor.curFile);
   }
 
-  if (g_editor.curFile.cursor.y == g_editor.curFile.numrows) {
-    // editorAppendRow("", 0);
-    editorInsertRow(g_editor.curFile.numrows, "", 0);
-  }
 
   // check if after inserting the character, we no longer have a match ix.
   row->insertChar(g_editor.curFile.cursor.x, c, g_editor.curFile);  
