@@ -21,8 +21,7 @@
 int main(int argc, char **argv){
   enableRawMode();
   initEditor();
-
-  editorSetStatusMessage("HELP: Ctrl-Q = quit");
+  disableRawMode();
 
   char *filepath = NULL;
   if (argc >= 2) {
@@ -37,9 +36,9 @@ int main(int argc, char **argv){
 
   editorOpen(filepath); // TODO: refactor to use curFile.
   fileConfigLaunchLeanServer(&g_editor.curFile);
-  // first sync.
   fileConfigSyncLeanState(&g_editor.curFile);
 
+  enableRawMode();
   while (1) {
     editorDraw();
     editorProcessKeypress();

@@ -42,51 +42,8 @@ void enableRawMode();
 //    so on the producer side `write(fds[1], data)`, we close the consumer fd `close(fds[0])` and vice versa.
 // we search the directory tree of 'file_path'. If we find a `lakefile.lean`, then we call `lake --serve`
 // at that cwd. Otherwise, we call `lean --server` at the file working directory.
-void _exec_lean_server_on_child(const char *file_path) {
-  char *lakefile_dirpath = NULL;
-
-  // walk up directory tree of 'file_path' in a loop, printing parents,
-  // until we hit the root directory, then stop.
-  if (file_path) {
-    char *dirpath = strdup(file_path);
-    dirpath = dirname(dirpath);
-    
-    int prev_inode = -1; // inode of child. if it equals inode of parent, then we have hit /. 
-
-    // only iterate this loop a bounded number of times.
-    int NUM_PARENT_DIRS_TO_WALK = 1000;
-    bool hit_root = false;
-    for(int i = 0; i < NUM_PARENT_DIRS_TO_WALK && !hit_root; ++i) {
-      assert(i != NUM_PARENT_DIRS_TO_WALK - 1 && 
-        "ERROR: recursing when walking up parents to find `lakefile.lean`.");
-      DIR *dir = opendir(dirpath);
-      assert(dir && "unable to open directory");
-      dirent *entry = NULL;
-      while ((entry = readdir(dir)) != NULL) {
-        const char *file_name = entry->d_name;
-        if (strcmp(file_name, ".") == 0) {
-          const int cur_inode = entry->d_ino;
-          hit_root = hit_root || (cur_inode == prev_inode);
-          prev_inode = cur_inode;
-        }
-
-        if (strcmp(file_name, "lakefile.lean") == 0) {
-          lakefile_dirpath = dirpath;
-        }
-      } // end readdir() while loop.
-      closedir(dir);
-
-      // walk up parent, free memory.
-      const char *parent_dot_dot_slash = "/../";
-      char *parent_path = (char *)calloc(strlen(dirpath) + strlen(parent_dot_dot_slash) + 1,
-        sizeof(char));
-      sprintf(parent_path, "%s%s", dirpath, parent_dot_dot_slash);
-      free(dirpath);
-      dirpath = parent_path;
-    } // end for loop over directory parents.
-  }  // end if (file_path).
-
-
+// NOTE: the pointer `lakefile_dirpath` is consumed.
+void _exec_lean_server_on_child(char *lakefile_dirpath) {
   int process_error = 0;
   // no lakefile.
   if (lakefile_dirpath == NULL) {
@@ -110,6 +67,53 @@ void _exec_lean_server_on_child(const char *file_path) {
   }
 }
 
+char *get_lakefile_dirpath(const char *file_path) {
+  assert(file_path);
+  // walk up directory tree of 'file_path' in a loop, printing parents,
+  // until we hit the root directory, then stop.
+  char *dirpath = strdup(file_path);
+  dirpath = strdup(dirname(dirpath));
+  
+  int prev_inode = -1; // inode of child. if it equals inode of parent, then we have hit /. 
+
+  // only iterate this loop a bounded number of times.
+  int NUM_PARENT_DIRS_TO_WALK = 1000;
+  bool hit_root = false;
+  for(int i = 0; i < NUM_PARENT_DIRS_TO_WALK && !hit_root; ++i) {
+    assert(i != NUM_PARENT_DIRS_TO_WALK - 1 && 
+      "ERROR: recursing when walking up parents to find `lakefile.lean`.");
+    DIR *dir = opendir(dirpath);
+    assert(dir && "unable to open directory");
+    dirent *entry = NULL;
+    while ((entry = readdir(dir)) != NULL) {
+      const char *file_name = entry->d_name;
+      if (strcmp(file_name, ".") == 0) {
+        const int cur_inode = entry->d_ino;
+        hit_root = hit_root || (cur_inode == prev_inode);
+        prev_inode = cur_inode;
+      }
+
+      if (strcmp(file_name, "lakefile.lean") == 0) {
+        char *realpath_dirpath = realpath(dirpath, NULL);
+        free(dirpath);
+        return realpath_dirpath;
+      }
+    } // end readdir() while loop.
+    closedir(dir);
+
+    // walk up parent, free memory.
+    const char *parent_dot_dot_slash = "/../";
+    char *parent_path = (char *)calloc(strlen(dirpath) + strlen(parent_dot_dot_slash) + 1,
+      sizeof(char));
+    sprintf(parent_path, "%s%s", dirpath, parent_dot_dot_slash);
+    free(dirpath);
+    dirpath = parent_path;
+  } // end for loop over directory parents.
+  
+  return NULL;
+}
+
+
 // create a new lean server.
 // if file_path == NULL, then create `lean --server`.
 LeanServerState LeanServerState::init(const char *file_path) {
@@ -128,6 +132,10 @@ LeanServerState LeanServerState::init(const char *file_path) {
   fputs("\n===\n", state.child_stdout_log_file);
   fputs("\n===\n", state.child_stderr_log_file);
 
+  char *lakefile_dirpath = get_lakefile_dirpath(file_path);
+  fprintf(stderr, "lakefile_dirpath: '%s'\n", lakefile_dirpath);
+  free(lakefile_dirpath);
+
   pid_t childpid = fork();
   if(childpid == -1) {
     perror("ERROR: fork failed.");
@@ -135,7 +143,6 @@ LeanServerState LeanServerState::init(const char *file_path) {
   };
 
   if(childpid == 0) {
-    // disableRawMode(); // go back to normal mode of I/O.
 
 
     // child->parent, child will only write to this pipe, so close read end.
@@ -152,8 +159,9 @@ LeanServerState LeanServerState::init(const char *file_path) {
     dup2(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
     // it is only legal to call `read()` on stdin. So we tie the `PIPE_READ_IX` to `STDIN`
     dup2(state.parent_buffer_to_child_stdin[PIPE_READ_IX], STDIN_FILENO);
+    char *lakefile_dirpath = get_lakefile_dirpath(file_path);
+    _exec_lean_server_on_child(lakefile_dirpath);
 
-    _exec_lean_server_on_child(file_path);
   } else {
     // parent will only write into this pipe, so close the read end.
     close(state.parent_buffer_to_child_stdin[PIPE_READ_IX]);
@@ -678,8 +686,8 @@ void fileConfigLaunchLeanServer(FileConfig *file_config) {
 
   assert(file_config->absolute_filepath != NULL);
   assert(file_config->lean_server_state.initialized == false);
-  // file_config->lean_server_state = LeanServerState::init(file_config->absolute_filepath); // start lean --server.  
-  file_config->lean_server_state = LeanServerState::init(NULL); // start lean --server.  
+  file_config->lean_server_state = LeanServerState::init(file_config->absolute_filepath); // start lean --server.  
+  // file_config->lean_server_state = LeanServerState::init(NULL); // start lean --server.  
 
   json_object *req = lspCreateInitializeRequest();
   LspRequestId request_id = file_config->lean_server_state.write_request_to_child_blocking("initialize", req);
