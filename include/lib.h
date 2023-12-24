@@ -5,6 +5,7 @@
 #include <iostream>
 #include <iterator>
 #include <json-c/json.h>
+#include <json-c/json_util.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +15,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <vector>
+#include <algorithm>
 #include <unordered_map>
 #include "lean_lsp.h"
 
@@ -396,3 +398,40 @@ char *editorPrompt(const char *prompt);
 void initEditor();
 void fileConfigSyncLeanState(FileConfig *file_config);
 void fileConfigLaunchLeanServer(FileConfig *file_config);
+
+
+// unabbrevs[i] ASCII string maps to abbrevs[i] UTF-8 string.
+struct AbbreviationDict {
+  char **unabbrevs = NULL; 
+  char **abbrevs = NULL;
+  int *unabbrevs_len = NULL; // string lengths of the unabbrevs;
+  int nrecords = 0;
+  bool initialized = false;
+};
+
+
+// Load the abbreviation dictionary from the filesystem.
+void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o);
+
+// Load the abbreviation dictionary from the filesystem.
+void load_abbreviation_dict_from_file(AbbreviationDict *dict, const char *abbrev_path);
+
+// returns true if str ends in \<prefix of potential_abbrev>
+enum AbbrevMatchKind {
+  AMK_NOMATCH = 0,
+  AMK_PREFIX_MATCH = 1,
+  AMK_EXACT_MATCH = 2
+};
+
+// return whether there is a suffix of `buf` that looks like `\<unabbrev_prefix>`. 
+AbbrevMatchKind suffix_is_unabbrev(const char *buf, int finalix, const char *unabbrev, int unabbrevlen);
+
+// return the index of the all matches, for whatever match exists. Sorted to be matches 
+// where the match string has the smallest length to the largest length.
+// This ensures that the AMK_EXACT_MATCHes will occur at the head of the list.
+void AbbreviationDictGetMatchingUnabbrevIxs(AbbreviationDict *dict, const char *buf, int finalix, std::vector<int> *matchixs);
+
+// get the path to the executable, so we can build the path to resources.
+char *get_executable_path();
+// get the path to `/path/to/exe/abbreviations.json`.
+char *get_abbreviations_dict_path();

@@ -904,6 +904,8 @@ int write_int_to_str(char *s, int num) {
   return ndigits;
 }
 
+
+
 void editorDrawRows(abuf &ab) {
 
   // When we print the line number, tilde, we then print a
@@ -942,10 +944,15 @@ void editorDrawRows(abuf &ab) {
 
     if (filerow < g_editor.curFile.numrows) {
       int len = clamp(0, g_editor.curFile.row[filerow].rsize - g_editor.curFile.scroll_col_offset, g_editor.screencols - LINE_NUMBER_NUM_CHARS);
-      // int len = g_editor.curFile.row[filerow].size;
-      // if (len > g_editor.screencols)
-      //   len = g_editor.screencols;
-      ab.appendbuf(g_editor.curFile.row[filerow].render + g_editor.curFile.scroll_col_offset, len);
+        
+      // this is the current cursor row. 
+      // We need to draw an underline if we want to handle '\alph' type situations correctly.
+      // TODO: do we even need to build a trie?
+      if (filerow == g_editor.curFile.cursor.x) {
+
+      } else {
+        ab.appendbuf(g_editor.curFile.row[filerow].render + g_editor.curFile.scroll_col_offset, len);
+      }
 
     } else {
         ab.appendstr("~");
@@ -1381,3 +1388,97 @@ void initEditor() {
   };
   static const int BOTTOM_INFO_PANE_HEIGHT = 2; g_editor.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
 }
+
+AbbrevMatchKind suffix_is_unabbrev(const char *buf, int finalix, const char *unabbrev, int unabbrevlen) {
+  int slashix = -1;
+  for(int i = finalix; i >= 0; --i) {
+    if (buf[i] == '\\') {
+      slashix = i;
+      break;
+    }
+
+    // do not cross word boundaries/
+    if (buf[i] == ' ' || buf[i] == '\t') { return AMK_NOMATCH; }
+  }
+  if (slashix == -1) { return AMK_NOMATCH; }
+  assert(slashix >= 0 && buf[slashix] == '\\');
+  // (slashix, finalix]
+  const int needlelen = finalix - slashix;
+
+  // we have e.g. '\toba' while abbreviation is 'to'. Do not accept this case.
+  if (needlelen > unabbrevlen) { return AMK_NOMATCH; }
+  else if (needlelen == unabbrevlen && strncmp(buf + slashix + 1, unabbrev, needlelen) == 0) { 
+    // we have e.g. '\to' while abbreviation is '\to'. return a partial match.
+    return AMK_EXACT_MATCH;
+  }
+  else if (needlelen < unabbrevlen && strncmp(buf + slashix + 1, unabbrev, needlelen) == 0) {
+    // we have e.g. '\t' while abbreviation is '\to'. check for a partial match.
+    return AMK_PREFIX_MATCH;
+  }
+  return AMK_NOMATCH;
+}
+
+// return the index of the all matches, for whatever match exists. Sorted to be matches 
+// where the match string has the smallest length to the largest length.
+// This ensures that the AMK_EXACT_MATCHes will occur at the head of the list.
+void AbbreviationDictGetMatchingUnabbrevIxs(AbbreviationDict *dict, const char *buf, int finalix, std::vector<int> *matchixs) {
+  for(int i = 0; i < dict->nrecords; ++i) {
+    if (suffix_is_unabbrev(buf, finalix, dict->unabbrevs[i], dict->unabbrevs_len[i])) {
+      matchixs->push_back(i);
+    }
+  }
+  std::sort(matchixs->begin(), matchixs->end(), [&](int i, int j) {
+    return dict->unabbrevs_len[i] < dict->unabbrevs_len[j];
+  });
+
+}
+
+// get the path to the executable, so we can build the path to resources.
+char *get_executable_path() {
+  const int BUFSIZE = 2048;
+  char *buf = (char*)calloc(BUFSIZE, sizeof(char));
+  int sz = readlink("proc/self/exe", buf, BUFSIZE);
+
+  if (sz == -1) {
+    die("unable to get path of executable.");
+  }
+  return buf;
+}
+
+// get the path to `/path/to/exe/abbreviations.json`.
+char *get_abbreviations_dict_path() {
+  char *exe_folder = dirname(get_executable_path());
+  const int BUFSIZE = 2048;
+  char *buf = (char*)calloc(BUFSIZE, sizeof(char));
+  snprintf(buf, BUFSIZE, "%s/%s", exe_folder, "abbreviations.json");  
+  return buf;
+}
+
+
+// Load the abbreviation dictionary from the filesystem.
+void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o) {
+  assert(!dict->initialized);
+  dict->nrecords = 0;
+
+  json_object_object_foreach(o, key_, val_) {
+    dict->nrecords++;
+  }
+
+  dict->unabbrevs = (char **)calloc(sizeof(char*), dict->nrecords);
+  dict->abbrevs = (char **)calloc(sizeof(char*), dict->nrecords);
+  dict->unabbrevs_len = (int *)calloc(sizeof(int), dict->nrecords);
+
+  int i = 0;
+  json_object_object_foreach(o, key0, val0) {
+    const char *val_str = json_object_to_json_string(val0);
+    dict->unabbrevs[i] = strdup(key0);
+    dict->abbrevs[i] = strdup(val_str);
+    dict->unabbrevs_len[i] = strlen(dict->unabbrevs[i]);
+    i++;
+  }
+};
+
+// Load the abbreviation dictionary from the filesystem.
+void load_abbreviation_dict_from_file(AbbreviationDict *dict, const char *abbrev_path) {
+  load_abbreviation_dict_from_json(dict, json_object_from_file(abbrev_path));
+};
