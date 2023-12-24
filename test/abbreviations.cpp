@@ -87,6 +87,48 @@ void test6(AbbreviationDict *dict) {
 }
 
 
+void test7(AbbreviationDict *dict) {
+  const char *buf = "beta \\al";
+  const int buflen = strlen(buf);
+
+  printf("### testing ['%s' matching unabbrevs]\n", buf);
+  std::vector<int> matchixs;
+  abbrev_dict_get_matching_unabbrev_ixs(dict, buf, buflen - 1, &matchixs);
+  for(int ix : matchixs) {
+    printf("  %s\n", dict->unabbrevs[ix]);
+  }
+
+  // sorted by increasing string length.
+  for(int i = 0; i < matchixs.size() - 1; ++i) {
+    assert(dict->unabbrevs_len[matchixs[i]] <= dict->unabbrevs_len[matchixs[i+1]]);
+  }
+}
+
+void test8(AbbreviationDict *dict) {
+  const char *buf = "beta \\alpha";
+  const int buflen = strlen(buf);
+
+  printf("### testing ['%s' matching unabbrevs]\n", buf);
+  std::vector<int> matchixs;
+  abbrev_dict_get_matching_unabbrev_ixs(dict, buf, buflen - 1, &matchixs);
+  for(int ix : matchixs) {
+    printf("  %s\n", dict->unabbrevs[ix]);
+  }
+  assert(matchixs.size() == 1);
+}
+
+void test9(AbbreviationDict *dict) {
+  const char *buf = "beta \\alphaxx";
+  const int buflen = strlen(buf);
+
+  printf("### testing ['%s' matching unabbrevs]\n", buf);
+  std::vector<int> matchixs;
+  abbrev_dict_get_matching_unabbrev_ixs(dict, buf, buflen - 1, &matchixs);
+  for(int ix : matchixs) {
+    printf("  %s\n", dict->unabbrevs[ix]);
+  }
+  assert(matchixs.size() == 0);
+}
 
 
 int main() {
@@ -116,6 +158,11 @@ int main() {
   test4(&dict);
   test5(&dict);
   test6(&dict);
+
+  // test abbrev match.
+  test7(&dict);
+  test8(&dict);
+  test9(&dict);
 
   return 0;
 
