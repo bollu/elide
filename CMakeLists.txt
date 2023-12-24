@@ -62,5 +62,6 @@ install(TARGETS libedtr DESTINATION lib)
 add_executable(edtr src/main.cpp)
 target_link_libraries(edtr PRIVATE libedtr)
 install(TARGETS edtr DESTINATION bin)
+file(COPY src/abbreviations.json DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 add_subdirectory(test/)
