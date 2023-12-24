@@ -73,6 +73,20 @@ void test5(AbbreviationDict *dict) {
   assert(kind == AMK_NOMATCH);
 }
 
+void test6(AbbreviationDict *dict) {
+  const char *unabbrev = "alpha";
+  const int unabbrevlen = strlen(unabbrev);
+
+  const char *buf = "beta \\alphaa";
+  const int buflen = strlen(buf);
+
+  printf("### testing ['%s' ends with abbreviation of '%s']\n", buf, unabbrev);
+  AbbrevMatchKind kind = suffix_is_unabbrev(buf, buflen - 1, unabbrev, unabbrevlen);
+  printf("  kind: %s\n", abbrev_match_kind_to_str(kind));
+  assert(kind == AMK_NOMATCH);
+}
+
+
 
 
 int main() {
@@ -101,6 +115,7 @@ int main() {
   test3(&dict);
   test4(&dict);
   test5(&dict);
+  test6(&dict);
 
   return 0;
 
