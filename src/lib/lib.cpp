@@ -1437,10 +1437,11 @@ void AbbreviationDictGetMatchingUnabbrevIxs(AbbreviationDict *dict, const char *
 char *get_executable_path() {
   const int BUFSIZE = 2048;
   char *buf = (char*)calloc(BUFSIZE, sizeof(char));
-  int sz = readlink("proc/self/exe", buf, BUFSIZE);
+  const char *exe_path = "/proc/self/exe";
+  int sz = readlink(exe_path, buf, BUFSIZE);
 
   if (sz == -1) {
-    die("unable to get path of executable.");
+    die("unable to get path of executable, failed to read '%s'.", exe_path);
   }
   return buf;
 }
@@ -1457,6 +1458,7 @@ char *get_abbreviations_dict_path() {
 
 // Load the abbreviation dictionary from the filesystem.
 void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o) {
+  assert(o && "illegal json file");
   assert(!dict->initialized);
   dict->nrecords = 0;
 
@@ -1476,9 +1478,14 @@ void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o) {
     dict->unabbrevs_len[i] = strlen(dict->unabbrevs[i]);
     i++;
   }
+  dict->initialized = true;
 };
 
 // Load the abbreviation dictionary from the filesystem.
 void load_abbreviation_dict_from_file(AbbreviationDict *dict, const char *abbrev_path) {
-  load_abbreviation_dict_from_json(dict, json_object_from_file(abbrev_path));
+  json_object *o = json_object_from_file(abbrev_path);
+  if (o == NULL) {
+    die("unable to load abbreviations from file '%s'.\n", abbrev_path);
+  }
+  load_abbreviation_dict_from_json(dict, o);
 };
