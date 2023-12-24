@@ -368,7 +368,7 @@ int clamp(int lo, int val, int hi);
 
 
 /*** terminal ***/
-void die(const char *s);
+void die(const char *fmt, ...);
 int editorReadKey();
 void getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);

@@ -48,7 +48,7 @@ int main() {
   state.write_notification_to_child_blocking("textDocument/didOpen", req);
 
   // $/lean/plainGoal
-  Uri uri(strdup(file_path));
+  Uri uri; uri.init_from_file_path(strdup(file_path));
   req = lspCreateLeanPlainGoalRequest(uri, Position(0, 35));
   fprintf(stderr, "### writing $/lean/plainGoal\n");
   fprintf(stderr, " '%s'\n", json_object_to_json_string(req));

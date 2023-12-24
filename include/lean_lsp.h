@@ -92,7 +92,6 @@ struct Uri {
     this->uri = strdup(uri.uri);
   }
 
-  Uri(char *uri) : uri(uri) {}
   ~Uri() { free(uri); }
 
   void init_from_file_path(const char *file_path) {
@@ -186,15 +185,15 @@ static json_object *lspCreateInitializedNotification() {
 }
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didChange
-static json_object *lspCreateDidCloseTextDocumentRequest(const char *uri) {
+// static json_object *lspCreateDidCloseTextDocumentRequest(const char *uri) {
 
-  json_object *o = json_object_new_object();
-  // textDocumentIdentifier
-  json_object *textDocument = json_object_new_object();
-  json_object_object_add(textDocument, "uri", json_object_new_uri(strdup(uri)));
-  json_object_object_add(o, "textDocument", textDocument);
-  return o;
-}
+//   json_object *o = json_object_new_object();
+//   // textDocumentIdentifier
+//   json_object *textDocument = json_object_new_object();
+//   json_object_object_add(textDocument, "uri", json_object_new_uri(strdup(uri)));
+//   json_object_object_add(o, "textDocument", textDocument);
+//   return o;
+// }
 
 
 struct Position {

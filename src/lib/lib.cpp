@@ -352,12 +352,15 @@ EditorConfig g_editor;
 
 /*** terminal ***/
 
-void die(const char *s) {
-  // clear screen
-  // CHECK_POSIX_CALL_0(write(STDOUT_FILENO, "\x1b[2J", 4));
-  // CHECK_POSIX_CALL_0(write(STDOUT_FILENO, "\x1b[H", 3));
-  // explain errno before dying with mesasge s.
-  perror(s);
+void die(const char *fmt, ...) {
+
+  va_list args;
+  va_start(args, fmt);
+  const int ERROR_LEN = 9000; 
+  char *buf = (char*)malloc(sizeof(char) * ERROR_LEN);
+  vsnprintf(buf, ERROR_LEN, fmt, args);
+  va_end(args);
+  perror(buf);
   exit(1);
 }
 
