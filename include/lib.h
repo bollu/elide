@@ -216,8 +216,8 @@ struct FileRow;
 
 
 struct Cursor {
-  int x = 0;
-  int y = 0;
+  int col = 0;
+  int row = 0;
 };
 
 
@@ -285,6 +285,10 @@ struct EditorConfig {
 
 extern EditorConfig g_editor; // global editor handle.
 
+class FileRow2 {
+  char *mem = nullptr; // raw memory.
+  int mem_size = 0; // size of memory bank.
+};
 
 
 struct FileRow {
@@ -417,10 +421,12 @@ int getWindowSize(int *rows, int *cols);
 void editorInsertRow(int at, const char *s, size_t len);
 void editorFreeRow(FileRow *row);
 void editorDelRow(int at);
-void editorRowDelChar(FileRow *row, int at);
+// Delete character at location `at`.
+// Invariant: `at in [0, row->size)`.
+void editorRowDelChar(FileRow *row, int at); 
 bool is_space_or_tab(char c);
 void editorInsertNewline();
-void editorInsertChar(int c);
+void editorInsertChar(int c); // 32 bit.
 void editorDelChar();
 void editorOpen(const char *filename);
 char *editorRowsToString(int *buflen);
