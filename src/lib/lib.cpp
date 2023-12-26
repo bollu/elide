@@ -275,7 +275,7 @@ json_object *LeanServerState::_read_next_json_record_from_buffer_nonblocking() {
   assert (content_length_begin_ix != -1);
 
   // yay, found content length.
-  int content_length = atoi(child_stdout_buffer.b + content_length_begin_ix + strlen(CONTENT_LENGTH_STR));
+  int content_length = atoi(child_stdout_buffer.buf + content_length_begin_ix + strlen(CONTENT_LENGTH_STR));
 
   // we don't have enough data in the buffer to read the content length
   const int header_line_end_ix = header_line_begin_ix + strlen(DOUBLE_NEWLINE_STR);
@@ -286,7 +286,7 @@ json_object *LeanServerState::_read_next_json_record_from_buffer_nonblocking() {
   // parse.
   json_tokener *tok = json_tokener_new(); // TODO: do not create/destroy this object each time.
   json_object *o = json_tokener_parse_ex(tok,
-    child_stdout_buffer.b + header_line_end_ix, content_length);
+    child_stdout_buffer.buf + header_line_end_ix, content_length);
   assert(o != NULL);
   json_tokener_free(tok);
 
@@ -1027,7 +1027,7 @@ void editorDrawNormalInsertMode() {
   // show hidden cursor
   ab.appendstr("\x1b[?25h");
 
-  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.b, ab.len));
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf, ab.len));
 }
 
 
@@ -1173,7 +1173,7 @@ void editorDrawInfoView() {
   ab.appendstr("\x1b[?25h");
 
 
-  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.b, ab.len));
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf, ab.len));
 }
 
 

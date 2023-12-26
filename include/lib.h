@@ -20,16 +20,23 @@
 #include "lean_lsp.h"
 
 struct abuf {
-  char *b = nullptr;
+  char *buf = nullptr;
   int len = 0;
-  abuf() {}
+  
+  abuf() = default;
+  ~abuf() { free(buf); }
+  abuf(const abuf &other) {
+    len = other.len;
+    buf = (char*)malloc(sizeof(char) * len);
+    memcpy(buf, other.buf, len);
+  }
 
   void appendbuf(const char *s, int slen) {
     assert(slen >= 0 && "negative length!");
     if (slen == 0) { return; }
-    this->b = (char *)realloc(b, len + slen);
-    assert(this->b && "unable to append string");
-    memcpy(this->b + len, s, slen);
+    this->buf = (char *)realloc(buf, len + slen);
+    assert(this->buf && "unable to append string");
+    memcpy(this->buf + len, s, slen);
     this->len += slen;
   }
 
@@ -39,8 +46,8 @@ struct abuf {
     slen = std::max<int>(0, std::min<int>(slen, len - start));
     assert(slen >= 0);
     char *out = (char *)calloc(slen + 1, sizeof(char));
-    if (b != NULL) {
-      memcpy(out, b + start, slen);
+    if (buf != NULL) {
+      memcpy(out, buf + start, slen);
     }
     return out;
   }
@@ -66,7 +73,7 @@ struct abuf {
     for (int i = begin_ix; i < this->len; ++i) {
       int match_len = 0;
       while (i + match_len < this->len && match_len < findbuf_len) {
-        if (this->b[i + match_len] == findbuf[match_len]) {
+        if (this->buf[i + match_len] == findbuf[match_len]) {
           match_len++;
         } else {
           break;
@@ -109,13 +116,12 @@ struct abuf {
   // no-op.
   void drop_prefix(int drop_len) {
     char *bnew = (char *)malloc(sizeof(char) * (len - drop_len));
-    memcpy(bnew, this->b + drop_len, this->len - drop_len);
-    free(this->b);
-    this->b = bnew;
+    memcpy(bnew, this->buf + drop_len, this->len - drop_len);
+    free(this->buf);
+    this->buf = bnew;
     this->len = len - drop_len;
   }
 
-  ~abuf() { free(b); }
 };
 
 struct LeanServerCursorInfo {
