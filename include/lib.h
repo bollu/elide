@@ -339,27 +339,46 @@ struct Size {
 
 struct FileRow {
   int raw_size = 0;
-  char *chars = nullptr;
+  char *bytes = nullptr; // BUFFER (nonn null terminated.)
   
   int rsize = 0;
-  char *render = nullptr; // convert e.g. characters like `\t` to two spaces.
+  char *render = nullptr; // STRING (null terminated). convert e.g. characters like `\t` to two spaces.
 
-  FileRow() = default;
+  FileRow() {
+    bytes = (char*)malloc(0);
+    render = (char*)malloc(0);
+  };
   
   FileRow(const FileRow &other) {
+    *this = other;
+  }
+
+  FileRow &operator =(const FileRow &other) {
     this->raw_size = other.raw_size;
-    this->chars = (char*)malloc(sizeof(char) * this->raw_size);
-    memcpy(this->chars, other.chars, this->raw_size);
+    this->bytes = (char*)realloc(this->bytes, sizeof(char) * this->raw_size);
+    // memcpy is legal only if raw_size > 0
+    if (other.raw_size > 0) {
+      memcpy(bytes, other.bytes, this->raw_size);
+    }
 
     this->rsize = other.rsize;
-    this->render = (char*)malloc(sizeof(char) * this->rsize);
-    memcpy(this->render, other.render, this->raw_size);
-
+    this->render = (char*)realloc(this->render, sizeof(char) * this->rsize);
+    // memcpy is legal only if raw_size > 0
+    if (other.rsize > 0) {
+      memcpy(this->render, other.render, this->rsize);
+    }
+    return *this;
   }
+
+  ~FileRow() {
+    free(this->bytes);
+    free(this->render);
+  }
+
   int rxToCx(int rx) const {
     int cur_rx = 0;
     for (int cx = 0; cx < this->raw_size; cx++) {
-      if (this->chars[cx] == '\t') {
+      if (bytes[cx] == '\t') {
         cur_rx += (NSPACES_PER_TAB - 1) - (cur_rx % NSPACES_PER_TAB);
       }
       cur_rx++;
@@ -373,7 +392,7 @@ struct FileRow {
   int cxToRx(int cx) const {
     int rx = 0;
     for (int j = 0; j < cx && j < this->raw_size; ++j) {
-      if (chars[j] == '\t') {
+      if (bytes[j] == '\t') {
         rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
       } else {
         rx++;
@@ -382,57 +401,54 @@ struct FileRow {
     return rx;
   }
 
-  void insertChar(int at, int c, FileConfig &E) {
+  void insertByte(int at, int c, FileConfig &E) {
     assert(at >= 0);
     assert(at <= this->raw_size);
-    // +2, one for new char, one for null.
-    chars = (char *)realloc(chars, this->raw_size + 2);
-    // nchars: [chars+at...chars+size)
-    // TODO: why +1 at end?
-    // memmove(chars + at + 1, chars + at, size - at + 1);
-    memmove(chars + at + 1, chars + at, this->raw_size - at);
-    this->raw_size++;
-    chars[at] = c;
+    bytes = (char *)realloc(bytes, this->raw_size + 1);
+    for(int i = at + 1; i < this->raw_size + 1; i++) {
+      this->bytes[i] = this->bytes[i - 1];
+    }    
+    bytes[at] = c;
+    this->raw_size += 1;
     this->rebuild_render_cache(E);
     E.is_dirty = true;
   }
 
   // set the data.
-  void setString(const char *buf, int len, FileConfig &E) {
+  void setBytes(const char *buf, int len, FileConfig &E) {
     this->raw_size = len;
-    free(this->chars);
-    this->chars = (char *)malloc(sizeof(char) * (len + 1));
+    bytes = (char *)realloc(bytes, sizeof(char) * this->raw_size);
     for(int i = 0; i < len; ++i) {
-      chars[i] = buf[i];
+      bytes[i] = buf[i];
     }
-    chars[len] = 0;
     this->rebuild_render_cache(E);
+    E.is_dirty = true;
+
   }
   
-  void delChar(int at, FileConfig &E) {
-    E.makeDirty();
+  void delByte(int at, FileConfig &E) {
     assert(at >= 0);
     assert(at < this->raw_size);
-    if (at < 0 || at >= this->raw_size) {
-      return;
-    }
-    memmove(&this->chars[at], &this->chars[at + 1], this->raw_size - at);
+
+    for(int i = at; i < this->raw_size - 1; i++) {
+      this->bytes[i] = this->bytes[i + 1];
+    }    
     this->raw_size--;
     this->rebuild_render_cache(g_editor.curFile);
-  }
+    E.makeDirty();
 
+  }
 
   void truncateByteSize(int raw_size_new, FileConfig &E) {
     assert(raw_size_new <= this->raw_size);
     this->raw_size = raw_size_new;
-    // is this actually null terminated?
-    this->chars[this->raw_size] = '\0';
+    this->bytes = (char*)realloc(this->bytes, this->raw_size);
     this->rebuild_render_cache(E);
     E.is_dirty = true;
 
   }
 
-  void insertString(int at, const char *s, size_t len,  FileConfig &E) {
+  void insertBytes(int at, const char *s, size_t len,  FileConfig &E) {
     // TODO: think of this very carefully.
     // TODO: understand how to handle unicode editing!
     assert(at >= 0);
@@ -440,31 +456,27 @@ struct FileRow {
     assert(len >= 0);
 
     raw_size += len;
-    chars = (char *)realloc(chars, this->raw_size);
+    bytes = (char *)realloc(bytes, this->raw_size);
 
     for(int i = this->raw_size - 1; i >= at + len; --i) {
-      assert (i - len >= 0);
-      assert(i >= 0);
-      assert(i < this->raw_size);
-      assert(i - len < this->raw_size);
-      chars[i] = chars[i - len];
+      bytes[i] = bytes[i - len];
     }
 
     // copy string.
     for(int i = 0; i < len; ++i) {
-      chars[at + i] = s[i]; 
+      bytes[at + i] = s[i]; 
     }
 
     this->rebuild_render_cache(E);
     E.makeDirty();
   }
 
-  void appendString(const char *s, size_t len, FileConfig &E) {
-    chars = (char *)realloc(chars, raw_size + len + 1);
-    // copy string s into chars.
-    memcpy(&chars[this->raw_size], s, len);
+  void appendBytes(const char *s, size_t len, FileConfig &E) {
+    if (len == 0) { return; }
+    bytes = (char *)realloc(bytes, raw_size + len);
+    // copy string s into bytes.
+    memcpy(bytes + this->raw_size, s, len);
     this->raw_size += len;
-    chars[this->raw_size] = '\0';
     this->rebuild_render_cache(E);
     E.is_dirty = true;
   }
@@ -474,20 +486,19 @@ private:
   void rebuild_render_cache(FileConfig &E) {
     int ntabs = 0;
     for (int j = 0; j < this->raw_size; ++j) {
-      ntabs += chars[j] == '\t';
+      ntabs += bytes[j] == '\t';
     }
 
-    free(render);
-    render = (char *)malloc(this->raw_size + ntabs * NSPACES_PER_TAB + 1);
+    render = (char *)realloc(render, this->raw_size + ntabs * NSPACES_PER_TAB + 1);
     int ix = 0;
     for (int j = 0; j < this->raw_size; ++j) {
-      if (chars[j] == '\t') {
+      if (bytes[j] == '\t') {
         render[ix++] = ' ';
         while (ix % NSPACES_PER_TAB != 0) {
           render[ix++] = ' ';
         }
       } else {
-        render[ix++] = chars[j];
+        render[ix++] = bytes[j];
       }
     }
     render[ix] = '\0';
