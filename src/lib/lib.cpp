@@ -856,7 +856,7 @@ void editorScroll() {
   assert (g_editor.curFile.cursor.row >= 0 && g_editor.curFile.cursor.row <= g_editor.curFile.rows.size());
   if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
     g_editor.curFile.cursor_render_col = 
-      g_editor.curFile.rows[g_editor.curFile.cursor.row].cxToRx(g_editor.curFile.cursor.col);
+      g_editor.curFile.rows[g_editor.curFile.cursor.row].cxToRx(Size<Codepoint>(g_editor.curFile.cursor.col));
   }
   if (g_editor.curFile.cursor.row < g_editor.curFile.scroll_row_offset) {
     g_editor.curFile.scroll_row_offset = g_editor.curFile.cursor.row;
@@ -938,10 +938,7 @@ void editorDrawRows(abuf &ab) {
     if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[37;40m"); }
     if (filerow < g_editor.curFile.rows.size()) {
       const FileRow &row = g_editor.curFile.rows[filerow];
-      printf("row ncodepoints: '%d' | data: '%s'\n", row.ncodepoints().size, row.debugToString());
-
       for(Ix<Codepoint> i(0); i < row.ncodepoints(); ++i) {
-        printf("  getCodepoint(%d)\n", i.ix);
         ab.appendCodepoint(row.getCodepoint(i));
       }
       // int len = clamp(0, g_editor.curFile.rows[filerow].rsize - g_editor.curFile.scroll_col_offset, 
@@ -1053,7 +1050,8 @@ void editorDrawNormalInsertMode() {
   // move cursor to correct row;col.
   char buf[32];
   const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
-  sprintf(buf, "\x1b[%d;%dH", g_editor.curFile.cursor.row - g_editor.curFile.scroll_row_offset + 1, g_editor.curFile.cursor_render_col - g_editor.curFile.scroll_col_offset + 1 + LINE_NUMBER_NUM_CHARS);
+  sprintf(buf, "\x1b[%d;%dH", g_editor.curFile.cursor.row - g_editor.curFile.scroll_row_offset + 1,
+      g_editor.curFile.cursor_render_col - g_editor.curFile.scroll_col_offset + 1 + LINE_NUMBER_NUM_CHARS);
   ab.appendstr(buf);
 
   // show hidden cursor

@@ -488,8 +488,7 @@ struct FileRow {
   const char *getCodepoint(Ix<Codepoint> ix) const {
     assert(ix < this->ncodepoints());
     int delta = 0;
-    for(Ix<Codepoint> i(0); i < ix; i++)  {
-      printf("    i=%3d ix=%d next-code-point-len(bytes + %3d)\n", i.ix, ix.ix, delta);
+    for(Ix<Codepoint> i(0); i < ix; i++) {
       delta += utf8_next_code_point_len(this->bytes + delta);
     }
     return this->bytes + delta;
@@ -519,14 +518,17 @@ struct FileRow {
     assert(false && "rx value that is out of range!");
   }
 
-  int cxToRx(int cx) const {
+  int cxToRx(Size<Codepoint> cx) const {
+    assert(cx <= this->ncodepoints());
     int rx = 0;
-    for (int j = 0; j < cx && j < this->raw_size; ++j) {
-      if (bytes[j] == '\t') {
+    char *p = this->bytes;
+    for (Ix<Codepoint> j(0); j < cx; ++j) {
+      if (*p == '\t') {
         rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
       } else {
-        rx++;
+        rx += 1; // just 1.
       }
+      p += this->getCodepointBytes(j).size;
     }
     return rx;
   }
