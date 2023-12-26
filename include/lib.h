@@ -19,6 +19,9 @@
 #include <unordered_map>
 #include "lean_lsp.h"
 
+static int utf8_next_code_point_len(const char *str);
+
+
 struct abuf {
   abuf() = default;
   ~abuf() { free(_buf); }
@@ -35,6 +38,16 @@ struct abuf {
     assert(this->_buf && "unable to append string");
     memcpy(this->_buf + this->_len, s, slen);
     this->_len += slen;
+  }
+
+  // append a UTF-8 codepoint.
+  void appendCodepoint(const char *codepoint) {
+    const int len = utf8_next_code_point_len(codepoint);
+    this->appendbuf(codepoint, len);
+  }
+
+  void appendChar(char c) {
+    this->appendbuf(&c, 1);
   }
 
   // take the substring of [start,start+len) and convert it to a string.
@@ -231,6 +244,128 @@ enum editorKey {
 struct FileRow;
 
 
+
+struct Byte{}; // Ix<Byte>.
+struct Codepoint{}; // Ix<Grapheme>.
+
+template<typename T>
+struct Size;
+
+template<typename T>
+struct Ix;
+
+template<typename T>
+struct Ix {
+  int ix = 0;
+  explicit Ix() = default;
+  explicit Ix(int ix) { this->ix = ix; };
+  Ix &operator = (const Ix<T> &other) {
+    this->ix = other.ix;
+    return *this;
+  }
+
+  Ix(const Ix<T> &other) {
+    *this = other;
+  }
+
+  Ix<T> operator++(int) {
+    // postfix
+    return Ix<T>(this->ix + 1);
+  }
+
+  Ix<T> &operator++() {
+    // postfix
+    this->ix += 1;
+    return *this;
+  }
+
+  Ix<T> operator--(int) {
+    // postfix
+    return Ix<T>(this->ix - 1);
+  }
+
+  bool operator <(const Ix<T> &other) {
+    return this->ix < other.ix;
+  }
+
+  bool operator <=(const Ix<T> &other) {
+    return this->ix <= other.ix;
+  }
+
+  bool operator <(const Size<T> &other);
+
+  bool operator == (const Ix<T> &other) {
+    return this->ix ==  other.ix;
+  }
+
+  bool operator > (const Ix<T> &other) {
+    return this->ix > other.ix;
+  }
+
+  bool is_inbounds(Size<T> size) const;
+  bool is_inbounds_or_end(Size<T> size) const;
+};
+
+template<typename T>
+struct Size {
+  int size;
+  explicit Size() = default;
+  explicit Size(int size) : size(size) {};
+  Size &operator = (const Size<T> &other) {
+    this->size = other.size;
+    return *this;
+  }
+  Size(const Size<T> &other) {
+    *this = *other;
+  }
+  
+  Ix<T> toIx() const {
+    return Ix<T>(this->size);
+  }
+
+  // convert from size T to size S.
+  // Can covert from e.g. Codepoints to Bytes if one is dealing with ASCII,
+  // since every ASCII object takes 1 codepoint.
+  template<typename S>
+  Size<S> unsafe_cast() const {
+    return Size<S>(this->size);
+  }
+
+  void operator += (const Size<T> &other) {
+    this->size += other.size;
+  }
+
+  Size<T> operator + (const Size<T> &other) const {
+    return Size<T>(this->size + other.size);
+  }
+
+  Size<T> operator - (const Size<T> &other) const {
+    int out = (this->size - other.size);
+    assert(out >= 0);
+    return out;
+  }
+
+  bool operator <= (const Size<T> &other) const {
+    return this->size <= other.size;
+  }
+
+};
+
+template<typename T>
+bool Ix<T>::is_inbounds(Size<T> size) const {
+  return ix >= 0 && ix < size.size;
+}
+
+template<typename T>
+bool Ix<T>::is_inbounds_or_end(Size<T> size) const {
+  return ix >= 0 && ix <= size.size;
+}
+
+template<typename T>
+bool Ix<T>::operator <(const Size<T> &other) {
+  return ix < other.size;
+}
+
 struct Cursor {
   int col = 0; // number of graphemes to move past from the start of the row to get to the current one.
   int row = 0; // index of row. Must be within [0, file->nrows].
@@ -300,50 +435,8 @@ struct EditorConfig {
 
 extern EditorConfig g_editor; // global editor handle.
 
-struct Utf8Str {
-  abuf raw;
-
-  int ncodepoints() const;
-  
-  // ix_codepoint \in [0, ncodepoints].
-  void insertASCIICharAt(char c, int ix_codepoint) {};
-  
-  // count by codepoints.
-  void insertStrAt(abuf *buf, int ix_codepoint) {};
-
-  // ix_codepoint \in [0, ncodepoints).
-  void deleteCodepointAt(int ix_codepoint) {};
-
-};
-
-
-struct Byte{}; // Ix<Byte>.
-struct Grapheme{}; // Ix<Grapheme>.
-
-template<typename T>
-struct Size;
-
-template<typename T>
-struct Ix;
-
-template<typename T>
-struct Ix {
-  int ix;
-  explicit Ix(int ix) : ix(ix) {};
-};
-
-template<typename T>
-struct Size {
-  int size;
-};
 
 struct FileRow {
-  int raw_size = 0;
-  char *bytes = nullptr; // BUFFER (nonn null terminated.)
-  
-  int rsize = 0;
-  char *render = nullptr; // STRING (null terminated). convert e.g. characters like `\t` to two spaces.
-
   FileRow() {
     bytes = (char*)malloc(0);
     render = (char*)malloc(0);
@@ -351,6 +444,39 @@ struct FileRow {
   
   FileRow(const FileRow &other) {
     *this = other;
+  }
+
+  Size<Byte> nbytes() const {
+    return Size<Byte>(this->raw_size);
+  }
+
+  char getByte(Ix<Byte> ix) const {
+    assert(ix < this->nbytes());
+    return this->bytes[ix.ix];
+  }
+
+  Size<Codepoint> ncodepoints() const {
+    int count = 0;
+    int ix = 0;
+    while(ix < this->raw_size) {
+      ix += utf8_next_code_point_len(this->bytes + ix);
+      count++;
+    }
+    assert(ix == this->raw_size);
+    return Size<Codepoint>(count);
+  }
+
+  const char *getCodepoint(Ix<Codepoint> ix) const {
+    assert(ix.is_inbounds(this->ncodepoints()));
+    char *out = this->bytes;
+    for(Ix<Codepoint> i(0); i < ix; i++)  {
+      out += utf8_next_code_point_len(out);
+    }
+    return out;
+  }
+
+  Size<Byte> getCodepointBytes(Ix<Codepoint> i) const {
+    return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
   }
 
   FileRow &operator =(const FileRow &other) {
@@ -439,10 +565,15 @@ struct FileRow {
 
   }
 
-  void truncateByteSize(int raw_size_new, FileConfig &E) {
-    assert(raw_size_new <= this->raw_size);
-    this->raw_size = raw_size_new;
-    this->bytes = (char*)realloc(this->bytes, this->raw_size);
+  // truncate to `ncodepoints_new` codepoints.
+  void truncateNCodepoints(Size<Codepoint> ncodepoints_new, FileConfig &E) {
+    assert(ncodepoints_new <= this->ncodepoints());
+    Size<Byte> nbytes;
+    for(Ix<Codepoint> i(0); i < ncodepoints_new; i++)  {
+      nbytes += this->getCodepointBytes(i);
+    }
+    this->raw_size = nbytes.size;
+    this->bytes = (char*)realloc(this->bytes, nbytes.size);
     this->rebuild_render_cache(E);
     E.is_dirty = true;
 
@@ -471,17 +602,28 @@ struct FileRow {
     E.makeDirty();
   }
 
-  void appendBytes(const char *s, size_t len, FileConfig &E) {
-    if (len == 0) { return; }
-    bytes = (char *)realloc(bytes, raw_size + len);
-    // copy string s into bytes.
-    memcpy(bytes + this->raw_size, s, len);
-    this->raw_size += len;
+  // append a codepoint.
+  void appendCodepoint(const char *s, FileConfig &E) {
+    Size<Byte> nbytes(utf8_next_code_point_len(s + nbytes.size));
+    bytes = (char *)realloc(bytes, raw_size + nbytes.size);
+    memcpy(bytes + this->raw_size, s, nbytes.size);
+    this->raw_size += nbytes.size;
     this->rebuild_render_cache(E);
     E.is_dirty = true;
+
   }
 
+  // whatever, this will be made private later.
+  int rsize = 0;
+  char *render = nullptr; // STRING (null terminated). convert e.g. characters like `\t` to two spaces.
+
+
 private:
+  int raw_size = 0;
+  char *bytes = nullptr; // BUFFER (nonn null terminated.)
+  
+
+
   // should be private? since it updates info cache.
   void rebuild_render_cache(FileConfig &E) {
     int ntabs = 0;
@@ -536,7 +678,7 @@ void editorInsertNewline();
 void editorInsertChar(int c); // 32 bit.
 void editorDelChar();
 void editorOpen(const char *filename);
-char *editorRowsToString(int *buflen);
+char *editorRowsToBuf(Size<Byte> *buflen);
 void editorSave();
 void editorDraw();
 void editorScroll();
