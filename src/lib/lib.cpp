@@ -540,38 +540,31 @@ int getWindowSize(int *rows, int *cols) {
 // so rows'[at] = <new str>, rows'[at+k] = rows[at + k - 1];
 // This also copies the indentation from the previous line into the new line.
 void editorInsertRow(int at, const char *s, size_t len) {
-  if (at < 0 || at > g_editor.curFile.numrows) {
+  if (at < 0 || at > g_editor.curFile.rows.size()) {
     return;
   }
 
-  g_editor.curFile.row = (FileRow *)realloc(g_editor.curFile.row, sizeof(FileRow) * (g_editor.curFile.numrows + 1));
-  memmove(&g_editor.curFile.row[at + 1], &g_editor.curFile.row[at], sizeof(FileRow) * (g_editor.curFile.numrows - at));
-  g_editor.curFile.row[at].size = len;
-  g_editor.curFile.row[at].chars = (char *)malloc(len + 1);
-  memcpy(g_editor.curFile.row[at].chars, s, len);
-  g_editor.curFile.row[at].chars[len] = '\0';
-  g_editor.curFile.row[at].rsize = 0;
-  g_editor.curFile.row[at].render = NULL;
-  g_editor.curFile.row[at].update(g_editor.curFile);
-
-  g_editor.curFile.numrows++;
-  g_editor.curFile.makeDirty();
+  // realloc sucks, don't do this kids. It does not call the constructor.
+  g_editor.curFile.rows.push_back(FileRow()); 
+  std::move_backward(g_editor.curFile.rows.begin() + at, 
+    g_editor.curFile.rows.begin() + at + 1, g_editor.curFile.rows.end());
+  g_editor.curFile.rows[at].setString(s, len, g_editor.curFile);
 }
 
 // functionality superceded by |editorInsertRow|
 // void editorAppendRow(const char *s, size_t len) {
-//   g_editor.curFile.row = (FileRow *)realloc(g_editor.curFile.row, sizeof(FileRow) * (g_editor.curFile.numrows + 1));
-//   const int at = g_editor.curFile.numrows;
+//   g_editor.curFile.row = (FileRow *)realloc(g_editor.curFile.row, sizeof(FileRow) * (g_editor.curFile.rows.size() + 1));
+//   const int at = g_editor.curFile.rows.size();
 //   // TODO: placement-new.
-//   g_editor.curFile.row[at].size = len;
-//   g_editor.curFile.row[at].chars = (char *)malloc(len + 1);
-//   memcpy(g_editor.curFile.row[at].chars, s, len);
-//   g_editor.curFile.row[at].chars[len] = '\0';
+//   g_editor.curFile.rows[at].size = len;
+//   g_editor.curFile.rows[at].chars = (char *)malloc(len + 1);
+//   memcpy(g_editor.curFile.rows[at].chars, s, len);
+//   g_editor.curFile.rows[at].chars[len] = '\0';
 
-//   g_editor.curFile.row[at].rsize = 0;
-//   g_editor.curFile.row[at].render = NULL;
-//   g_editor.curFile.row[at].update();
-//   g_editor.curFile.numrows++;
+//   g_editor.curFile.rows[at].rsize = 0;
+//   g_editor.curFile.rows[at].render = NULL;
+//   g_editor.curFile.rows[at].update();
+//   g_editor.curFile.rows.size()++;
 //   g_editor.curFile.is_dirty = true;
 // }
 
@@ -582,23 +575,12 @@ void editorFreeRow(FileRow *row) {
 
 void editorDelRow(int at) {
   g_editor.curFile.makeDirty();
-  if (at < 0 || at >= g_editor.curFile.numrows)
+  if (at < 0 || at >= g_editor.curFile.rows.size())
     return;
-  editorFreeRow(&g_editor.curFile.row[at]);
-  memmove(&g_editor.curFile.row[at], &g_editor.curFile.row[at + 1], sizeof(FileRow) * (g_editor.curFile.numrows - at - 1));
-  g_editor.curFile.numrows--;
-}
-
-void editorRowDelChar(FileRow *row, int at) {
-  g_editor.curFile.makeDirty();
-  assert(at >= 0);
-  assert(at < row->size);
-  if (at < 0 || at >= row->size) {
-    return;
-  }
-  memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
-  row->size--;
-  row->update(g_editor.curFile);
+  editorFreeRow(&g_editor.curFile.rows[at]);
+  std::move(g_editor.curFile.rows.begin() + 1, g_editor.curFile.rows.end(),
+      g_editor.curFile.rows.begin());
+  g_editor.curFile.rows.pop_back(); // drop last element.
 }
 
 
@@ -617,32 +599,29 @@ void editorInsertNewline() {
     g_editor.curFile.cursor.col = 0;
   } else {
     // at column other than first, so chop row and insert new row.
-    FileRow *row = &g_editor.curFile.row[g_editor.curFile.cursor.row];
+    FileRow *row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
     // legal previous row, copy the indentation.
     // note that the checks 'num_indent < row.size' and 'num_indent < g_editor.curFile.cursor.col' are *not* redundant.
     // We only want to copy as much indent exists upto the cursor.
     int num_indent = 0;
     for (num_indent = 0;
-       num_indent < row->size &&
+       num_indent < row->raw_size &&
        num_indent < g_editor.curFile.cursor.col && is_space_or_tab(row->chars[num_indent]);
        num_indent++) {};
-    char *new_row_contents = (char *)malloc(sizeof(char)*(row->size - g_editor.curFile.cursor.col + num_indent));
+    char *new_row_contents = (char *)malloc(sizeof(char)*(row->raw_size - g_editor.curFile.cursor.col + num_indent));
     for(int i = 0; i < num_indent; ++i) {
       new_row_contents[i] = row->chars[i]; // copy the spaces over.
     }
-    for(int i = g_editor.curFile.cursor.col; i < row->size; ++i) {
+    for(int i = g_editor.curFile.cursor.col; i < row->raw_size; ++i) {
       new_row_contents[num_indent + (i - g_editor.curFile.cursor.col)] = row->chars[i];
     }
     // create a row at g_editor.curFile.cursor.row + 1 containing data row[g_editor.curFile.cursor.col:...]
-    editorInsertRow(g_editor.curFile.cursor.row + 1, new_row_contents, row->size - g_editor.curFile.cursor.col + num_indent);
+    editorInsertRow(g_editor.curFile.cursor.row + 1, new_row_contents, row->raw_size - g_editor.curFile.cursor.col + num_indent);
 
     // pointer invalidated, get pointer to current row again,
-    row = &g_editor.curFile.row[g_editor.curFile.cursor.row];
+    row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
     // chop off at row[...:g_editor.curFile.cursor.col]
-    row->size = g_editor.curFile.cursor.col;
-    row->chars[row->size] = '\0';
-    row->update(g_editor.curFile);
-
+    row->truncateByteSize(g_editor.curFile.cursor.col, g_editor.curFile);
     // place cursor at next row (g_editor.curFile.cursor.row + 1), column of the indent.
     g_editor.curFile.cursor.row++;
     g_editor.curFile.cursor.col = num_indent;
@@ -652,12 +631,12 @@ void editorInsertNewline() {
 void editorInsertChar(int c) {
   g_editor.curFile.makeDirty();
 
-  if (g_editor.curFile.cursor.row == g_editor.curFile.numrows) {
+  if (g_editor.curFile.cursor.row == g_editor.curFile.rows.size()) {
     // editorAppendRow("", 0);
-    editorInsertRow(g_editor.curFile.numrows, "", 0);
+    editorInsertRow(g_editor.curFile.rows.size(), "", 0);
   }
 
-  FileRow *row = g_editor.curFile.row + g_editor.curFile.cursor.row;
+  FileRow *row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
 
   std::vector<int> matchixs_before;
   abbrev_dict_get_matching_unabbrev_ixs(&g_editor.abbrevDict,
@@ -690,21 +669,21 @@ void editorInsertChar(int c) {
 
 void editorDelChar() {
   g_editor.curFile.makeDirty();
-  if (g_editor.curFile.cursor.row == g_editor.curFile.numrows) {
+  if (g_editor.curFile.cursor.row == g_editor.curFile.rows.size()) {
     return;
   }
   if (g_editor.curFile.cursor.col == 0 && g_editor.curFile.cursor.row == 0)
     return;
 
-  FileRow *row = &g_editor.curFile.row[g_editor.curFile.cursor.row];
+  FileRow *row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
   if (g_editor.curFile.cursor.col > 0) {
-    editorRowDelChar(row, g_editor.curFile.cursor.col - 1);
+    row->delChar(g_editor.curFile.cursor.col - 1, g_editor.curFile);
     g_editor.curFile.cursor.col--;
   } else {
     // place cursor at last column of prev row.
-    g_editor.curFile.cursor.col = g_editor.curFile.row[g_editor.curFile.cursor.row - 1].size;
+    g_editor.curFile.cursor.col = g_editor.curFile.rows[g_editor.curFile.cursor.row - 1].raw_size;
     // append string.
-    g_editor.curFile.row[g_editor.curFile.cursor.row - 1].appendString(row->chars, row->size, g_editor.curFile);
+    g_editor.curFile.rows[g_editor.curFile.cursor.row - 1].appendString(row->chars, row->raw_size, g_editor.curFile);
     // delete current row
     editorDelRow(g_editor.curFile.cursor.row);
     // go to previous row.
@@ -811,7 +790,7 @@ void editorOpen(const char *filename) {
       linelen--;
     }
     // editorAppendRow(line, linelen);
-    editorInsertRow(g_editor.curFile.numrows, line, linelen);
+    editorInsertRow(g_editor.curFile.rows.size(), line, linelen);
   }
   free(line);
   fclose(fp);
@@ -821,15 +800,15 @@ void editorOpen(const char *filename) {
 
 char *editorRowsToString(int *buflen) {
   int totlen = 0;
-  for (int j = 0; j < g_editor.curFile.numrows; j++) {
-    totlen += g_editor.curFile.row[j].size + 1;
+  for (int j = 0; j < g_editor.curFile.rows.size(); j++) {
+    totlen += g_editor.curFile.rows[j].raw_size + 1;
   }
   *buflen = totlen;
   char *buf = (char *)malloc(totlen);
   char *p = buf;
-  for (int j = 0; j < g_editor.curFile.numrows; j++) {
-    memcpy(p, g_editor.curFile.row[j].chars, g_editor.curFile.row[j].size);
-    p += g_editor.curFile.row[j].size;
+  for (int j = 0; j < g_editor.curFile.rows.size(); j++) {
+    memcpy(p, g_editor.curFile.rows[j].chars, g_editor.curFile.rows[j].raw_size);
+    p += g_editor.curFile.rows[j].raw_size;
     *p = '\n';
     p++;
   }
@@ -868,13 +847,13 @@ void editorFind() {
   char *query = editorPrompt("Search: %s (ESC to cancel)");
   if (query == NULL) return;
   int i;
-  for (i = 0; i < g_editor.curFile.numrows; i++) {
-    FileRow *row = &g_editor.curFile.row[i];
+  for (i = 0; i < g_editor.curFile.rows.size(); i++) {
+    FileRow *row = &g_editor.curFile.rows[i];
     char *match = strstr(row->render, query);
     if (match) {
       g_editor.curFile.cursor.row = i;
       g_editor.curFile.cursor.col = match - row->render;
-      g_editor.curFile.scroll_row_offset = g_editor.curFile.numrows;
+      g_editor.curFile.scroll_row_offset = g_editor.curFile.rows.size();
       break;
     }
   }
@@ -888,9 +867,10 @@ void editorFind() {
 
 void editorScroll() {
   g_editor.curFile.cursor_render_col = 0;
-  assert (g_editor.curFile.cursor.row >= 0 && g_editor.curFile.cursor.row <= g_editor.curFile.numrows);
-  if (g_editor.curFile.cursor.row < g_editor.curFile.numrows) {
-    g_editor.curFile.cursor_render_col = g_editor.curFile.row[g_editor.curFile.cursor.row].cxToRx(g_editor.curFile.cursor.col);
+  assert (g_editor.curFile.cursor.row >= 0 && g_editor.curFile.cursor.row <= g_editor.curFile.rows.size());
+  if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
+    g_editor.curFile.cursor_render_col = 
+      g_editor.curFile.rows[g_editor.curFile.cursor.row].cxToRx(g_editor.curFile.cursor.col);
   }
   if (g_editor.curFile.cursor.row < g_editor.curFile.scroll_row_offset) {
     g_editor.curFile.scroll_row_offset = g_editor.curFile.cursor.row;
@@ -946,8 +926,8 @@ void editorDrawRows(abuf &ab) {
 
   // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
   const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
-  for (int y = 0; y < g_editor.screenrows; y++) {
-    int filerow = y + g_editor.curFile.scroll_row_offset;
+  for (int row = 0; row < g_editor.screenrows; row++) {
+    int filerow = row + g_editor.curFile.scroll_row_offset;
 
     // convert the line number into a string, and write it.
     {
@@ -971,54 +951,10 @@ void editorDrawRows(abuf &ab) {
     // code in view mode is renderered gray
     if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[37;40m"); }
 
-    if (filerow < g_editor.curFile.numrows) {
-      int len = clamp(0, g_editor.curFile.row[filerow].rsize - g_editor.curFile.scroll_col_offset, 
+    if (filerow < g_editor.curFile.rows.size()) {
+      int len = clamp(0, g_editor.curFile.rows[filerow].rsize - g_editor.curFile.scroll_col_offset, 
           g_editor.screencols - LINE_NUMBER_NUM_CHARS);
-      
-      // we are in the row that the current cursor is on.
-      if (filerow == g_editor.curFile.cursor.row) {
-        
-        // find all matches for \<lean unabbrev>
-        std::vector<int> matchixs;
-        abbrev_dict_get_matching_unabbrev_ixs(&g_editor.abbrevDict,
-            g_editor.curFile.row[filerow].chars,
-            std::max<int>(0, g_editor.curFile.cursor.col - 1),
-            &matchixs);
-
-        int matchCix = g_editor.curFile.cursor.col; 
-        // we found a match!
-        if (matchixs.size() > 0) { 
-            matchCix -= 
-              suffix_get_unabbrev_len(g_editor.curFile.row[filerow].chars,
-                std::max<int>(0, g_editor.curFile.cursor.col - 1),
-                g_editor.abbrevDict.unabbrevs[matchixs[0]],
-                g_editor.abbrevDict.unabbrevs_len[matchixs[0]]);
-        }
-        // check that the logical match index is inbounds.
-        assert(matchCix <= g_editor.curFile.cursor.col);
-        assert(matchCix >= 0);
-
-        // map to render coord, logical match index should be inbounds.
-        const int matchRix = 
-          g_editor.curFile.row[g_editor.curFile.cursor.row].cxToRx(matchCix);
-        const int cursorRix = g_editor.curFile.cursor_render_col;
-        assert(matchRix <= cursorRix);
-        assert(matchRix >= 0);
-
-        const int endRix = len;
-
-        // draw the string.
-        const char *row_str_begin = 
-          g_editor.curFile.row[filerow].render + g_editor.curFile.scroll_col_offset;
-        ab.appendbuf(row_str_begin, matchRix);
-        ab.appendstr("\x1b[43m");
-        ab.appendbuf(row_str_begin + matchRix, cursorRix - matchRix);
-        ab.appendstr("\x1b[0m");
-        ab.appendbuf(row_str_begin + cursorRix, endRix - cursorRix);
-      } else {
-        ab.appendbuf(g_editor.curFile.row[filerow].render + g_editor.curFile.scroll_col_offset, len);
-      }
-
+        ab.appendbuf(g_editor.curFile.rows[filerow].render + g_editor.curFile.scroll_col_offset, len);
     } else {
         ab.appendstr("~");
     }
@@ -1048,12 +984,15 @@ void editorDrawStatusBar(abuf &ab) {
 
   char status[80], rstatus[80];
   int len = snprintf(status, sizeof(status), "%.20s - 5%d lines",
-                     g_editor.curFile.absolute_filepath ? g_editor.curFile.absolute_filepath : "[No Name]", g_editor.curFile.numrows);
+               g_editor.curFile.absolute_filepath ? g_editor.curFile.absolute_filepath : "[No Name]",
+               (int)g_editor.curFile.rows.size());
 
   len = std::min<int>(len, g_editor.screencols);
   ab.appendstr(status);
 
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", g_editor.curFile.cursor.row + 1, g_editor.curFile.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", 
+      g_editor.curFile.cursor.row + 1,
+      (int)g_editor.curFile.rows.size());
 
   while (len < g_editor.screencols) {
     if (g_editor.screencols - len == rlen) {
@@ -1300,7 +1239,8 @@ void editorSetStatusMessage(const char *fmt, ...) {
 /*** input ***/
 
 void editorMoveCursor(int key) {
-  FileRow *row = (g_editor.curFile.cursor.row >= g_editor.curFile.numrows) ? NULL : &g_editor.curFile.row[g_editor.curFile.cursor.row];
+  const FileRow *row = 
+    (g_editor.curFile.cursor.row >= g_editor.curFile.rows.size()) ? NULL : &g_editor.curFile.rows[g_editor.curFile.cursor.row];
 
   switch (key) {
   case ARROW_LEFT:
@@ -1310,15 +1250,15 @@ void editorMoveCursor(int key) {
       // move back line.
       assert(g_editor.curFile.cursor.col == 0);
       g_editor.curFile.cursor.row--;
-      g_editor.curFile.cursor.col = g_editor.curFile.row[g_editor.curFile.cursor.row].size;
+      g_editor.curFile.cursor.col = g_editor.curFile.rows[g_editor.curFile.cursor.row].raw_size;
     }
 
     break;
   case ARROW_RIGHT:
-    if (row && g_editor.curFile.cursor.col < row->size) {
+    if (row && g_editor.curFile.cursor.col < row->raw_size) {
       g_editor.curFile.cursor.col++;
-    } else if (row && g_editor.curFile.cursor.col == row->size) {
-      assert(g_editor.curFile.cursor.col == row->size);
+    } else if (row && g_editor.curFile.cursor.col == row->raw_size) {
+      assert(g_editor.curFile.cursor.col == row->raw_size);
       g_editor.curFile.cursor.row++;
       g_editor.curFile.cursor.col = 0;
     }
@@ -1330,12 +1270,12 @@ void editorMoveCursor(int key) {
     }
     break;
   case ARROW_DOWN:
-    if (g_editor.curFile.cursor.row < g_editor.curFile.numrows) {
+    if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
       g_editor.curFile.cursor.row++;
     }
     break;
   case PAGE_DOWN:
-    g_editor.curFile.cursor.row = std::min<int>(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.numrows);
+    g_editor.curFile.cursor.row = std::min<int>(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.rows.size());
     break;
   case PAGE_UP:
     g_editor.curFile.cursor.row = std::max<int>(g_editor.curFile.cursor.row - g_editor.screenrows / 4, 0);
@@ -1343,8 +1283,8 @@ void editorMoveCursor(int key) {
   }
 
   // snap to next line.
-  // row = (g_editor.curFile.cursor.row >= g_editor.curFile.numrows) ? NULL : &g_editor.curFile.row[g_editor.curFile.cursor.row];
-  // int rowlen = row ? row->size : 0;
+  // row = (g_editor.curFile.cursor.row >= g_editor.curFile.rows.size()) ? NULL : &g_editor.curFile.rows[g_editor.curFile.cursor.row];
+  // int rowlen = row ? row->raw_size : 0;
   // if (g_editor.curFile.cursor.col > rowlen) {
   //   g_editor.curFile.cursor.col = rowlen;
   // }

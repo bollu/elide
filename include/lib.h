@@ -230,8 +230,7 @@ struct FileConfig {
   int cursor_render_col = 0;
   
   // total number of rows.  
-  FileRow *row;
-  int numrows = 0;
+  std::vector<FileRow> rows;
     
   // offset for scrolling.
   int scroll_row_offset = 0;
@@ -290,16 +289,53 @@ class FileRow2 {
   int mem_size = 0; // size of memory bank.
 };
 
+struct Utf8Str {
+  abuf raw;
+
+  int ncodepoints() const;
+  
+  // ix_codepoint \in [0, ncodepoints].
+  void insertASCIICharAt(char c, int ix_codepoint) {};
+  
+  // count by codepoints.
+  void insertStrAt(abuf *buf, int ix_codepoint) {};
+
+  // ix_codepoint \in [0, ncodepoints).
+  void deleteCodepointAt(int ix_codepoint) {};
+
+};
+
+
+struct Byte{}; // Ix<Byte>.
+struct Grapheme{}; // Ix<Grapheme>.
+
+template<typename T>
+struct Size;
+
+template<typename T>
+struct Ix;
+
+template<typename T>
+struct Ix {
+  int ix;
+  explicit Ix(int ix) : ix(ix) {};
+};
+
+template<typename T>
+struct Size {
+  int size;
+};
 
 struct FileRow {
-  int size = 0;
+  int raw_size = 0;
   char *chars = nullptr;
+  
   int rsize = 0;
   char *render = nullptr; // convert e.g. characters like `\t` to two spaces.
 
   int rxToCx(int rx) const {
     int cur_rx = 0;
-    for (int cx = 0; cx < this->size; cx++) {
+    for (int cx = 0; cx < this->raw_size; cx++) {
       if (this->chars[cx] == '\t') {
         cur_rx += (NSPACES_PER_TAB - 1) - (cur_rx % NSPACES_PER_TAB);
       }
@@ -309,12 +345,11 @@ struct FileRow {
       }
     }
     assert(false && "rx value that is out of range!");
-    // return cx;
   }
 
   int cxToRx(int cx) const {
     int rx = 0;
-    for (int j = 0; j < cx && j < this->size; ++j) {
+    for (int j = 0; j < cx && j < this->raw_size; ++j) {
       if (chars[j] == '\t') {
         rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
       } else {
@@ -323,18 +358,106 @@ struct FileRow {
     }
     return rx;
   }
-  // should be private? since it updates info cache.
-  void update(FileConfig &E) {
 
+  void insertChar(int at, int c, FileConfig &E) {
+    assert(at >= 0);
+    assert(at <= this->raw_size);
+    // +2, one for new char, one for null.
+    chars = (char *)realloc(chars, this->raw_size + 2);
+    // nchars: [chars+at...chars+size)
+    // TODO: why +1 at end?
+    // memmove(chars + at + 1, chars + at, size - at + 1);
+    memmove(chars + at + 1, chars + at, this->raw_size - at);
+    this->raw_size++;
+    chars[at] = c;
+    this->rebuild_render_cache(E);
+    E.is_dirty = true;
+  }
+
+  // set the data.
+  void setString(const char *buf, int len, FileConfig &E) {
+    this->raw_size = len;
+    free(this->chars);
+    this->chars = (char *)malloc(sizeof(char) * (len + 1));
+    for(int i = 0; i < len; ++i) {
+      chars[i] = buf[i];
+    }
+    chars[len] = 0;
+    this->rebuild_render_cache(E);
+  }
+  
+  void delChar(int at, FileConfig &E) {
+    E.makeDirty();
+    assert(at >= 0);
+    assert(at < this->raw_size);
+    if (at < 0 || at >= this->raw_size) {
+      return;
+    }
+    memmove(&this->chars[at], &this->chars[at + 1], this->raw_size - at);
+    this->raw_size--;
+    this->rebuild_render_cache(g_editor.curFile);
+  }
+
+
+  void truncateByteSize(int raw_size_new, FileConfig &E) {
+    assert(raw_size_new <= this->raw_size);
+    this->raw_size = raw_size_new;
+    // is this actually null terminated?
+    this->chars[this->raw_size] = '\0';
+    this->rebuild_render_cache(E);
+    E.is_dirty = true;
+
+  }
+
+  void insertString(int at, const char *s, size_t len,  FileConfig &E) {
+    // TODO: think of this very carefully.
+    // TODO: understand how to handle unicode editing!
+    assert(at >= 0);
+    assert(at <= raw_size);
+    assert(len >= 0);
+
+    raw_size += len;
+    chars = (char *)realloc(chars, this->raw_size);
+
+    for(int i = this->raw_size - 1; i >= at + len; --i) {
+      assert (i - len >= 0);
+      assert(i >= 0);
+      assert(i < this->raw_size);
+      assert(i - len < this->raw_size);
+      chars[i] = chars[i - len];
+    }
+
+    // copy string.
+    for(int i = 0; i < len; ++i) {
+      chars[at + i] = s[i]; 
+    }
+
+    this->rebuild_render_cache(E);
+    E.makeDirty();
+  }
+
+  void appendString(const char *s, size_t len, FileConfig &E) {
+    chars = (char *)realloc(chars, raw_size + len + 1);
+    // copy string s into chars.
+    memcpy(&chars[this->raw_size], s, len);
+    this->raw_size += len;
+    chars[this->raw_size] = '\0';
+    this->rebuild_render_cache(E);
+    E.is_dirty = true;
+  }
+
+private:
+  // should be private? since it updates info cache.
+  void rebuild_render_cache(FileConfig &E) {
     int ntabs = 0;
-    for (int j = 0; j < size; ++j) {
+    for (int j = 0; j < this->raw_size; ++j) {
       ntabs += chars[j] == '\t';
     }
 
     free(render);
-    render = (char *)malloc(size + ntabs * NSPACES_PER_TAB + 1);
+    render = (char *)malloc(this->raw_size + ntabs * NSPACES_PER_TAB + 1);
     int ix = 0;
-    for (int j = 0; j < size; ++j) {
+    for (int j = 0; j < this->raw_size; ++j) {
       if (chars[j] == '\t') {
         render[ix++] = ' ';
         while (ix % NSPACES_PER_TAB != 0) {
@@ -349,57 +472,7 @@ struct FileRow {
     E.is_dirty = true;
   }
 
-  void insertChar(int at, int c, FileConfig &E) {
-    assert(at >= 0);
-    assert(at <= size);
-    // +2, one for new char, one for null.
-    chars = (char *)realloc(chars, size + 2);
-    // nchars: [chars+at...chars+size)
-    // TODO: why +1 at end?
-    // memmove(chars + at + 1, chars + at, size - at + 1);
-    memmove(chars + at + 1, chars + at, size - at);
-    size++;
-    chars[at] = c;
-    this->update(E);
-    E.is_dirty = true;
-  }
 
-  void insertString(int at, const char *s, size_t len,  FileConfig &E) {
-    // TODO: think of this very carefully.
-    // TODO: understand how to handle unicode editing!
-    assert(at >= 0);
-    assert(at <= size);
-    assert(len >= 0);
-
-    size += len;
-    chars = (char *)realloc(chars, this->size);
-
-    for(int i = this->size - 1; i >= at + len; --i) {
-      assert (i - len >= 0);
-      assert(i >= 0);
-      assert(i < this->size);
-      assert(i - len < this->size);
-      chars[i] = chars[i - len];
-    }
-
-    // copy string.
-    for(int i = 0; i < len; ++i) {
-      chars[at + i] = s[i]; 
-    }
-
-    this->update(E);
-    E.is_dirty = true;
-  }
-
-  void appendString(const char *s, size_t len, FileConfig &E) {
-    chars = (char *)realloc(chars, size + len + 1);
-    // copy string s into chars.
-    memcpy(&chars[size], s, len);
-    size += len;
-    chars[size] = '\0';
-    this->update(E);
-    E.is_dirty = true;
-  }
 };
 
 void enableRawMode();
