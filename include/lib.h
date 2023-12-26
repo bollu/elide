@@ -390,7 +390,7 @@ struct Size {
     return *this;
   }
 
-  Size<T> operator--(int){
+  Size<T> operator--(int) {
     // postfix
     Size<T> copy(*this);
     this->size -= 1;

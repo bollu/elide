@@ -1025,18 +1025,6 @@ void editorDrawNormalInsertMode() {
   editorScroll();
   abuf ab;
 
-  // It’s possible that the cursor might be displayed in the middle of the
-  // screen somewhere for a split second while the terminal is drawing to the
-  // screen. To make sure that doesn’t happen, let’s hide the cursor before
-  // refreshing the screen, and show it again immediately after the refresh
-  // finishes.
-  ab.appendstr("\x1b[?25l"); // hide cursor
-
-  // EDIT: no need to refresh screen, screen is cleared
-  // line by line @ editorDrawRows.
-  //
-  // EDIT: I am not sure if this extra complexity is worth it!
-  //
   // VT100 escapes.
   // \x1b: escape.
   // J: erase in display.
@@ -1055,15 +1043,11 @@ void editorDrawNormalInsertMode() {
   // editorDrawStatusBar(ab);
   // editorDrawMessageBar(ab);
 
-  // move cursor to correct row;col.
   char buf[32];
   const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
   sprintf(buf, "\x1b[%d;%dH", g_editor.curFile.cursor.row - g_editor.curFile.scroll_row_offset + 1,
       g_editor.curFile.cursor_render_col - g_editor.curFile.scroll_col_offset + 1 + LINE_NUMBER_NUM_CHARS);
   ab.appendstr(buf);
-
-  // show hidden cursor
-  ab.appendstr("\x1b[?25h");
 
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
