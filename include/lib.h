@@ -284,11 +284,6 @@ struct EditorConfig {
 
 extern EditorConfig g_editor; // global editor handle.
 
-class FileRow2 {
-  char *mem = nullptr; // raw memory.
-  int mem_size = 0; // size of memory bank.
-};
-
 struct Utf8Str {
   abuf raw;
 
@@ -333,6 +328,18 @@ struct FileRow {
   int rsize = 0;
   char *render = nullptr; // convert e.g. characters like `\t` to two spaces.
 
+  FileRow() = default;
+  
+  FileRow(const FileRow &other) {
+    this->raw_size = other.raw_size;
+    this->chars = (char*)malloc(sizeof(char) * this->raw_size);
+    memcpy(this->chars, other.chars, this->raw_size);
+
+    this->rsize = other.rsize;
+    this->render = (char*)malloc(sizeof(char) * this->rsize);
+    memcpy(this->render, other.render, this->raw_size);
+
+  }
   int rxToCx(int rx) const {
     int cur_rx = 0;
     for (int cx = 0; cx < this->raw_size; cx++) {
@@ -504,7 +511,6 @@ void editorDelChar();
 void editorOpen(const char *filename);
 char *editorRowsToString(int *buflen);
 void editorSave();
-void editorFind();
 void editorDraw();
 void editorScroll();
 void editorDrawRows(abuf &ab);

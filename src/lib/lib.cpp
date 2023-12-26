@@ -334,7 +334,6 @@ json_object *LeanServerState::read_json_response_from_child_blocking(LspRequestI
 /*** defines ***/
 
 void editorSetStatusMessage(const char *fmt, ...);
-char *editorPrompt(const char *prompt);
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
 
@@ -543,43 +542,23 @@ void editorInsertRow(int at, const char *s, size_t len) {
   if (at < 0 || at > g_editor.curFile.rows.size()) {
     return;
   }
-
   // realloc sucks, don't do this kids. It does not call the constructor.
   g_editor.curFile.rows.push_back(FileRow()); 
-  std::move_backward(g_editor.curFile.rows.begin() + at, 
-    g_editor.curFile.rows.begin() + at + 1, g_editor.curFile.rows.end());
+  for(int i = g_editor.curFile.rows.size() - 1; i >= at+1; i--)  {
+    g_editor.curFile.rows[i] = g_editor.curFile.rows[i - 1];   
+  }
   g_editor.curFile.rows[at].setString(s, len, g_editor.curFile);
 }
 
-// functionality superceded by |editorInsertRow|
-// void editorAppendRow(const char *s, size_t len) {
-//   g_editor.curFile.row = (FileRow *)realloc(g_editor.curFile.row, sizeof(FileRow) * (g_editor.curFile.rows.size() + 1));
-//   const int at = g_editor.curFile.rows.size();
-//   // TODO: placement-new.
-//   g_editor.curFile.rows[at].size = len;
-//   g_editor.curFile.rows[at].chars = (char *)malloc(len + 1);
-//   memcpy(g_editor.curFile.rows[at].chars, s, len);
-//   g_editor.curFile.rows[at].chars[len] = '\0';
-
-//   g_editor.curFile.rows[at].rsize = 0;
-//   g_editor.curFile.rows[at].render = NULL;
-//   g_editor.curFile.rows[at].update();
-//   g_editor.curFile.rows.size()++;
-//   g_editor.curFile.is_dirty = true;
-// }
-
-void editorFreeRow(FileRow *row) {
-  free(row->render);
-  free(row->chars);
-}
 
 void editorDelRow(int at) {
   g_editor.curFile.makeDirty();
   if (at < 0 || at >= g_editor.curFile.rows.size())
     return;
-  editorFreeRow(&g_editor.curFile.rows[at]);
-  std::move(g_editor.curFile.rows.begin() + 1, g_editor.curFile.rows.end(),
-      g_editor.curFile.rows.begin());
+
+  for(int i = at; i < g_editor.curFile.rows.size() - 1; ++i) {
+    g_editor.curFile.rows[i] = g_editor.curFile.rows[i+1];
+  }
   g_editor.curFile.rows.pop_back(); // drop last element.
 }
 
@@ -839,25 +818,6 @@ void editorSave() {
   g_editor.curFile.is_dirty = false;
   close(fd);
   free(buf);
-}
-
-/** find **/
-
-void editorFind() {
-  char *query = editorPrompt("Search: %s (ESC to cancel)");
-  if (query == NULL) return;
-  int i;
-  for (i = 0; i < g_editor.curFile.rows.size(); i++) {
-    FileRow *row = &g_editor.curFile.rows[i];
-    char *match = strstr(row->render, query);
-    if (match) {
-      g_editor.curFile.cursor.row = i;
-      g_editor.curFile.cursor.col = match - row->render;
-      g_editor.curFile.scroll_row_offset = g_editor.curFile.rows.size();
-      break;
-    }
-  }
-  free(query);
 }
 
 
@@ -1356,33 +1316,6 @@ void editorProcessKeypress() {
       return;
     } // end switch case.
   } // end mode == VM_INSERT
-}
-
-char *editorPrompt(const char *prompt) {
-  size_t bufsize = 128;
-  char *buf = (char *)malloc(bufsize);
-  size_t buflen = 0;
-  buf[0] = '\0';
-  while (1) {
-    editorSetStatusMessage(prompt, buf);
-    editorDraw();
-    int c = editorReadKey();
-    if (c == CTRL('g') || c == '\x1b') {
-        editorSetStatusMessage(""); free(buf); return NULL;
-    } else if (c == '\r') {
-      if (buflen != 0) {
-        editorSetStatusMessage("");
-        return buf;
-      }
-    } else if (!iscntrl(c) && c < 128) {
-      if (buflen == bufsize - 1) {
-        bufsize *= 2;
-        buf = (char *)realloc(buf, bufsize);
-      }
-      buf[buflen++] = c;
-      buf[buflen] = '\0';
-    }
-  }
 }
 
 /*** init ***/
