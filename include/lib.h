@@ -542,6 +542,7 @@ struct FileRow {
   }
 
   // set the data.
+  // TODO: think if we should expose bytes API.
   // TODO: force copy codepoint by codepoint.
   void setBytes(const char *buf, int len, FileConfig &E) {
     this->raw_size = len;
