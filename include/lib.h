@@ -216,8 +216,8 @@ struct FileRow;
 
 
 struct Cursor {
-  int col = 0;
-  int row = 0;
+  int col = 0; // number of graphemes to move past from the start of the row to get to the current one.
+  int row = 0; // index of row. Must be within [0, file->nrows].
 };
 
 
@@ -226,8 +226,8 @@ struct FileConfig {
   bool is_initialized = false;
   Cursor cursor;
 
-  // cache of row[cursor.y].cxToRx(cursor.x)
-  int rx = 0;
+  // cache of row[cursor.row].cxToRx(cursor.col)
+  int cursor_render_col = 0;
   
   // total number of rows.  
   FileRow *row;

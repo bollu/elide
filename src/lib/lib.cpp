@@ -887,10 +887,10 @@ void editorFind() {
 /*** output ***/
 
 void editorScroll() {
-  g_editor.curFile.rx = 0;
+  g_editor.curFile.cursor_render_col = 0;
   assert (g_editor.curFile.cursor.row >= 0 && g_editor.curFile.cursor.row <= g_editor.curFile.numrows);
   if (g_editor.curFile.cursor.row < g_editor.curFile.numrows) {
-    g_editor.curFile.rx = g_editor.curFile.row[g_editor.curFile.cursor.row].cxToRx(g_editor.curFile.cursor.col);
+    g_editor.curFile.cursor_render_col = g_editor.curFile.row[g_editor.curFile.cursor.row].cxToRx(g_editor.curFile.cursor.col);
   }
   if (g_editor.curFile.cursor.row < g_editor.curFile.scroll_row_offset) {
     g_editor.curFile.scroll_row_offset = g_editor.curFile.cursor.row;
@@ -898,11 +898,11 @@ void editorScroll() {
   if (g_editor.curFile.cursor.row >= g_editor.curFile.scroll_row_offset + g_editor.screenrows) {
     g_editor.curFile.scroll_row_offset = g_editor.curFile.cursor.row - g_editor.screenrows + 1;
   }
-  if (g_editor.curFile.rx < g_editor.curFile.scroll_col_offset) {
-    g_editor.curFile.scroll_col_offset = g_editor.curFile.rx;
+  if (g_editor.curFile.cursor_render_col < g_editor.curFile.scroll_col_offset) {
+    g_editor.curFile.scroll_col_offset = g_editor.curFile.cursor_render_col;
   }
-  if (g_editor.curFile.rx >= g_editor.curFile.scroll_col_offset + g_editor.screencols) {
-    g_editor.curFile.scroll_col_offset = g_editor.curFile.rx - g_editor.screencols + 1;
+  if (g_editor.curFile.cursor_render_col >= g_editor.curFile.scroll_col_offset + g_editor.screencols) {
+    g_editor.curFile.scroll_col_offset = g_editor.curFile.cursor_render_col - g_editor.screencols + 1;
   }
 }
 
@@ -1001,7 +1001,7 @@ void editorDrawRows(abuf &ab) {
         // map to render coord, logical match index should be inbounds.
         const int matchRix = 
           g_editor.curFile.row[g_editor.curFile.cursor.row].cxToRx(matchCix);
-        const int cursorRix = g_editor.curFile.rx;
+        const int cursorRix = g_editor.curFile.cursor_render_col;
         assert(matchRix <= cursorRix);
         assert(matchRix >= 0);
 
@@ -1122,7 +1122,7 @@ void editorDrawNormalInsertMode() {
   // move cursor to correct row;col.
   char buf[32];
   const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
-  sprintf(buf, "\x1b[%d;%dH", g_editor.curFile.cursor.row - g_editor.curFile.scroll_row_offset + 1, g_editor.curFile.rx - g_editor.curFile.scroll_col_offset + 1 + LINE_NUMBER_NUM_CHARS);
+  sprintf(buf, "\x1b[%d;%dH", g_editor.curFile.cursor.row - g_editor.curFile.scroll_row_offset + 1, g_editor.curFile.cursor_render_col - g_editor.curFile.scroll_col_offset + 1 + LINE_NUMBER_NUM_CHARS);
   ab.appendstr(buf);
 
   // show hidden cursor
