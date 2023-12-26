@@ -676,7 +676,7 @@ void editorDelChar() {
   // if col > 0, then delete at cursor. Otherwise, join lines toegether.
   if (g_editor.curFile.cursor.col > 0) {
     // delete at the cursor.
-    row->delByte(g_editor.curFile.cursor.col - 1, g_editor.curFile);
+    row->delCodepoint(Ix<Codepoint>(g_editor.curFile.cursor.col - 1), g_editor.curFile);
     g_editor.curFile.cursor.col--;
   } else {
     // place cursor at last column of prev row.

@@ -432,7 +432,6 @@ extern EditorConfig g_editor; // global editor handle.
 struct FileRow {
   FileRow() {
     bytes = (char*)malloc(0);
-    render = (char*)malloc(0);
   };
   
   FileRow(const FileRow &other) {
@@ -447,12 +446,6 @@ struct FileRow {
       memcpy(bytes, other.bytes, this->raw_size);
     }
 
-    this->rsize = other.rsize;
-    this->render = (char*)realloc(this->render, sizeof(char) * this->rsize);
-    // memcpy is legal only if raw_size > 0
-    if (other.rsize > 0) {
-      memcpy(this->render, other.render, this->rsize);
-    }
     return *this;
   }
 
@@ -501,7 +494,6 @@ struct FileRow {
 
   ~FileRow() {
     free(this->bytes);
-    free(this->render);
   }
 
   int rxToCx(int rx) const {
@@ -537,16 +529,20 @@ struct FileRow {
     assert(at >= 0);
     assert(at <= this->raw_size);
     bytes = (char *)realloc(bytes, this->raw_size + 1);
-    for(int i = at + 1; i < this->raw_size + 1; i++) {
+
+    for(int i = this->raw_size; i >= at+1; i--) {
       this->bytes[i] = this->bytes[i - 1];
     }    
     bytes[at] = c;
     this->raw_size += 1;
     this->rebuild_render_cache(E);
+
+    // TODO: add an assert to check that the string is well-formed code points.
     E.is_dirty = true;
   }
 
   // set the data.
+  // TODO: force copy codepoint by codepoint.
   void setBytes(const char *buf, int len, FileConfig &E) {
     this->raw_size = len;
     bytes = (char *)realloc(bytes, sizeof(char) * this->raw_size);
@@ -558,14 +554,24 @@ struct FileRow {
 
   }
   
-  void delByte(int at, FileConfig &E) {
-    assert(at >= 0);
-    assert(at < this->raw_size);
+  void delCodepoint(Ix<Codepoint> at, FileConfig &E) {
+    assert(at.ix >= 0);
+    assert(at.ix < this->raw_size);
 
-    for(int i = at; i < this->raw_size - 1; i++) {
-      this->bytes[i] = this->bytes[i + 1];
+    // TODO: refactor by changing type to `abuf`.
+    Size<Byte> startIx = Size<Byte>(0);
+    for(Ix<Codepoint> i(0); i < at; i++)  {
+      startIx += this->getCodepointBytes(i);
+    }
+
+    const Size<Byte> ntoskip = this->getCodepointBytes(at);
+    
+    for(int i = startIx.size; i < this->raw_size - ntoskip.size; i++) {
+      this->bytes[i] = this->bytes[i + ntoskip.size];
     }    
-    this->raw_size--;
+    this->raw_size -= ntoskip.size;
+    // resize to eliminate leftover.
+    this->bytes = (char *)realloc(this->bytes, this->raw_size);
     this->rebuild_render_cache(g_editor.curFile);
     E.makeDirty();
 
@@ -574,12 +580,12 @@ struct FileRow {
   // truncate to `ncodepoints_new` codepoints.
   void truncateNCodepoints(Size<Codepoint> ncodepoints_new, FileConfig &E) {
     assert(ncodepoints_new <= this->ncodepoints());
-    Size<Byte> nbytes;
+    Size<Byte> nbytes(0);
     for(Ix<Codepoint> i(0); i < ncodepoints_new; i++)  {
       nbytes += this->getCodepointBytes(i);
     }
-    this->raw_size = nbytes.size;
     this->bytes = (char*)realloc(this->bytes, nbytes.size);
+    this->raw_size = nbytes.size;
     this->rebuild_render_cache(E);
     E.is_dirty = true;
 
@@ -625,33 +631,20 @@ private:
   int raw_size = 0;
   char *bytes = nullptr; // BUFFER (nonn null terminated.)
   
-  // whatever, this will be made private later.
-  int rsize = 0;
-  char *render = nullptr; // STRING (null terminated). convert e.g. characters like `\t` to two spaces.
-
-
   // should be private? since it updates info cache.
   void rebuild_render_cache(FileConfig &E) {
-    int ntabs = 0;
-    for (int j = 0; j < this->raw_size; ++j) {
-      ntabs += bytes[j] == '\t';
-    }
-
-    render = (char *)realloc(render, this->raw_size + ntabs * NSPACES_PER_TAB + 1);
-    int ix = 0;
-    for (int j = 0; j < this->raw_size; ++j) {
-      if (bytes[j] == '\t') {
-        render[ix++] = ' ';
-        while (ix % NSPACES_PER_TAB != 0) {
-          render[ix++] = ' ';
-        }
-      } else {
-        render[ix++] = bytes[j];
-      }
-    }
-    render[ix] = '\0';
-    rsize = ix;
+    _checkIsWellFormedUtf8();
+    E.makeDirty();
     E.is_dirty = true;
+  }
+
+  void _checkIsWellFormedUtf8() const {
+    int ix = 0;
+    while(ix < this->raw_size) {
+      ix += utf8_next_code_point_len(this->bytes + ix);
+    };
+    assert(ix == this->raw_size);
+
   }
 
 
