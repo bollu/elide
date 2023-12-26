@@ -627,36 +627,39 @@ void editorInsertNewline() {
 void editorInsertChar(int c) {
   g_editor.curFile.makeDirty();
 
+
   if (g_editor.curFile.cursor.row == g_editor.curFile.rows.size()) {
-    // editorAppendRow("", 0);
     editorInsertRow(g_editor.curFile.rows.size(), "", 0);
   }
 
   FileRow *row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
 
-  // std::vector<int> matchixs_before;
-  // abbrev_dict_get_matching_unabbrev_ixs(&g_editor.abbrevDict,
-  //     row->bytes,
-  //     std::max<int>(0, g_editor.curFile.cursor.col - 1),
-  //     &matchixs_before);
+  // if `c` is one of the delinators of unabbrevs.
+  if (c == ' ' || c == '\t' || c == '(' || c == ')' || c == '\\' || ispunct(c)) {
+    // we are inserting a space, check if we have had a full match, and if so, use it.
+    SuffixUnabbrevInfo info = abbrev_dict_get_unabbrev(&g_editor.abbrevDict, 
+      row->getCodepoint(Ix<Codepoint>(0)), // this is a hack to get the buffer...
+      row->getBytesTill(g_editor.curFile.cursor.col).size - 1);
+    if (info.kind == AMK_EXACT_MATCH) {
+      assert(g_editor.curFile.cursor.col.size > 0);
 
-  // if(matchixs_before.size() == 1) {
-  //   const int unabbrev_len = 
-  //     g_editor.abbrevDict.unabbrevs_len[matchixs_before[0]]; 
-  //   const char *abbrev = g_editor.abbrevDict.abbrevs[matchixs_before[0]];
-  //   const int abbrev_len = strlen(abbrev);
+      // assumption: the unabbrev is pure ASCII. Need to delete `matchlen + 1` to kill
+      // the full string, plus the backslash.
+      for(int i = 0; i < info.matchlen + 1; ++i) {
+        assert((g_editor.abbrevDict.unabbrevs[info.matchix][i] & (1 << 7)) == 0); // ASCII;
+        row->delCodepoint(Ix<Codepoint>(g_editor.curFile.cursor.col.largestIx()), g_editor.curFile);
+        g_editor.curFile.cursor.col--;
+      }
 
-  //   // delete the characters, including '\'.
-  //   for(int i = 0; i < unabbrev_len + 1; ++i)  {
-  //     editorDelChar();    
-  //   }
-  //   g_editor.curFile.cursor.col = std::max<int>(g_editor.curFile.cursor.col - 1, 0);
-  //   row->insertBytes(g_editor.curFile.cursor.col, abbrev, strlen(abbrev),
-  //     g_editor.curFile);
-  // }
+      // TODO: check if we have `toInserts` that are more than 1 codepoint.
+      const char *toInsert = g_editor.abbrevDict.abbrevs[info.matchix];
+        row->insertCodepoint(g_editor.curFile.cursor.col.toIx(), toInsert, g_editor.curFile);
+      g_editor.curFile.cursor.col++;
+    }
+
+  }
 
 
-  // check if after inserting the character, we no longer have a match ix.
   row->insertByte(g_editor.curFile.cursor.col, c, g_editor.curFile);  
   g_editor.curFile.cursor.col++; // move cursor.
 
@@ -1024,6 +1027,7 @@ void editorDrawNormalInsertMode() {
   // initEditor();
   editorScroll();
   abuf ab;
+
 
   // VT100 escapes.
   // \x1b: escape.
@@ -1456,7 +1460,7 @@ void abbrev_dict_get_matching_unabbrev_ixs(AbbreviationDict *dict,
   const char *buf,
   int finalix,
   std::vector<int> *matchixs) {
-  
+  assert(dict->is_initialized);
   for(int i = 0; i < dict->nrecords; ++i) {
     if (suffix_is_unabbrev(buf, finalix, dict->unabbrevs[i], dict->unabbrevs_len[i])) {
       matchixs->push_back(i);
@@ -1467,6 +1471,25 @@ void abbrev_dict_get_matching_unabbrev_ixs(AbbreviationDict *dict,
   });
 
 }
+
+// return the best unabbreviation for the suffix of `buf`.
+SuffixUnabbrevInfo abbrev_dict_get_unabbrev(AbbreviationDict *dict, const char *buf, int finalix) {
+  std::vector<int> matchixs;
+  abbrev_dict_get_matching_unabbrev_ixs(dict,
+    buf,
+    finalix,
+    &matchixs);
+
+  if (matchixs.size() == 0) {
+    return SuffixUnabbrevInfo::nomatch();
+  } else{
+    SuffixUnabbrevInfo out;
+    out.matchix = matchixs[0];
+    out.matchlen = suffix_get_unabbrev_len(buf, finalix, dict->unabbrevs[out.matchix], dict->unabbrevs_len[out.matchix]);
+    out.kind = suffix_is_unabbrev(buf, finalix, dict->unabbrevs[out.matchix], dict->unabbrevs_len[out.matchix]);
+    return out;
+  }
+};
 
 // get the path to the executable, so we can build the path to resources.
 char *get_executable_path() {

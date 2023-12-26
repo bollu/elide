@@ -310,7 +310,7 @@ struct Ix {
 
 template<typename T>
 struct Size {
-  int size;
+  int size = 0;
   explicit Size() = default;
   explicit Size(int size) : size(size) {};
   Size &operator = (const Size<T> &other) {
@@ -539,8 +539,8 @@ struct FileRow {
   }
 
   Size<Byte> getBytesTill(Size<Codepoint> n) const {
-    Size<Byte> out;
-    for(Ix<Codepoint> i; i < n; ++i)  {
+    Size<Byte> out(0);
+    for(Ix<Codepoint> i(0); i < n; ++i)  {
       out += getBytesAt(i);
     }
     return out;
@@ -603,6 +603,7 @@ struct FileRow {
     E.is_dirty = true;
   }
 
+
   // set the data.
   // TODO: think if we should expose bytes API.
   // TODO: force copy codepoint by codepoint.
@@ -640,6 +641,33 @@ struct FileRow {
 
   }
 
+  // insert a single codepoint.
+  void insertCodepoint(Ix<Codepoint> at, const char *codepoint, FileConfig &E) {
+    assert(at.ix >= 0);
+    assert(at.ix < this->raw_size);
+
+    // TODO: refactor by changing type to `abuf`.
+    Size<Byte> nbytesUptoAt = Size<Byte>(0);
+    for(Ix<Codepoint> i(0); i < at; i++)  {
+      nbytesUptoAt += this->getBytesAt(i);
+    }
+
+    const Size<Byte> nNewBytes(utf8_next_code_point_len(codepoint));
+    this->bytes = (char*)realloc(this->bytes, this->raw_size + nNewBytes.size);
+      
+    for(int oldix = this->raw_size - 1; oldix >= nbytesUptoAt.size; oldix--) {
+      // push bytes from `i` into `i + nNewBytes`.
+      this->bytes[oldix + nNewBytes.size] = this->bytes[oldix];
+    }    
+
+    // copy new bytes into into location.
+    for(int i = 0; i < nNewBytes.size; ++i)  {
+      this->bytes[nbytesUptoAt.size + i] = codepoint[i];
+    }
+    this->raw_size += nNewBytes.size;
+    E.makeDirty();
+  }
+
   // truncate to `ncodepoints_new` codepoints.
   void truncateNCodepoints(Size<Codepoint> ncodepoints_new, FileConfig &E) {
     assert(ncodepoints_new <= this->ncodepoints());
@@ -652,29 +680,6 @@ struct FileRow {
     this->rebuild_render_cache(E);
     E.is_dirty = true;
 
-  }
-
-  void insertBytes(int at, const char *s, size_t len,  FileConfig &E) {
-    // TODO: think of this very carefully.
-    // TODO: understand how to handle unicode editing!
-    assert(at >= 0);
-    assert(at <= raw_size);
-    assert(len >= 0);
-
-    raw_size += len;
-    bytes = (char *)realloc(bytes, this->raw_size);
-
-    for(int i = this->raw_size - 1; i >= at + len; --i) {
-      bytes[i] = bytes[i - len];
-    }
-
-    // copy string.
-    for(int i = 0; i < len; ++i) {
-      bytes[at + i] = s[i]; 
-    }
-
-    this->rebuild_render_cache(E);
-    E.makeDirty();
   }
 
   // append a codepoint.
@@ -734,7 +739,6 @@ void editorFreeRow(FileRow *row);
 void editorDelRow(int at);
 // Delete character at location `at`.
 // Invariant: `at in [0, row->size)`.
-void editorRowDelChar(FileRow *row, int at); 
 bool is_space_or_tab(char c);
 void editorInsertNewline();
 void editorInsertChar(int c); // 32 bit.
@@ -771,6 +775,7 @@ enum AbbrevMatchKind {
   AMK_EMPTY_STRING_MATCH = 3, // match against the empty string.
 };
 
+
 // get length <len> such that
 //    buf[:finalix) = "boo \alpha"
 //    buf[:finalix - <len>] = "boo" and buf[finalix - len:finalix) = "\alpha".
@@ -786,6 +791,21 @@ const char *abbrev_match_kind_to_str(AbbrevMatchKind);
 // This ensures that the AMK_EXACT_MATCHes will occur at the head of the list.
 void abbrev_dict_get_matching_unabbrev_ixs(AbbreviationDict *dict,
   const char *buf, int finalix, std::vector<int> *matchixs);
+
+struct SuffixUnabbrevInfo {
+    AbbrevMatchKind kind = AbbrevMatchKind::AMK_NOMATCH;
+    int matchlen = -1; // length of the math if kind is not NOMATCH;
+    int matchix = -1; // index of the match if kind is not NOMATCH
+
+    // return the information of having no match.
+    static SuffixUnabbrevInfo nomatch() {
+      return SuffixUnabbrevInfo();
+    }
+};
+
+// return the best unabbreviation for the suffix of `buf`.
+SuffixUnabbrevInfo abbrev_dict_get_unabbrev(AbbreviationDict *dict, const char *buf, int finalix);
+
 // get the path to the executable, so we can build the path to resources.
 char *get_executable_path();
 // get the path to `/path/to/exe/abbreviations.json`.
