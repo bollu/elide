@@ -20,41 +20,38 @@
 #include "lean_lsp.h"
 
 struct abuf {
-  char *buf = nullptr;
-  int len = 0;
-  
   abuf() = default;
-  ~abuf() { free(buf); }
+  ~abuf() { free(_buf); }
   abuf(const abuf &other) {
-    len = other.len;
-    buf = (char*)malloc(sizeof(char) * len);
-    memcpy(buf, other.buf, len);
+    _len = other._len;
+    _buf = (char*)malloc(sizeof(char) * _len);
+    memcpy(_buf, other._buf, _len);
   }
 
   void appendbuf(const char *s, int slen) {
     assert(slen >= 0 && "negative length!");
     if (slen == 0) { return; }
-    this->buf = (char *)realloc(buf, len + slen);
-    assert(this->buf && "unable to append string");
-    memcpy(this->buf + len, s, slen);
-    this->len += slen;
+    this->_buf = (char *)realloc(this->_buf, this->_len + slen);
+    assert(this->_buf && "unable to append string");
+    memcpy(this->_buf + this->_len, s, slen);
+    this->_len += slen;
   }
 
   // take the substring of [start,start+len) and convert it to a string.
   // pointer returned must be free.
   char *to_string_start_len(int start, int slen) {
-    slen = std::max<int>(0, std::min<int>(slen, len - start));
+    slen = std::max<int>(0, std::min<int>(slen, this->_len - start));
     assert(slen >= 0);
     char *out = (char *)calloc(slen + 1, sizeof(char));
-    if (buf != NULL) {
-      memcpy(out, buf + start, slen);
+    if (this->_buf != NULL) {
+      memcpy(out, this->_buf + start, slen);
     }
     return out;
   }
 
   // take substring [start, buflen).
   char *to_string_from_start_ix(int startix) {
-    return to_string_start_len(startix, this->len);
+    return to_string_start_len(startix, this->_len);
   }
 
   // take substring [0, slen)
@@ -64,16 +61,16 @@ struct abuf {
 
   // convert buffer to string.
   char *to_string() {
-    return to_string_start_len(0, this->len);
+    return to_string_start_len(0, this->_len);
   }
 
   // Return first index `i >= begin_ix` such that `buf[i:i+len] = s[0:len]`.
   // Return `-1` otherwise.
   int find_sub_buf(const char *findbuf, int findbuf_len, int begin_ix) {
-    for (int i = begin_ix; i < this->len; ++i) {
+    for (int i = begin_ix; i < this->_len; ++i) {
       int match_len = 0;
-      while (i + match_len < this->len && match_len < findbuf_len) {
-        if (this->buf[i + match_len] == findbuf[match_len]) {
+      while (i + match_len < this->_len && match_len < findbuf_len) {
+        if (this->_buf[i + match_len] == findbuf[match_len]) {
           match_len++;
         } else {
           break;
@@ -115,12 +112,25 @@ struct abuf {
   // drop a prefix of the buffer. If `drop_len = 0`, then this operation is a
   // no-op.
   void drop_prefix(int drop_len) {
-    char *bnew = (char *)malloc(sizeof(char) * (len - drop_len));
-    memcpy(bnew, this->buf + drop_len, this->len - drop_len);
-    free(this->buf);
-    this->buf = bnew;
-    this->len = len - drop_len;
+    char *bnew = (char *)malloc(sizeof(char) * (_len - drop_len));
+    memcpy(bnew, this->_buf + drop_len, this->_len - drop_len);
+    free(this->_buf);
+    this->_buf = bnew;
+    this->_len -= drop_len;
   }
+
+  int len() const {
+    return this->_len;
+  }
+
+  const char *buf() const {
+    return this->_buf;
+  }
+private:
+  char *_buf = nullptr;
+  int _len = 0;
+  
+
 
 };
 
