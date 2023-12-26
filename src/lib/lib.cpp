@@ -936,11 +936,17 @@ void editorDrawRows(abuf &ab) {
     }
     // code in view mode is renderered gray
     if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[37;40m"); }
-
     if (filerow < g_editor.curFile.rows.size()) {
-      int len = clamp(0, g_editor.curFile.rows[filerow].rsize - g_editor.curFile.scroll_col_offset, 
-          g_editor.screencols - LINE_NUMBER_NUM_CHARS);
-        ab.appendbuf(g_editor.curFile.rows[filerow].render + g_editor.curFile.scroll_col_offset, len);
+      const FileRow &row = g_editor.curFile.rows[filerow];
+      printf("row ncodepoints: '%d' | data: '%s'\n", row.ncodepoints().size, row.debugToString());
+
+      for(Ix<Codepoint> i(0); i < row.ncodepoints(); ++i) {
+        printf("  getCodepoint(%d)\n", i.ix);
+        ab.appendCodepoint(row.getCodepoint(i));
+      }
+      // int len = clamp(0, g_editor.curFile.rows[filerow].rsize - g_editor.curFile.scroll_col_offset, 
+      //     g_editor.screencols - LINE_NUMBER_NUM_CHARS);
+      //   ab.appendbuf(g_editor.curFile.rows[filerow].render + g_editor.curFile.scroll_col_offset, len);
     } else {
         ab.appendstr("~");
     }

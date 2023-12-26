@@ -270,29 +270,31 @@ struct Ix {
 
   Ix<T> operator++(int) {
     // postfix
-    return Ix<T>(this->ix + 1);
+    Ix<T> copy(*this);
+    this->ix += 1;
+    return copy;
   }
 
   Ix<T> &operator++() {
-    // postfix
+    // prefix
     this->ix += 1;
     return *this;
   }
 
-  Ix<T> operator--(int) {
+  Ix<T> operator--(int) const {
     // postfix
     return Ix<T>(this->ix - 1);
   }
 
-  bool operator <(const Ix<T> &other) {
+  bool operator <(const Ix<T> &other) const {
     return this->ix < other.ix;
   }
 
-  bool operator <=(const Ix<T> &other) {
+  bool operator <=(const Ix<T> &other) const {
     return this->ix <= other.ix;
   }
 
-  bool operator <(const Size<T> &other);
+  bool operator <(const Size<T> &other) const;
 
   bool operator == (const Ix<T> &other) {
     return this->ix ==  other.ix;
@@ -352,17 +354,7 @@ struct Size {
 };
 
 template<typename T>
-bool Ix<T>::is_inbounds(Size<T> size) const {
-  return ix >= 0 && ix < size.size;
-}
-
-template<typename T>
-bool Ix<T>::is_inbounds_or_end(Size<T> size) const {
-  return ix >= 0 && ix <= size.size;
-}
-
-template<typename T>
-bool Ix<T>::operator <(const Size<T> &other) {
+bool Ix<T>::operator <(const Size<T> &other) const {
   return ix < other.size;
 }
 
@@ -386,6 +378,7 @@ struct FileConfig {
   // offset for scrolling.
   int scroll_row_offset = 0;
   // column offset for scrolling. will render from col_offset till endof row.
+  // TODO: this should count in codepoints?
   int scroll_col_offset = 0;
   
   char *absolute_filepath = nullptr;
@@ -446,6 +439,23 @@ struct FileRow {
     *this = other;
   }
 
+  FileRow &operator =(const FileRow &other) {
+    this->raw_size = other.raw_size;
+    this->bytes = (char*)realloc(this->bytes, sizeof(char) * this->raw_size);
+    // memcpy is legal only if raw_size > 0
+    if (other.raw_size > 0) {
+      memcpy(bytes, other.bytes, this->raw_size);
+    }
+
+    this->rsize = other.rsize;
+    this->render = (char*)realloc(this->render, sizeof(char) * this->rsize);
+    // memcpy is legal only if raw_size > 0
+    if (other.rsize > 0) {
+      memcpy(this->render, other.render, this->rsize);
+    }
+    return *this;
+  }
+
   Size<Byte> nbytes() const {
     return Size<Byte>(this->raw_size);
   }
@@ -466,35 +476,29 @@ struct FileRow {
     return Size<Codepoint>(count);
   }
 
-  const char *getCodepoint(Ix<Codepoint> ix) const {
-    assert(ix.is_inbounds(this->ncodepoints()));
-    char *out = this->bytes;
-    for(Ix<Codepoint> i(0); i < ix; i++)  {
-      out += utf8_next_code_point_len(out);
+  const char *debugToString() const {
+    char *str = (char*)malloc(this->nbytes().size + 1);
+    for(int i = 0; i < this->nbytes().size; ++i) {
+      str[i] = this->bytes[i];
     }
-    return out;
+    str[this->nbytes().size] = '\0';
+    return str;
+  }
+
+  const char *getCodepoint(Ix<Codepoint> ix) const {
+    assert(ix < this->ncodepoints());
+    int delta = 0;
+    for(Ix<Codepoint> i(0); i < ix; i++)  {
+      printf("    i=%3d ix=%d next-code-point-len(bytes + %3d)\n", i.ix, ix.ix, delta);
+      delta += utf8_next_code_point_len(this->bytes + delta);
+    }
+    return this->bytes + delta;
   }
 
   Size<Byte> getCodepointBytes(Ix<Codepoint> i) const {
     return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
   }
 
-  FileRow &operator =(const FileRow &other) {
-    this->raw_size = other.raw_size;
-    this->bytes = (char*)realloc(this->bytes, sizeof(char) * this->raw_size);
-    // memcpy is legal only if raw_size > 0
-    if (other.raw_size > 0) {
-      memcpy(bytes, other.bytes, this->raw_size);
-    }
-
-    this->rsize = other.rsize;
-    this->render = (char*)realloc(this->render, sizeof(char) * this->rsize);
-    // memcpy is legal only if raw_size > 0
-    if (other.rsize > 0) {
-      memcpy(this->render, other.render, this->rsize);
-    }
-    return *this;
-  }
 
   ~FileRow() {
     free(this->bytes);
@@ -603,25 +607,25 @@ struct FileRow {
   }
 
   // append a codepoint.
-  void appendCodepoint(const char *s, FileConfig &E) {
-    Size<Byte> nbytes(utf8_next_code_point_len(s + nbytes.size));
+  void appendCodepoint(const char *codepoint, FileConfig &E) {
+    Size<Byte> nbytes(utf8_next_code_point_len(codepoint));
     bytes = (char *)realloc(bytes, raw_size + nbytes.size);
-    memcpy(bytes + this->raw_size, s, nbytes.size);
-    this->raw_size += nbytes.size;
+    memcpy(bytes + this->raw_size, codepoint, nbytes.size);
+    this->raw_size += nbytes.size; // TODO: change raw_size to be Size<Byte>.
     this->rebuild_render_cache(E);
     E.is_dirty = true;
 
   }
 
-  // whatever, this will be made private later.
-  int rsize = 0;
-  char *render = nullptr; // STRING (null terminated). convert e.g. characters like `\t` to two spaces.
 
 
 private:
   int raw_size = 0;
   char *bytes = nullptr; // BUFFER (nonn null terminated.)
   
+  // whatever, this will be made private later.
+  int rsize = 0;
+  char *render = nullptr; // STRING (null terminated). convert e.g. characters like `\t` to two spaces.
 
 
   // should be private? since it updates info cache.
