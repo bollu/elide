@@ -580,12 +580,12 @@ char *memcpyUtf8Codepoint(char *out, const char *codepoint) {
 /*** editor operations ***/
 void editorInsertNewline() {
   g_editor.curFile.makeDirty();
-  if (g_editor.curFile.cursor.col == 0) {
+  if (g_editor.curFile.cursor.col == Size<Codepoint>(0)) {
     // at first column, insert new row.
     editorInsertRow(g_editor.curFile.cursor.row, "", 0);
     // place cursor at next row (g_editor.curFile.cursor.row + 1), first column (cx=0)
     g_editor.curFile.cursor.row++;
-    g_editor.curFile.cursor.col = 0;
+    g_editor.curFile.cursor.col = Size<Codepoint>(0);
   } else {
     // at column other than first, so chop row and insert new row.
     FileRow *row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
@@ -607,7 +607,7 @@ void editorInsertNewline() {
     }
 
     // add all code point size from col till end.
-    for(Ix<Codepoint> i(g_editor.curFile.cursor.col); i < row->ncodepoints(); ++i) {
+    for(Ix<Codepoint> i(g_editor.curFile.cursor.col.toIx()); i < row->ncodepoints(); ++i) {
       new_row_contents.appendCodepoint(row->getCodepoint(i));
     }
 
@@ -620,7 +620,7 @@ void editorInsertNewline() {
     row->truncateNCodepoints(Size<Codepoint>(g_editor.curFile.cursor.col), g_editor.curFile);
     // place cursor at next row (g_editor.curFile.cursor.row + 1), column of the indent.
     g_editor.curFile.cursor.row++;
-    g_editor.curFile.cursor.col = num_indent.size; // TODO: convert col to Size<codepint>
+    g_editor.curFile.cursor.col = num_indent;
   }
 }
 
@@ -668,19 +668,19 @@ void editorDelChar() {
   if (g_editor.curFile.cursor.row == g_editor.curFile.rows.size()) {
     return;
   }
-  if (g_editor.curFile.cursor.col == 0 && g_editor.curFile.cursor.row == 0)
+  if (g_editor.curFile.cursor.col == Size<Codepoint>(0) && g_editor.curFile.cursor.row == 0)
     return;
 
   FileRow *row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
 
   // if col > 0, then delete at cursor. Otherwise, join lines toegether.
-  if (g_editor.curFile.cursor.col > 0) {
+  if (g_editor.curFile.cursor.col > Size<Codepoint>(0)) {
     // delete at the cursor.
-    row->delCodepoint(Ix<Codepoint>(g_editor.curFile.cursor.col - 1), g_editor.curFile);
+    row->delCodepoint(g_editor.curFile.cursor.col.largestIx(), g_editor.curFile);
     g_editor.curFile.cursor.col--;
   } else {
     // place cursor at last column of prev row.
-    g_editor.curFile.cursor.col = g_editor.curFile.rows[g_editor.curFile.cursor.row - 1].ncodepoints().size;
+    g_editor.curFile.cursor.col = g_editor.curFile.rows[g_editor.curFile.cursor.row - 1].ncodepoints();
     // append string.
     for(Ix<Codepoint> i(0); i < row->ncodepoints(); ++i) {
       g_editor.curFile.rows[g_editor.curFile.cursor.row - 1].appendCodepoint(row->getCodepoint(i), g_editor.curFile);
@@ -752,8 +752,16 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   assert(file_config->leanInfoViewPlainGoal == nullptr);
 
 
+  // TODO: need to convert col to 'bytes'
+  Size<Byte> cursorColBytes;
+  if (file_config->cursor.row < file_config->rows.size())  {
+    cursorColBytes = file_config->rows[file_config->cursor.row].getBytesTill(file_config->cursor.col);
+  } else {
+    // cursorColBytes = 0.
+    cursorColBytes = Size<Byte>(0);
+  }
   req = lspCreateLeanPlainGoalRequest(file_config->text_document_item.uri, 
-    Position(file_config->cursor.row, file_config->cursor.col));
+    Position(file_config->cursor.row, cursorColBytes.size));
   request_id = file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
   file_config->leanInfoViewPlainGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
@@ -765,7 +773,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   assert(file_config->leanInfoViewPlainTermGoal == nullptr);
   req = lspCreateLeanPlainTermGoalRequest(file_config->text_document_item.uri, 
-    Position(file_config->cursor.row, file_config->cursor.col));
+    Position(file_config->cursor.row, cursorColBytes.size));
   request_id = file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
   file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
@@ -1231,24 +1239,24 @@ void editorSetStatusMessage(const char *fmt, ...) {
 void editorMoveCursor(int key) {
   switch (key) {
   case ARROW_LEFT:
-    if (g_editor.curFile.cursor.col > 0) {
+    if (g_editor.curFile.cursor.col > Size<Codepoint>(0)) {
       g_editor.curFile.cursor.col--;
     } else if (g_editor.curFile.cursor.row > 0) {
       // move back line.
-      assert(g_editor.curFile.cursor.col == 0);
+      assert(g_editor.curFile.cursor.col == Size<Codepoint>(0));
       g_editor.curFile.cursor.row--;
-      g_editor.curFile.cursor.col = g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints().size;
+      g_editor.curFile.cursor.col = g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints();
     }
 
     break;
   case ARROW_RIGHT:
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
-      if (g_editor.curFile.cursor.col < g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints().size) {
+      if (g_editor.curFile.cursor.col < g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints()) {
         g_editor.curFile.cursor.col++;
       } else {
-        assert(g_editor.curFile.cursor.col == g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints().size);
+        assert(g_editor.curFile.cursor.col == g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
         g_editor.curFile.cursor.row++;
-        g_editor.curFile.cursor.col = 0;
+        g_editor.curFile.cursor.col = Size<Codepoint>(0);
       }
     }
     break;
@@ -1257,7 +1265,7 @@ void editorMoveCursor(int key) {
       g_editor.curFile.cursor.row--;
     }
     g_editor.curFile.cursor.col = 
-      std::min<int>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints().size);
+      std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     break;
   case ARROW_DOWN:
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
@@ -1265,20 +1273,20 @@ void editorMoveCursor(int key) {
     }
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
       g_editor.curFile.cursor.col = 
-        std::min<int>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints().size);
+        std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     }
     break;
   case PAGE_DOWN:
     g_editor.curFile.cursor.row = std::min<int>(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.rows.size());
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
       g_editor.curFile.cursor.col = 
-        std::min<int>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints().size);
+        std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     }
     break;
   case PAGE_UP:
     g_editor.curFile.cursor.row = std::max<int>(g_editor.curFile.cursor.row - g_editor.screenrows / 4, 0);
     g_editor.curFile.cursor.col = 
-      std::min<int>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints().size);
+      std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     break;
   }
 

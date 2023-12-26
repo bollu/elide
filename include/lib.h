@@ -318,12 +318,20 @@ struct Size {
     return *this;
   }
   Size(const Size<T> &other) {
-    *this = *other;
+    *this = other;
   }
   
   Ix<T> toIx() const {
     return Ix<T>(this->size);
   }
+
+  // return largest index that can index
+  // an array of size 'this'.
+  Ix<T> largestIx() const {
+    assert(this->size > 0);
+    return Ix<T>(this->size - 1);
+  }
+
 
   // convert from size T to size S.
   // Can covert from e.g. Codepoints to Bytes if one is dealing with ASCII,
@@ -347,8 +355,46 @@ struct Size {
     return out;
   }
 
+  bool operator < (const Size<T> &other) const {
+    return this->size < other.size;
+  }
+
   bool operator <= (const Size<T> &other) const {
     return this->size <= other.size;
+  }
+
+  bool operator > (const Size<T> &other) const {
+    return this->size > other.size;
+  }
+
+  bool operator >= (const Size<T> &other) const {
+    return this->size >= other.size;
+  }
+
+
+
+  bool operator == (const Size<T> &other) {
+    return this->size ==  other.size;
+  }
+
+  Size<T> operator++(int) {
+    // postfix
+    Size<T> copy(*this);
+    this->size += 1;
+    return copy;
+  }
+
+  Size<T> &operator++() {
+    // prefix
+    this->size += 1;
+    return *this;
+  }
+
+  Size<T> operator--(int){
+    // postfix
+    Size<T> copy(*this);
+    this->size -= 1;
+    return copy;
   }
 
 };
@@ -359,7 +405,7 @@ bool Ix<T>::operator <(const Size<T> &other) const {
 }
 
 struct Cursor {
-  int col = 0; // number of graphemes to move past from the start of the row to get to the current one.
+  Size<Codepoint> col = Size<Codepoint>(0); // number of graphemes to move past from the start of the row to get to the current one.
   int row = 0; // index of row. Must be within [0, file->nrows].
 };
 
@@ -487,8 +533,17 @@ struct FileRow {
     return this->bytes + delta;
   }
 
-  Size<Byte> getCodepointBytes(Ix<Codepoint> i) const {
+  // TODO: rename API
+  Size<Byte> getBytesAt(Ix<Codepoint> i) const {
     return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
+  }
+
+  Size<Byte> getBytesTill(Size<Codepoint> n) const {
+    Size<Byte> out;
+    for(Ix<Codepoint> i; i < n; ++i)  {
+      out += getBytesAt(i);
+    }
+    return out;
   }
 
 
@@ -520,20 +575,27 @@ struct FileRow {
       } else {
         rx += 1; // just 1.
       }
-      p += this->getCodepointBytes(j).size;
+      p += this->getBytesAt(j).size;
     }
     return rx;
   }
 
-  void insertByte(int at, int c, FileConfig &E) {
-    assert(at >= 0);
-    assert(at <= this->raw_size);
+  // it is size, since we can ask to place the data at the *end* of the string, past the
+  // final.
+  void insertByte(Size<Codepoint> at, int c, FileConfig &E) {
+    assert(at.size >= 0);
+    assert(at.size <= this->raw_size);
     bytes = (char *)realloc(bytes, this->raw_size + 1);
 
-    for(int i = this->raw_size; i >= at+1; i--) {
+    Size<Byte> byte_at(0);
+    for(Ix<Codepoint> i(0); i < at; ++i) {
+      byte_at += this->getBytesAt(i);
+    }
+
+    for(int i = this->raw_size; i >= byte_at.size+1; i--) {
       this->bytes[i] = this->bytes[i - 1];
     }    
-    bytes[at] = c;
+    bytes[byte_at.size] = c;
     this->raw_size += 1;
     this->rebuild_render_cache(E);
 
@@ -562,10 +624,10 @@ struct FileRow {
     // TODO: refactor by changing type to `abuf`.
     Size<Byte> startIx = Size<Byte>(0);
     for(Ix<Codepoint> i(0); i < at; i++)  {
-      startIx += this->getCodepointBytes(i);
+      startIx += this->getBytesAt(i);
     }
 
-    const Size<Byte> ntoskip = this->getCodepointBytes(at);
+    const Size<Byte> ntoskip = this->getBytesAt(at);
     
     for(int i = startIx.size; i < this->raw_size - ntoskip.size; i++) {
       this->bytes[i] = this->bytes[i + ntoskip.size];
@@ -583,7 +645,7 @@ struct FileRow {
     assert(ncodepoints_new <= this->ncodepoints());
     Size<Byte> nbytes(0);
     for(Ix<Codepoint> i(0); i < ncodepoints_new; i++)  {
-      nbytes += this->getCodepointBytes(i);
+      nbytes += this->getBytesAt(i);
     }
     this->bytes = (char*)realloc(this->bytes, nbytes.size);
     this->raw_size = nbytes.size;
