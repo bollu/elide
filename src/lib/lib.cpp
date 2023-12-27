@@ -645,7 +645,7 @@ void fileConfigInsertChar(FileConfig *f, int c) {
 
       // TODO: check if we have `toInserts` that are more than 1 codepoint.
       const char *toInsert = g_editor.abbrevDict.abbrevs[info.matchix];
-        row->insertCodepoint(f->cursor.col.toIx(), toInsert, g_editor.curFile);
+        row->insertCodepoint(f->cursor.col, toInsert, g_editor.curFile);
       f->cursor.col++;
     }
 
@@ -807,15 +807,16 @@ void fileConfigOpen(FileConfig *f, const char *filename) {
 
 void fileConfigRowsToBuf(FileConfig *file, abuf *buf) {
   for (int r = 0; r < file->rows.size(); r++) {
-    // TODO: convert 'buf' API to also use Sizes.
+    if (r > 0) { buf->appendChar('\n'); }
     buf->appendbuf(file->rows[r].getRawBytesPtrUnsafe(), file->rows[r].nbytes().size);
-    buf->appendChar('\n');
   }
 }
 
-void fileConfigRowsAndCursorDebugPrint(FileConfig *file, abuf *buf) {
+void fileConfigDebugPrint(FileConfig *file, abuf *buf) {
   for (int r = 0; r < file->rows.size(); r++) {
+    if (r > 0) { buf->appendChar('\n'); }
     Ix<Codepoint> c(0);
+    buf->appendChar('\'');
     for (; c < file->rows[r].ncodepoints(); c++) {
       if (r == file->cursor.row && c == file->cursor.col.toIx()) {
         buf->appendChar('|');
@@ -828,7 +829,7 @@ void fileConfigRowsAndCursorDebugPrint(FileConfig *file, abuf *buf) {
     if (r == file->cursor.row && c  == file->cursor.col.toIx()) {
         buf->appendChar('|');
     }
-    buf->appendChar('\n');
+    buf->appendChar('\'');
   }
 }
 
@@ -1278,15 +1279,16 @@ void editorMoveCursor(int key) {
       std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     break;
   }
-
-  // snap to next line.
-  // const FileRow *r = 
-  //   (g_editor.curFile.cursor.row >= g_editor.curFile.rows.size()) ? NULL : &g_editor.curFile.rows[g_editor.curFile.cursor.row];
-  // int rowlen = r ? r->raw_size : 0;
-  // if (g_editor.curFile.cursor.col > rowlen) {
-  //   g_editor.curFile.cursor.col = rowlen;
-  // }
 }
+
+void fileConfigCursorMoveWordNext(FileConfig *f) {
+  // stop at end of line.
+};
+
+void fileConfigCursorMoveWordPrevious(FileConfig *f) {
+  assert(false && "unimplemented");
+};
+
 
 void editorProcessKeypress() {
   const int c = editorReadKey();

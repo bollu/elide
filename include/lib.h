@@ -769,6 +769,9 @@ void fileConfigOpen(FileConfig *f, const char *filename);
 void fileConfigRowsToBuf(FileConfig *f, abuf *buf);
 // prints cursor position as well, used for debugging.
 void fileConfigDebugPrint(FileConfig *f, abuf *buf); 
+void fileConfigCursorMoveWordNext(FileConfig *f);
+void fileConfigCursorMoveWordPrevious(FileConfig *f);
+
 void fileConfigSave(FileConfig *f);
 void editorDraw();
 void editorScroll();
