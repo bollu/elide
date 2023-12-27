@@ -25,10 +25,17 @@ static int utf8_next_code_point_len(const char *str);
 struct abuf {
   abuf() = default;
   ~abuf() { free(_buf); }
-  abuf(const abuf &other) {
+
+  abuf &operator = (const abuf &other) {
     _len = other._len;
-    _buf = (char*)malloc(sizeof(char) * _len);
-    memcpy(_buf, other._buf, _len);
+    _buf = (char*)realloc(_buf, sizeof(char) * _len);
+    if (_len > 0) {
+      memcpy(_buf, other._buf, _len);
+    }
+    return *this;
+  }
+  abuf(const abuf &other) {
+    *this = other;
   }
 
   void appendbuf(const char *s, int slen) {
@@ -658,9 +665,9 @@ struct FileRow {
   }
 
   // insert a single codepoint.
-  void insertCodepoint(Ix<Codepoint> at, const char *codepoint, FileConfig &E) {
-    assert(at.ix >= 0);
-    assert(at.ix < this->raw_size);
+  void insertCodepoint(Size<Codepoint> at, const char *codepoint, FileConfig &E) {
+    assert(at.size >= 0);
+    assert(at.size <= this->raw_size);
 
     // TODO: refactor by changing type to `abuf`.
     Size<Byte> nbytesUptoAt = Size<Byte>(0);
@@ -761,7 +768,7 @@ void editorDelChar();
 void fileConfigOpen(FileConfig *f, const char *filename);
 void fileConfigRowsToBuf(FileConfig *f, abuf *buf);
 // prints cursor position as well, used for debugging.
-void fileConfigRowsAndCursorDebugPrint(FileConfig *f, abuf *buf); 
+void fileConfigDebugPrint(FileConfig *f, abuf *buf); 
 void fileConfigSave(FileConfig *f);
 void editorDraw();
 void editorScroll();

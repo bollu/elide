@@ -26,3 +26,7 @@ target_link_libraries(abbreviations PRIVATE libedtr)
 add_test(NAME abbreviations COMMAND $<TARGET_FILE:abbreviations>)
 file(COPY ../src/abbreviations.json DESTINATION .) # used to test abbreviations.
 
+
+add_executable(edit edit.cpp)
+target_link_libraries(edit PRIVATE libedtr)
+add_test(NAME edit COMMAND $<TARGET_FILE:edit>)
