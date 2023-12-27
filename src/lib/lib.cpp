@@ -482,6 +482,25 @@ void fileConfigInsertRow(FileConfig *f, int at, const char *s, size_t len) {
   f->rows[at].setBytes(s, len, g_editor.curFile);
 }
 
+// delete the current row.
+// TODO: this needs lots of testing!
+void fileConfigDeleteCurrentRow(FileConfig *f) {
+  if (f->cursor.row < f->rows.size()) {
+    for(int i = f->cursor.row; i < f->rows.size() - 1; i++)  {
+      f->rows[i] = f->rows[i + 1];   
+    }
+    f->rows.pop_back();
+  }
+  if (f->cursor.row == f->rows.size()) {
+    f->cursor.col = Size<Codepoint>(0);
+  } else {
+    f->cursor.col = 
+      std::min<Size<Codepoint>>(f->cursor.col,
+        f->rows[f->cursor.row].ncodepoints());
+  }
+}
+
+
 
 void editorDelRow(int at) {
   // assert (at >= 0);
@@ -1221,7 +1240,7 @@ void fileConfigCursorMoveWordPrev(FileConfig *f) {
 };
 
 
-void fileRowCursorMoveCharLeft(FileConfig *f) {
+void fileConfigCursorMoveCharLeft(FileConfig *f) {
   if (f->cursor.col > Size<Codepoint>(0)) {
     f->cursor.col--;
   } else if (f->cursor.row > 0) {
@@ -1231,7 +1250,7 @@ void fileRowCursorMoveCharLeft(FileConfig *f) {
   }
 }
 
-void fileRowCursorMoveCharRight(FileConfig *f) {
+void fileConfigCursorMoveCharRight(FileConfig *f) {
   if (f->cursor.row < f->rows.size()) {
     if (f->cursor.col < f->rows[f->cursor.row].ncodepoints()) {
       f->cursor.col++;
@@ -1243,8 +1262,20 @@ void fileRowCursorMoveCharRight(FileConfig *f) {
   }
 }
 
+void fileConfigCursorMoveEndOfRow(FileConfig *f) {
+  if (f->cursor.row < f->rows.size()) {
+    f->cursor.col = f->rows[f->cursor.row].ncodepoints();
+  }
+}
+
+void fileConfigCursorMoveBeginOfRow(FileConfig *f) {
+  if (f->cursor.row < f->rows.size()) {
+    f->cursor.col = Size<Codepoint>(0);
+  }
+}
+
 // move cursor to the right, and do not wraparound to next row. 
-void fileRowCursorMoveCharRightNoWraparound(FileConfig *f) {
+void fileConfigCursorMoveCharRightNoWraparound(FileConfig *f) {
   if (f->cursor.row < f->rows.size()) {
     if (f->cursor.col < f->rows[f->cursor.row].ncodepoints()) {
       f->cursor.col++;
@@ -1275,11 +1306,11 @@ void editorMoveCursor(int key) {
   }
 
   case 'h': {
-    fileRowCursorMoveCharLeft(&g_editor.curFile);
+    fileConfigCursorMoveCharLeft(&g_editor.curFile);
     break;
   }
   case 'l':
-    fileRowCursorMoveCharRight(&g_editor.curFile);
+    fileConfigCursorMoveCharRight(&g_editor.curFile);
     break;
   case 'k':
     if (g_editor.curFile.cursor.row > 0) {
@@ -1426,9 +1457,19 @@ void editorProcessKeypress() {
     }
 
     case 'a': {
-      fileRowCursorMoveCharRightNoWraparound(&g_editor.curFile);
+      fileConfigCursorMoveCharRightNoWraparound(&g_editor.curFile);
       g_editor.vim_mode = VM_INSERT; return;
     }
+    case 'd': {
+      fileConfigDeleteCurrentRow(&g_editor.curFile); return;
+    }
+    case '$': {
+      fileConfigCursorMoveEndOfRow(&g_editor.curFile); return;
+    }
+    case '0': {
+      fileConfigCursorMoveBeginOfRow(&g_editor.curFile); return;
+    }
+
     case 'g':
     case '?': {
       // TODO: make this more local.
