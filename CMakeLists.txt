@@ -49,13 +49,15 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always -O2")
 # https://stackoverflow.com/a/29316084/5305365 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing)
+pkg_check_modules(UV REQUIRED IMPORTED_TARGET libuv)
 
 # libedtr
 add_library(libedtr src/lib/lib.cpp src/lean_lsp.cpp src/lib/uri_encode.cpp)
 find_package(json-c CONFIG)
-target_include_directories(libedtr PUBLIC json-c::json-c PkgConfig::URING)
+find_package(libuv CONFIG)
+target_include_directories(libedtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)
 target_include_directories(libedtr PUBLIC include/)
-target_link_libraries(libedtr PUBLIC json-c::json-c PkgConfig::URING)
+target_link_libraries(libedtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)
 install(TARGETS libedtr DESTINATION lib)
 
 # edtr
