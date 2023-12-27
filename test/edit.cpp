@@ -34,7 +34,7 @@ void test1() {
    f.cursor.col = Size<Codepoint>(5);
    printFile(&f, "buffer state before");
 
-   fileConfigInsertNewline(&f);
+   fileConfigInsertEnterKey(&f);
    printFile(&f, "buffer state after");
 
   fileConfigDebugPrint(&f, &buf);
@@ -58,7 +58,7 @@ void test2() {
   f.cursor.col = Size<Codepoint>(0);
   printFile(&f, "buffer state 0");
 
-  fileConfigInsertNewline(&f);
+  fileConfigInsertEnterKey(&f);
   printFile(&f, "buffer state 1");
 
   fileConfigDebugPrint(&f, &buf);

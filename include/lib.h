@@ -773,7 +773,7 @@ void editorDelRow(int at);
 // Delete character at location `at`.
 // Invariant: `at in [0, row->size)`.
 bool is_space_or_tab(char c);
-void fileConfigInsertNewline(FileConfig *f);
+void fileConfigInsertEnterKey(FileConfig *f);
 void fileConfigInsertChar(FileConfig *f, int c); // 32 bit.
 void editorDelChar();
 void fileConfigOpen(FileConfig *f, const char *filename);

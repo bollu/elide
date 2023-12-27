@@ -504,7 +504,7 @@ bool is_space_or_tab(char c) {
 }
 
 /*** editor operations ***/
-void fileConfigInsertNewline(FileConfig *f) {
+void fileConfigInsertEnterKey(FileConfig *f) {
   f->makeDirty();
   if (f->cursor.col == Size<Codepoint>(0)) {
     // at first column, insert new row.
@@ -1182,17 +1182,22 @@ void fileConfigCursorMoveWordPrev(FileConfig *f) {
   assert (f->cursor.row >= 0);
   assert (f->cursor.row <= f->rows.size());
 
+  if (f->cursor.row == f->rows.size()) {
+    assert(f->cursor.col == Size<Codepoint>(0));
+  }
+
   if (f->cursor.col == Size<Codepoint>(0)) {
     if (f->cursor.row == 0) { return; }
     f->cursor.row--;
     f->cursor.col = f->rows[f->cursor.row].ncodepoints();
     return;
   }
+  assert(f->cursor.row < f->rows.size());
+  FileRow *row = &f->rows[f->cursor.row];
+
   assert(f->cursor.col > Size<Codepoint>(0));
   f->cursor.col = f->cursor.col.prev(); // advance.
 
-  assert(f->cursor.row < f->rows.size());
-  FileRow *row = &f->rows[f->cursor.row];
 
 
   for(; f->cursor.col > Size<Codepoint>(0); f->cursor.col = f->cursor.col.prev()) {
@@ -1227,8 +1232,36 @@ void fileRowCursorMoveCharLeft(FileConfig *f) {
 }
 
 void fileRowCursorMoveCharRight(FileConfig *f) {
-  assert(false && "unimplemented");
+  if (f->cursor.row < f->rows.size()) {
+    if (f->cursor.col < f->rows[f->cursor.row].ncodepoints()) {
+      f->cursor.col++;
+    } else {
+      assert(f->cursor.col == f->rows[f->cursor.row].ncodepoints());
+      f->cursor.row++;
+      f->cursor.col = Size<Codepoint>(0);
+    }
+  }
 }
+
+// move cursor to the right, and do not wraparound to next row. 
+void fileRowCursorMoveCharRightNoWraparound(FileConfig *f) {
+  if (f->cursor.row < f->rows.size()) {
+    if (f->cursor.col < f->rows[f->cursor.row].ncodepoints()) {
+      f->cursor.col++;
+    } 
+  }
+}
+
+// delete till the end of the row.
+void fileConfigDeleteTillEndOfRow(FileConfig *f) {
+  if (f->cursor.row < f->rows.size()) {
+    FileRow *row = &f->rows[f->cursor.row]; 
+    while(row->ncodepoints() > f->cursor.col) {
+        row->delCodepoint(row->ncodepoints().largestIx(), *f);
+    }
+  }
+}
+
 
 void editorMoveCursor(int key) {
   switch (key) {
@@ -1246,15 +1279,7 @@ void editorMoveCursor(int key) {
     break;
   }
   case 'l':
-    if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
-      if (g_editor.curFile.cursor.col < g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints()) {
-        g_editor.curFile.cursor.col++;
-      } else {
-        assert(g_editor.curFile.cursor.col == g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
-        g_editor.curFile.cursor.row++;
-        g_editor.curFile.cursor.col = Size<Codepoint>(0);
-      }
-    }
+    fileRowCursorMoveCharRight(&g_editor.curFile);
     break;
   case 'k':
     if (g_editor.curFile.cursor.row > 0) {
@@ -1363,8 +1388,12 @@ void editorProcessKeypress() {
     }
   }
 
-  if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in  view mode
+  if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in normal mode
     switch (c) {
+    case 'D': {
+      fileConfigDeleteTillEndOfRow(&g_editor.curFile);
+      return;
+    }
     case 'q': {
       fileConfigSave(&g_editor.curFile);
       die("bye!");
@@ -1381,6 +1410,25 @@ void editorProcessKeypress() {
       editorMoveCursor(c);
       break;
     }
+    case 'o': {
+      if (g_editor.curFile.cursor.row == g_editor.curFile.rows.size()) {
+        fileConfigInsertRow(&g_editor.curFile, g_editor.curFile.cursor.row, nullptr, 0);
+      } else {
+        fileConfigInsertRow(&g_editor.curFile, g_editor.curFile.cursor.row + 1, nullptr, 0);
+        g_editor.curFile.cursor.row += 1;
+        g_editor.curFile.cursor.col = Size<Codepoint>(0);
+      }
+      g_editor.vim_mode = VM_INSERT; return;
+    }
+    case 'O': {
+      fileConfigInsertEnterKey(&g_editor.curFile);
+      g_editor.vim_mode = VM_INSERT; return;
+    }
+
+    case 'a': {
+      fileRowCursorMoveCharRightNoWraparound(&g_editor.curFile);
+      g_editor.vim_mode = VM_INSERT; return;
+    }
     case 'g':
     case '?': {
       // TODO: make this more local.
@@ -1395,7 +1443,7 @@ void editorProcessKeypress() {
     assert (g_editor.vim_mode == VM_INSERT); 
     switch (c) { // behaviors only in edit mode.
     case '\r':
-      fileConfigInsertNewline(&g_editor.curFile);
+      fileConfigInsertEnterKey(&g_editor.curFile);
       return;
     case 127: { // this is delete, app
       editorDelChar();
