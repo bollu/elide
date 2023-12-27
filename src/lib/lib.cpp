@@ -538,16 +538,16 @@ int getWindowSize(int *rows, int *cols) {
 // insert a new row at location `at`, and store `s` at that row.
 // so rows'[at] = <new str>, rows'[at+k] = rows[at + k - 1];
 // This also copies the indentation from the previous line into the new line.
-void editorInsertRow(int at, const char *s, size_t len) {
-  if (at < 0 || at > g_editor.curFile.rows.size()) {
+void fileConfigInsertRow(FileConfig *f, int at, const char *s, size_t len) {
+  if (at < 0 || at > f->rows.size()) {
     return;
   }
   // realloc sucks, don't do this kids. It does not call the constructor.
-  g_editor.curFile.rows.push_back(FileRow()); 
-  for(int i = g_editor.curFile.rows.size() - 1; i >= at + 1; i--)  {
-    g_editor.curFile.rows[i] = g_editor.curFile.rows[i - 1];   
+  f->rows.push_back(FileRow()); 
+  for(int i = f->rows.size() - 1; i >= at + 1; i--)  {
+    f->rows[i] = f->rows[i - 1];   
   }
-  g_editor.curFile.rows[at].setBytes(s, len, g_editor.curFile);
+  f->rows[at].setBytes(s, len, g_editor.curFile);
 }
 
 
@@ -567,39 +567,30 @@ bool is_space_or_tab(char c) {
   return c == ' ' || c == '\t';
 }
 
-// memcpy a UTF-8 codepoint pointed to by 'codepoint' at location 'out'.
-// return the pointer `out` moved by the codepoint length.
-char *memcpyUtf8Codepoint(char *out, const char *codepoint) {
-  int sz = utf8_next_code_point_len(codepoint);
-  for(int i = 0; i < sz; ++i) {
-    out[i] = codepoint[i];
-  }
-  return out + sz;
-}
-
 /*** editor operations ***/
-void editorInsertNewline() {
-  g_editor.curFile.makeDirty();
-  if (g_editor.curFile.cursor.col == Size<Codepoint>(0)) {
+void fileConfigInsertNewline(FileConfig *f) {
+  f->makeDirty();
+  if (f->cursor.col == Size<Codepoint>(0)) {
     // at first column, insert new row.
-    editorInsertRow(g_editor.curFile.cursor.row, "", 0);
-    // place cursor at next row (g_editor.curFile.cursor.row + 1), first column (cx=0)
-    g_editor.curFile.cursor.row++;
-    g_editor.curFile.cursor.col = Size<Codepoint>(0);
+    fileConfigInsertRow(f, f->cursor.row, "", 0);
+    // place cursor at next row (f->cursor.row + 1), first column (cx=0)
+    f->cursor.row++;
+    f->cursor.col = Size<Codepoint>(0);
   } else {
     // at column other than first, so chop row and insert new row.
-    FileRow *row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
+    FileRow *row = &f->rows[f->cursor.row];
     // TODO: simplify code by using `abuf`.
     // legal previous row, copy the indentation.
-    // note that the checks 'num_indent < row.size' and 'num_indent < g_editor.curFile.cursor.col' are *not* redundant.
+    // note that the checks 'num_indent < row.size' and 'num_indent < f->cursor.col' are *not* redundant.
     // We only want to copy as much indent exists upto the cursor.
 
     abuf new_row_contents;
     // this is legal because space/tab is both a codepoint and an Ix, they are commensurate.
     Size<Codepoint> num_indent(0);
-    for(Ix<Codepoint> i(0); i < row->ncodepoints(); i++)  {
+    for(Ix<Codepoint> i(0); i < row->ncodepoints() && i < f->cursor.col; i++)  {
       const char *codepoint = row->getCodepoint(i); 
       if (is_space_or_tab(*codepoint)) {
+        num_indent++; // keep track of how many indents we have added, so we can adjust the column. 
         new_row_contents.appendCodepoint(codepoint);
       } else {
         break;
@@ -607,61 +598,62 @@ void editorInsertNewline() {
     }
 
     // add all code point size from col till end.
-    for(Ix<Codepoint> i(g_editor.curFile.cursor.col.toIx()); i < row->ncodepoints(); ++i) {
+    for(Ix<Codepoint> i(f->cursor.col.toIx()); i < row->ncodepoints(); ++i) {
       new_row_contents.appendCodepoint(row->getCodepoint(i));
     }
 
-    // create a row at g_editor.curFile.cursor.row + 1 containing data;
-    editorInsertRow(g_editor.curFile.cursor.row + 1, new_row_contents.buf(), new_row_contents.len());
+    // create a row at f->cursor.row + 1 containing data;
+    fileConfigInsertRow(f, f->cursor.row + 1, new_row_contents.buf(), new_row_contents.len());
 
     // pointer invalidated, get pointer to current row again,
-    row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
-    // chop off at row[...:g_editor.curFile.cursor.col]
-    row->truncateNCodepoints(Size<Codepoint>(g_editor.curFile.cursor.col), g_editor.curFile);
-    // place cursor at next row (g_editor.curFile.cursor.row + 1), column of the indent.
-    g_editor.curFile.cursor.row++;
-    g_editor.curFile.cursor.col = num_indent;
+    row = &f->rows[f->cursor.row];
+    // chop off at row[...:f->cursor.col]
+    row->truncateNCodepoints(Size<Codepoint>(f->cursor.col), g_editor.curFile);
+    // place cursor at next row (f->cursor.row + 1), column of the indent.
+    f->cursor.row++;
+    f->cursor.col = num_indent;
   }
 }
 
-void editorInsertChar(int c) {
-  g_editor.curFile.makeDirty();
+void fileConfigInsertChar(FileConfig *f, int c) {
+  f->makeDirty();
 
 
-  if (g_editor.curFile.cursor.row == g_editor.curFile.rows.size()) {
-    editorInsertRow(g_editor.curFile.rows.size(), "", 0);
+  if (f->cursor.row == f->rows.size()) {
+    fileConfigInsertRow(f, f->rows.size(), "", 0);
   }
 
-  FileRow *row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
+  FileRow *row = &f->rows[f->cursor.row];
 
   // if `c` is one of the delinators of unabbrevs.
-  if (c == ' ' || c == '\t' || c == '(' || c == ')' || c == '\\' || ispunct(c)) {
+  if (row->ncodepoints() > Size<Codepoint>(0) && 
+      (c == ' ' || c == '\t' || c == '(' || c == ')' || c == '\\' || ispunct(c))) {
     // we are inserting a space, check if we have had a full match, and if so, use it.
     SuffixUnabbrevInfo info = abbrev_dict_get_unabbrev(&g_editor.abbrevDict, 
       row->getCodepoint(Ix<Codepoint>(0)), // this is a hack to get the buffer...
-      row->getBytesTill(g_editor.curFile.cursor.col).size - 1);
+      row->getBytesTill(f->cursor.col).size - 1);
     if (info.kind == AMK_EXACT_MATCH) {
-      assert(g_editor.curFile.cursor.col.size > 0);
+      assert(f->cursor.col.size > 0);
 
       // assumption: the unabbrev is pure ASCII. Need to delete `matchlen + 1` to kill
       // the full string, plus the backslash.
       for(int i = 0; i < info.matchlen + 1; ++i) {
         assert((g_editor.abbrevDict.unabbrevs[info.matchix][i] & (1 << 7)) == 0); // ASCII;
-        row->delCodepoint(Ix<Codepoint>(g_editor.curFile.cursor.col.largestIx()), g_editor.curFile);
-        g_editor.curFile.cursor.col--;
+        row->delCodepoint(Ix<Codepoint>(f->cursor.col.largestIx()), g_editor.curFile);
+        f->cursor.col--;
       }
 
       // TODO: check if we have `toInserts` that are more than 1 codepoint.
       const char *toInsert = g_editor.abbrevDict.abbrevs[info.matchix];
-        row->insertCodepoint(g_editor.curFile.cursor.col.toIx(), toInsert, g_editor.curFile);
-      g_editor.curFile.cursor.col++;
+        row->insertCodepoint(f->cursor.col.toIx(), toInsert, g_editor.curFile);
+      f->cursor.col++;
     }
 
   }
 
 
-  row->insertByte(g_editor.curFile.cursor.col, c, g_editor.curFile);  
-  g_editor.curFile.cursor.col++; // move cursor.
+  row->insertByte(f->cursor.col, c, g_editor.curFile);  
+  f->cursor.col++; // move cursor.
 
 
 }
@@ -729,8 +721,11 @@ void fileConfigSyncLeanState(FileConfig *file_config) {
   } else {
     file_config->text_document_item.version += 1;
     free(file_config->text_document_item.text);
-    Size<Byte> nbytes;
-    file_config->text_document_item.text = editorRowsToBuf(&nbytes);
+    abuf buf;
+    fileConfigRowsToBuf(file_config, &buf);
+    assert(buf.len() > 0);
+    assert(buf.buf()[buf.len() - 1] == 0); // must be null-termianted.
+    file_config->text_document_item.text = strdup(buf.buf());
   }
   assert(file_config->text_document_item.is_initialized);
   // textDocument/didOpen
@@ -784,9 +779,9 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
 
 /*** file i/o ***/
-void editorOpen(const char *filename) {
-  free(g_editor.curFile.absolute_filepath);
-  g_editor.curFile.absolute_filepath = strdup(filename);
+void fileConfigOpen(FileConfig *f, const char *filename) {
+  free(f->absolute_filepath);
+  f->absolute_filepath = strdup(filename);
 
   FILE *fp = fopen(filename, "a+");
   if (!fp) {
@@ -802,59 +797,65 @@ void editorOpen(const char *filename) {
            (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) {
       linelen--;
     }
-    // editorAppendRow(line, linelen);
-    editorInsertRow(g_editor.curFile.rows.size(), line, linelen);
+    fileConfigInsertRow(f, f->rows.size(), line, linelen);
   }
   free(line);
   fclose(fp);
-  g_editor.curFile.is_initialized = true;
+  f->is_initialized = true;
 }
 
 
-char *editorRowsToBuf(Size<Byte> *buflen) {
-  Size<Byte> totbytes(0);
-  for (int j = 0; j < g_editor.curFile.rows.size(); j++) {
-    totbytes += g_editor.curFile.rows[j].nbytes();
-    totbytes += Size<Byte>(1); // '\n' in ASCII..
+void fileConfigRowsToBuf(FileConfig *file, abuf *buf) {
+  for (int r = 0; r < file->rows.size(); r++) {
+    // TODO: convert 'buf' API to also use Sizes.
+    buf->appendbuf(file->rows[r].getRawBytesPtrUnsafe(), file->rows[r].nbytes().size);
+    buf->appendChar('\n');
   }
-  *buflen = totbytes;
-  char *buf = (char *)malloc(totbytes.size + 1);
-  char *p = buf;
-  for (int j = 0; j < g_editor.curFile.rows.size(); j++) {
-    for(Ix<Byte> i(0); i < g_editor.curFile.rows[j].nbytes(); ++i) {
-      *p = g_editor.curFile.rows[j].getByte(i);
-      p++;
+}
+
+void fileConfigRowsAndCursorDebugPrint(FileConfig *file, abuf *buf) {
+  for (int r = 0; r < file->rows.size(); r++) {
+    Ix<Codepoint> c(0);
+    for (; c < file->rows[r].ncodepoints(); c++) {
+      if (r == file->cursor.row && c == file->cursor.col.toIx()) {
+        buf->appendChar('|');
+      }
+      // TODO: convert 'buf' API to also use Sizes.
+      buf->appendCodepoint(file->rows[r].getCodepoint(c));
     }
-    *p = '\n';
-    p++;
+
+    // recall that cursor can occur *after* line end.
+    if (r == file->cursor.row && c  == file->cursor.col.toIx()) {
+        buf->appendChar('|');
+    }
+    buf->appendChar('\n');
   }
-  return buf;
 }
 
 
-void editorSave() {
-  if (g_editor.curFile.absolute_filepath == NULL || !g_editor.curFile.is_dirty) {
+
+void fileConfigSave(FileConfig *f) {
+  if (f->absolute_filepath == NULL || !f->is_dirty) {
     return;
   }
-  Size<Byte> nbytes;
-  char *buf = editorRowsToBuf(&nbytes);
+  abuf buf;
+  fileConfigRowsToBuf(&g_editor.curFile, &buf);
   // | open for read and write
   // | create if does not exist
   // 0644: +r, +w
-  int fd = open(g_editor.curFile.absolute_filepath, O_RDWR | O_CREAT, 0644);
+  int fd = open(f->absolute_filepath, O_RDWR | O_CREAT, 0644);
   if (fd != -1) {
     editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
   }
   assert(fd != -1 && "unable to open file");
   // | set file to len.
-  int err = ftruncate(fd, nbytes.size);
+  int err = ftruncate(fd, buf.len());
   assert(err != -1 && "unable to truncate");
-  int nwritten = write(fd, buf, nbytes.size);
-  assert(nwritten == nbytes.size && "wasn't able to write enough bytes");
+  int nwritten = write(fd, buf.buf(), buf.len());
+  assert(nwritten == buf.len() && "wasn't able to write enough bytes");
   editorSetStatusMessage("Saved file");
-  g_editor.curFile.is_dirty = false;
+  f->is_dirty = false;
   close(fd);
-  free(buf);
 }
 
 
@@ -1294,7 +1295,7 @@ void editorProcessKeypress() {
   switch (c) {
   case 'q':
   case CTRL_KEY('q'): {
-    editorSave();
+    fileConfigSave(&g_editor.curFile);
     die("bye!");
     return;
   }
@@ -1334,7 +1335,7 @@ void editorProcessKeypress() {
     assert (g_editor.vim_mode == VM_INSERT); 
     switch (c) { // behaviors only in edit mode.
     case '\r':
-      editorInsertNewline();
+      fileConfigInsertNewline(&g_editor.curFile);
       return;
     case DEL_CHAR: {
       editorDelChar();
@@ -1344,12 +1345,12 @@ void editorProcessKeypress() {
     case CTRL_KEY('c'):
     case '\x1b':  { // escape key
       g_editor.vim_mode = VM_NORMAL;
-      editorSave();
+      fileConfigSave(&g_editor.curFile);
       fileConfigSyncLeanState(&g_editor.curFile);
       return;
    }
     default:
-      editorInsertChar(c);
+      fileConfigInsertChar(&g_editor.curFile, c);
       return;
     } // end switch case.
   } // end mode == VM_INSERT

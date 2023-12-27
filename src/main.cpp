@@ -34,7 +34,7 @@ int main(int argc, char **argv){
   // then start lean server there. 
   // If unavailable, then start lean server with lean --server.
 
-  editorOpen(filepath); // TODO: refactor to use curFile.
+  fileConfigOpen(&g_editor.curFile, filepath); // TODO: refactor to use curFile.
   fileConfigLaunchLeanServer(&g_editor.curFile);
   fileConfigSyncLeanState(&g_editor.curFile);
 

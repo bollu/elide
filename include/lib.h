@@ -46,6 +46,15 @@ struct abuf {
     this->appendbuf(codepoint, len);
   }
 
+  // append a sequence of n UTF-8 codepoints.
+  void appendCodepoints(const char *codepoint, int n) {
+    int delta = 0;
+    for(int i = 0; i < n; ++i)  {
+      delta += utf8_next_code_point_len(codepoint);
+      this->appendCodepoint(codepoint + delta);
+    }
+  }
+
   void appendChar(char c) {
     this->appendbuf(&c, 1);
   }
@@ -533,6 +542,13 @@ struct FileRow {
     return this->bytes + delta;
   }
 
+  // get the raw bytes. While functionally equivalent to
+  // getCodepoint, this gives one more license to do things like `memcpy`
+  // and not have it look funny.
+  const char *getRawBytesPtrUnsafe() const {
+    return this->bytes;
+  }
+
   // TODO: rename API
   Size<Byte> getBytesAt(Ix<Codepoint> i) const {
     return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
@@ -734,24 +750,24 @@ void die(const char *fmt, ...);
 int editorReadKey();
 void getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
-void editorInsertRow(int at, const char *s, size_t len);
-void editorFreeRow(FileRow *row);
+void fileConfigInsertRow(FileConfig *f, int at, const char *s, size_t len);
 void editorDelRow(int at);
 // Delete character at location `at`.
 // Invariant: `at in [0, row->size)`.
 bool is_space_or_tab(char c);
-void editorInsertNewline();
-void editorInsertChar(int c); // 32 bit.
+void fileConfigInsertNewline(FileConfig *f);
+void fileConfigInsertChar(FileConfig *f, int c); // 32 bit.
 void editorDelChar();
-void editorOpen(const char *filename);
-char *editorRowsToBuf(Size<Byte> *buflen);
-void editorSave();
+void fileConfigOpen(FileConfig *f, const char *filename);
+void fileConfigRowsToBuf(FileConfig *f, abuf *buf);
+// prints cursor position as well, used for debugging.
+void fileConfigRowsAndCursorDebugPrint(FileConfig *f, abuf *buf); 
+void fileConfigSave(FileConfig *f);
 void editorDraw();
 void editorScroll();
 void editorDrawRows(abuf &ab);
 void editorDrawStatusBar(abuf &ab);
 void editorDrawMessageBar(abuf &ab);
-void editorSetStatusMessage(const char *fmt, ...);
 void editorMoveCursor(int key);
 void editorProcessKeypress();
 char *editorPrompt(const char *prompt);
