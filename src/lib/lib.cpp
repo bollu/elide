@@ -413,77 +413,6 @@ void enableRawMode() {
   }
 }
 
-int editorReadKey() {
-  int nread;
-  char c;
-  while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-    if (nread == -1 && errno != EAGAIN)
-      die("read");
-  }
-
-  // if we see an escape char, then read.
-  if (c == '\x1b') {
-    char seq[3];
-
-    // user pressed escape key only!
-    if (read(STDIN_FILENO, &seq[0], 1) != 1)
-      return '\x1b';
-    if (read(STDIN_FILENO, &seq[1], 1) != 1)
-      return '\x1b';
-
-    // user pressed escape sequence!
-    // ... Oh wow, that's why it's called an ESCAPE sequence.
-    if (seq[0] == '[') {
-
-      // [<digit>
-      if (seq[1] >= '0' && seq[1] <= '9') {
-        // read digit.
-        if (read(STDIN_FILENO, &seq[2], 1) != 1)
-          return '\x1b';
-        // [<digit>~
-        if (seq[2] == '~') {
-          switch (seq[1]) {
-          case '5':
-            return PAGE_UP;
-          case '6':
-            return PAGE_DOWN;
-          }
-        }
-      }
-      // translate arrow keys to vim :)
-      switch (seq[1]) {
-      case 'A':
-        return ARROW_UP;
-      case 'B':
-        return ARROW_DOWN;
-      case 'C':
-        return ARROW_RIGHT;
-      case 'D':
-        return ARROW_LEFT;
-      }
-    };
-
-    return '\x1b';
-  } 
-  else if (c == CTRL_KEY('d')) {
-    return PAGE_DOWN;
-  } else if (c == CTRL('u')) {
-    return PAGE_UP;
-  } else if (c == 'h' && g_editor.vim_mode == VM_NORMAL) {
-    return ARROW_LEFT;
-  } else if (c == 'j' && g_editor.vim_mode == VM_NORMAL) {
-    return ARROW_DOWN;
-  } else if (c == 'k' && g_editor.vim_mode == VM_NORMAL) {
-    return ARROW_UP;
-  } else if (c == 'l' && g_editor.vim_mode == VM_NORMAL) {
-    return ARROW_RIGHT;
-  } else if (c == 127) {
-    return DEL_CHAR;
-  } else {
-    return c;
-  }
-}
-
 void getCursorPosition(int *rows, int *cols) {
   char buf[32];
   unsigned int i = 0;
@@ -539,10 +468,13 @@ int getWindowSize(int *rows, int *cols) {
 // so rows'[at] = <new str>, rows'[at+k] = rows[at + k - 1];
 // This also copies the indentation from the previous line into the new line.
 void fileConfigInsertRow(FileConfig *f, int at, const char *s, size_t len) {
+  // assert (at >= 0);
+  // assert(at <= f->rows.size()); 
+
   if (at < 0 || at > f->rows.size()) {
     return;
   }
-  // realloc sucks, don't do this kids. It does not call the constructor.
+
   f->rows.push_back(FileRow()); 
   for(int i = f->rows.size() - 1; i >= at + 1; i--)  {
     f->rows[i] = f->rows[i - 1];   
@@ -552,9 +484,13 @@ void fileConfigInsertRow(FileConfig *f, int at, const char *s, size_t len) {
 
 
 void editorDelRow(int at) {
+  // assert (at >= 0);
+  // assert(at <= f->rows.size()); 
+
   g_editor.curFile.makeDirty();
-  if (at < 0 || at >= g_editor.curFile.rows.size())
+  if (at < 0 || at >= g_editor.curFile.rows.size()) {
     return;
+  }
 
   for(int i = at; i < g_editor.curFile.rows.size() - 1; ++i) {
     g_editor.curFile.rows[i] = g_editor.curFile.rows[i+1];
@@ -648,14 +584,9 @@ void fileConfigInsertChar(FileConfig *f, int c) {
         row->insertCodepoint(f->cursor.col, toInsert, g_editor.curFile);
       f->cursor.col++;
     }
-
   }
-
-
   row->insertByte(f->cursor.col, c, g_editor.curFile);  
   f->cursor.col++; // move cursor.
-
-
 }
 
 void editorDelChar() {
@@ -679,7 +610,6 @@ void editorDelChar() {
     // append string.
     for(Ix<Codepoint> i(0); i < row->ncodepoints(); ++i) {
       g_editor.curFile.rows[g_editor.curFile.cursor.row - 1].appendCodepoint(row->getCodepoint(i), g_editor.curFile);
-
     }
     // delete current row
     editorDelRow(g_editor.curFile.cursor.row);
@@ -915,13 +845,11 @@ int write_int_to_str(char *s, int num) {
 
 
 void editorDrawRows(abuf &ab) {
-
   // When we print the line number, tilde, we then print a
   // "\r\n" like on any other line, but this causes the terminal to scroll in
   // order to make room for a new, blank line. Let’s make the last line an
   // exception when we print our
-  // "\r\n" ’s.
-
+  // "\r\n".
 
   // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
   const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
@@ -954,9 +882,6 @@ void editorDrawRows(abuf &ab) {
       for(Ix<Codepoint> i(0); i < row.ncodepoints(); ++i) {
         ab.appendCodepoint(row.getCodepoint(i));
       }
-      // int len = clamp(0, g_editor.curFile.rows[filerow].rsize - g_editor.curFile.scroll_col_offset, 
-      //     g_editor.screencols - LINE_NUMBER_NUM_CHARS);
-      //   ab.appendbuf(g_editor.curFile.rows[filerow].render + g_editor.curFile.scroll_col_offset, len);
     } else {
         ab.appendstr("~");
     }
@@ -971,56 +896,6 @@ void editorDrawRows(abuf &ab) {
     // always append a space, since we decrement a row from screen rows
     // to make space for status bar.
     ab.appendstr("\r\n");
-  }
-}
-
-void editorDrawStatusBar(abuf &ab) {
-  // m: select graphic rendition
-  // 1: bold
-  // 4: underscore
-  // 5: bliks
-  // 7: inverted colors
-  // can select all with [1;4;5;7m
-  // 0: clear, default arg.
-  ab.appendstr("\x1b[7m");
-
-  char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - 5%d lines",
-               g_editor.curFile.absolute_filepath ? g_editor.curFile.absolute_filepath : "[No Name]",
-               (int)g_editor.curFile.rows.size());
-
-  len = std::min<int>(len, g_editor.screencols);
-  ab.appendstr(status);
-
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", 
-      g_editor.curFile.cursor.row + 1,
-      (int)g_editor.curFile.rows.size());
-
-  while (len < g_editor.screencols) {
-    if (g_editor.screencols - len == rlen) {
-      ab.appendstr(rstatus);
-      break;
-    } else {
-      ab.appendstr(" ");
-      len++;
-    }
-  }
-  ab.appendstr("\x1b[m");
-  ab.appendstr("\r\n");
-}
-
-void editorDrawMessageBar(abuf &ab) {
-  // [K: clear sequence
-  ab.appendstr("\x1b[K");
-  int msglen = strlen(g_editor.statusmsg);
-  if (msglen > g_editor.screencols) {
-    msglen = g_editor.screencols;
-  }
-
-  g_editor.statusmsg[msglen] = '\0';
-
-  if (msglen && time(NULL) - g_editor.statusmsg_time < 5) {
-    ab.appendstr(g_editor.statusmsg);
   }
 }
 
@@ -1226,20 +1101,151 @@ void editorSetStatusMessage(const char *fmt, ...) {
 
 /*** input ***/
 
+// row can be `NULL` if one wants to indicate the last, sentinel row.
+/*
+RowMotionRequest fileRowMoveCursorIntraRow(Cursor *cursor, FileRow *row, LRDirection dir) {
+  if (dir == LRDirection::None) { return RowMotionRequest::None; }
+
+  Cursor cursorNew = cursor;
+  cursorNew.col = col + Size<Codepoint>(dir);
+
+  if (cursorNew.col < 0) {
+    return RowMotionRequest::Up; // move up.
+  } else if (cursorNew.col > row->ncodepoints()) {
+    if (row) {
+      return RowMotionRequest::Down; // move down, since we have a row to move down to.
+    } else {
+      return RowMotionRequest::None; // no motion necessary.
+    }
+  } else {
+    *cursor = cursorNew // cursor is inbounds.
+    return RowMotionRequest::None;    
+  }
+}
+*/
+
+
+enum CharacterType {
+  Sigil, // (, <, etc.
+  Alnum, // a-z, \alpha, \beta, etc.
+  Space // ' ', '\t', etc.
+};
+
+CharacterType getCodepointType(const char *codepoint) {
+  char c = *codepoint;
+  if (c == ' ' || c == '\t') { return CharacterType::Space; }
+  if ((c >= 'a' && c <= 'z') ||
+      (c >= 'A' && c <= 'Z') ||
+      (c >= '0' && c <= '9')) {
+    return Alnum;
+  } else {
+    return Sigil;
+  }
+}
+
+void fileConfigCursorMoveWordNext(FileConfig *f) {
+  assert (f->cursor.row >= 0);
+  assert (f->cursor.row <= f->rows.size());
+  // stop at end of line.
+  if (f->cursor.row == f->rows.size()) { return; }
+  assert (f->cursor.row < f->rows.size());
+  FileRow *row = &f->rows[f->cursor.row];
+
+  if (f->cursor.col == row->ncodepoints()) {
+    f->cursor.row++;
+    f->cursor.col = Size<Codepoint>(0);
+    return;
+  }
+  assert(f->cursor.col < row->ncodepoints());  
+  f->cursor.col = f->cursor.col.next(); // advance.
+
+  assert(f->cursor.col > Size<Codepoint>(0));
+  for(; f->cursor.col < row->ncodepoints(); f->cursor.col = f->cursor.col.next()) {
+    CharacterType ccur = getCodepointType(row->getCodepoint(f->cursor.col.toIx()));
+    CharacterType cprev = getCodepointType(row->getCodepoint(f->cursor.col.prev().toIx()));
+    if (ccur == CharacterType::Space) {
+      continue;
+    }
+    if (ccur == CharacterType::Sigil) {
+      // we are at a sigil, stop.
+      return;
+    }
+    else if (cprev != ccur) { 
+      // we changed the kind of character, stop.
+      return; 
+    }
+  }   
+
+};
+
+void fileConfigCursorMoveWordPrev(FileConfig *f) {
+  assert (f->cursor.row >= 0);
+  assert (f->cursor.row <= f->rows.size());
+
+  if (f->cursor.col == Size<Codepoint>(0)) {
+    if (f->cursor.row == 0) { return; }
+    f->cursor.row--;
+    f->cursor.col = f->rows[f->cursor.row].ncodepoints();
+    return;
+  }
+  assert(f->cursor.col > Size<Codepoint>(0));
+  f->cursor.col = f->cursor.col.prev(); // advance.
+
+  assert(f->cursor.row < f->rows.size());
+  FileRow *row = &f->rows[f->cursor.row];
+
+
+  for(; f->cursor.col > Size<Codepoint>(0); f->cursor.col = f->cursor.col.prev()) {
+    assert(f->cursor.col < row->ncodepoints());
+
+    CharacterType ccur = getCodepointType(row->getCodepoint(f->cursor.col.toIx()));
+    CharacterType cprev = getCodepointType(row->getCodepoint(f->cursor.col.prev().toIx()));
+    if (ccur == CharacterType::Space) {
+      continue;
+    }
+    if (ccur == CharacterType::Sigil) {
+      // we are at a sigil, stop.
+      return;
+    }
+    else if (cprev != ccur) { 
+      // we changed the kind of character, stop.
+      return; 
+    }
+  }   
+
+};
+
+
+void fileRowCursorMoveCharLeft(FileConfig *f) {
+  if (f->cursor.col > Size<Codepoint>(0)) {
+    f->cursor.col--;
+  } else if (f->cursor.row > 0) {
+    assert(f->cursor.col == Size<Codepoint>(0));
+    f->cursor.row--;
+    f->cursor.col = f->rows[f->cursor.row].ncodepoints();
+  }
+}
+
+void fileRowCursorMoveCharRight(FileConfig *f) {
+  assert(false && "unimplemented");
+}
+
 void editorMoveCursor(int key) {
   switch (key) {
-  case ARROW_LEFT:
-    if (g_editor.curFile.cursor.col > Size<Codepoint>(0)) {
-      g_editor.curFile.cursor.col--;
-    } else if (g_editor.curFile.cursor.row > 0) {
-      // move back line.
-      assert(g_editor.curFile.cursor.col == Size<Codepoint>(0));
-      g_editor.curFile.cursor.row--;
-      g_editor.curFile.cursor.col = g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints();
-    }
-
+  case 'w': {
+    fileConfigCursorMoveWordNext(&g_editor.curFile);
     break;
-  case ARROW_RIGHT:
+  }
+  case 'b': {
+    fileConfigCursorMoveWordPrev(&g_editor.curFile);
+    break;
+  }
+
+  case 'h': {
+    fileRowCursorMoveCharLeft(&g_editor.curFile);
+    break;
+  }
+  case 'l':
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
       if (g_editor.curFile.cursor.col < g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints()) {
         g_editor.curFile.cursor.col++;
@@ -1250,14 +1256,14 @@ void editorMoveCursor(int key) {
       }
     }
     break;
-  case ARROW_UP:
+  case 'k':
     if (g_editor.curFile.cursor.row > 0) {
       g_editor.curFile.cursor.row--;
     }
     g_editor.curFile.cursor.col = 
       std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     break;
-  case ARROW_DOWN:
+  case 'j':
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
       g_editor.curFile.cursor.row++;
     }
@@ -1266,14 +1272,14 @@ void editorMoveCursor(int key) {
         std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     }
     break;
-  case PAGE_DOWN:
+  case CTRL_KEY('d'):
     g_editor.curFile.cursor.row = std::min<int>(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.rows.size());
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
       g_editor.curFile.cursor.col = 
         std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     }
     break;
-  case PAGE_UP:
+  case CTRL_KEY('u'):
     g_editor.curFile.cursor.row = std::max<int>(g_editor.curFile.cursor.row - g_editor.screenrows / 4, 0);
     g_editor.curFile.cursor.col = 
       std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
@@ -1281,48 +1287,100 @@ void editorMoveCursor(int key) {
   }
 }
 
-void fileConfigCursorMoveWordNext(FileConfig *f) {
-  // stop at end of line.
-};
 
-void fileConfigCursorMoveWordPrevious(FileConfig *f) {
-  assert(false && "unimplemented");
-};
+int editorReadRawEscapeSequence() {
+  int nread;
+  char c;
+  while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+    if (nread == -1 && errno != EAGAIN)
+      die("read");
+  }
 
+  // if we see an escape char, then read.
+  if (c == '\x1b') {
+    char seq[3];
+
+    // user pressed escape key only!
+    if (read(STDIN_FILENO, &seq[0], 1) != 1)
+      return '\x1b';
+    if (read(STDIN_FILENO, &seq[1], 1) != 1)
+      return '\x1b';
+
+    // user pressed escape sequence!
+    // ... Oh wow, that's why it's called an ESCAPE sequence.
+    if (seq[0] == '[') {
+
+      // [<digit>
+      if (seq[1] >= '0' && seq[1] <= '9') {
+        // read digit.
+        if (read(STDIN_FILENO, &seq[2], 1) != 1)
+          return '\x1b';
+        // [<digit>~
+        if (seq[2] == '~') {
+          switch (seq[1]) {
+          case '5':
+            return KEYEVENT_PAGE_UP;
+          case '6':
+            return KEYEVENT_PAGE_UP;
+          }
+        }
+      }
+      // translate arrow keys to vim :)
+      switch (seq[1]) {
+      case 'A':
+        return KEYEVENT_ARROW_UP;
+      case 'B':
+        return KEYEVENT_ARROW_UP;
+      case 'C':
+        return KEYEVENT_ARROW_UP;
+      case 'D':
+        return KEYEVENT_ARROW_UP;
+      }
+    };
+    return '\x1b';
+  }
+  return c;
+}
 
 void editorProcessKeypress() {
-  const int c = editorReadKey();
-
-  // behaviours common to all modes
-  switch (c) {
-  case 'q':
-  case CTRL_KEY('q'): {
-    fileConfigSave(&g_editor.curFile);
-    die("bye!");
-    return;
-  }
-  case ARROW_UP:
-  case ARROW_DOWN:
-  case ARROW_RIGHT:
-  case ARROW_LEFT:
-  case PAGE_DOWN:
-  case PAGE_UP:
-    editorMoveCursor(c);
-    return;
-  }
+  int nread;
+  int c = editorReadRawEscapeSequence();
 
   if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
-    switch (c) {
-    case 'g':
-    case '?':
-      g_editor.vim_mode = VM_NORMAL; return;
-    default:
+    switch(c) {
+    case 'q': {
+      fileConfigSave(&g_editor.curFile);
+      die("bye!");
       return;
+    }
+    case 'g':
+    case '?': {
+      g_editor.vim_mode = VM_NORMAL; return;
+    }
+    default: {
+      return;
+    }
     }
   }
 
   if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in  view mode
     switch (c) {
+    case 'q': {
+      fileConfigSave(&g_editor.curFile);
+      die("bye!");
+      return;
+    }
+    case 'h':
+    case 'j':
+    case 'k':
+    case 'l':
+    case CTRL_KEY('d'):
+    case CTRL_KEY('u'):
+    case 'w': 
+    case 'b': {
+      editorMoveCursor(c);
+      break;
+    }
     case 'g':
     case '?': {
       // TODO: make this more local.
@@ -1339,21 +1397,22 @@ void editorProcessKeypress() {
     case '\r':
       fileConfigInsertNewline(&g_editor.curFile);
       return;
-    case DEL_CHAR: {
+    case 127: { // this is delete, app
       editorDelChar();
       return;
     }
     // when switching to normal mode, sync the lean state. 
-    case CTRL_KEY('c'):
-    case '\x1b':  { // escape key
+    case CTRL_KEY('c'): { // escape key
       g_editor.vim_mode = VM_NORMAL;
       fileConfigSave(&g_editor.curFile);
       fileConfigSyncLeanState(&g_editor.curFile);
       return;
    }
     default:
-      fileConfigInsertChar(&g_editor.curFile, c);
-      return;
+      if (isprint(c)){
+        fileConfigInsertChar(&g_editor.curFile, c);
+        return;
+      }
     } // end switch case.
   } // end mode == VM_INSERT
 }

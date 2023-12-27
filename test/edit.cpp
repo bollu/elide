@@ -46,30 +46,29 @@ void test1() {
 
 // test cursor motion by word.
 void test2() {
-   FileConfig f;
-   abuf buf;
-   char *afterStr = NULL;
+  FileConfig f;
+  abuf buf;
+  char *afterStr = NULL;
 
-   f.rows.push_back(FileRow());
-   const char beforeBytes[] = "  aa bbb  \n   cc ddd  ";
-   printf("### testing next word motion at\n");
-   f.rows[0].setBytes(beforeBytes, strlen(beforeBytes), f);
-   f.cursor.row = 0;
-   f.cursor.col = Size<Codepoint>(0);
-   printFile(&f, "buffer state 0");
+  f.rows.push_back(FileRow());
+  const char beforeBytes[] = "  aa bbb  \n   cc ddd  ";
+  printf("### testing next word motion at\n");
+  f.rows[0].setBytes(beforeBytes, strlen(beforeBytes), f);
+  f.cursor.row = 0;
+  f.cursor.col = Size<Codepoint>(0);
+  printFile(&f, "buffer state 0");
 
-   fileConfigInsertNewline(&f);
-   printFile(&f, "buffer state 1");
+  fileConfigInsertNewline(&f);
+  printFile(&f, "buffer state 1");
 
   fileConfigDebugPrint(&f, &buf);
   afterStr = buf.to_string();
-   assert(strcmp(afterStr, "'  two'\n'  |spaces'") == 0);
-   free(afterStr);
-   abuf buf;
-
+  assert(strcmp(afterStr, "'  two'\n'  |spaces'") == 0);
+  free(afterStr);
 }
 
 int main() {
   test1();
+  test2();
 }
 

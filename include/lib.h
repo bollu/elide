@@ -247,16 +247,6 @@ enum VimMode {
   VM_INFOVIEW_DISPLAY_GOAL, // mode where infoview is shown.
 };
 
-enum editorKey {
-  ARROW_LEFT = 1000,
-  ARROW_RIGHT,
-  ARROW_UP,
-  ARROW_DOWN,
-  PAGE_UP,
-  PAGE_DOWN,
-  DEL_CHAR,
-};
-
 struct FileRow;
 
 
@@ -335,6 +325,15 @@ struct Size {
   }
   Size(const Size<T> &other) {
     *this = other;
+  }
+
+  Size<T> next() const { // return next size.
+    return Size<T>(this->size + 1);
+  }
+
+  Size<T> prev() const { // return next size.
+    assert(this->size - 1 >= 0);
+    return Size<T>(this->size - 1);
   }
   
   Ix<T> toIx() const {
@@ -420,9 +419,13 @@ bool Ix<T>::operator <(const Size<T> &other) const {
   return ix < other.size;
 }
 
+struct FileRow;
+
 struct Cursor {
+// private:
   Size<Codepoint> col = Size<Codepoint>(0); // number of graphemes to move past from the start of the row to get to the current one.
   int row = 0; // index of row. Must be within [0, file->nrows].
+  // friend class FileRow; // TODO: only allow FileRow to modify cursor contents;
 };
 
 
@@ -754,6 +757,14 @@ int clamp(int lo, int val, int hi);
 
 /*** terminal ***/
 void die(const char *fmt, ...);
+enum KeyEvent {
+  KEYEVENT_PAGE_UP = 1000, // start fom sth that is disjoint from ASCII.
+  KEYEVENT_PAGE_DOWN,
+  KEYEVENT_ARROW_LEFT,
+  KEYEVENT_ARROW_RIGHT,
+  KEYEVENT_ARROW_UP,
+  KEYEVENT_ARROW_DOWN,
+};
 int editorReadKey();
 void getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
@@ -767,7 +778,6 @@ void fileConfigInsertChar(FileConfig *f, int c); // 32 bit.
 void editorDelChar();
 void fileConfigOpen(FileConfig *f, const char *filename);
 void fileConfigRowsToBuf(FileConfig *f, abuf *buf);
-// prints cursor position as well, used for debugging.
 void fileConfigDebugPrint(FileConfig *f, abuf *buf); 
 void fileConfigCursorMoveWordNext(FileConfig *f);
 void fileConfigCursorMoveWordPrevious(FileConfig *f);
