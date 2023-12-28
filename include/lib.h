@@ -16,10 +16,12 @@
 #include <unistd.h>
 #include <vector>
 #include <algorithm>
+#include <stack>
 #include <unordered_map>
 #include "lean_lsp.h"
 
 static int utf8_next_code_point_len(const char *str);
+int clamp(int lo, int val, int hi);
 
 
 struct abuf {
@@ -456,6 +458,45 @@ struct Cursor {
 };
 
 
+// Store the current time, and tells when it is legal to run another operation.
+struct Debouncer {
+  // return if debounce is possible. If this returns `true`, the client is
+  // expected to perform the action.
+  // Prefer to use this API as follows:
+  // 1) if (debouncer.shouldAct()) { /* perform action */ }
+  // 2) if (!debouncer.shouldAct()) { return; } /* perform action */
+  bool shouldAct() {
+    timespec tcur;
+    get_time(&tcur);
+    const long elapsed_nanosec = tcur.tv_nsec - last_acted_time.tv_nsec;
+    const long elapsed_sec = tcur.tv_sec - last_acted_time.tv_sec;
+    // we have spent as much time as we wanted.
+    if(elapsed_sec >= debounce_sec && elapsed_nanosec >= debounce_nanosec) {
+      last_acted_time = tcur;
+      return true;
+    }
+    return false;
+  }
+
+  static long millisToNanos(long millis) {
+    return millis * 1000000;
+  }
+
+  Debouncer(long sec, long nanosec) : 
+    debounce_sec(sec), debounce_nanosec(nanosec) {
+       last_acted_time.tv_sec = last_acted_time.tv_nsec = 0;
+   };
+private:
+  static void get_time(timespec *ts) {
+    if (clock_gettime(CLOCK_REALTIME, ts) == -1) {
+      perror("unable to get time from clock.");
+      exit(1);
+    }
+  }
+  const int debounce_sec; // debounce duration, seconds.
+  const int debounce_nanosec; // debounce duration, nanoseconds.
+  timespec last_acted_time;
+};
 
 
 // T is a memento, from which the prior state can be
@@ -463,32 +504,72 @@ struct Cursor {
 template<typename T>
 struct Undoer : public T {
 public:
-  Undoer() {
-    this->undoStack.push_back(getCheckpoint());
-    this->undoIx = 0;
-  }
 
+  // invariant: once we are `inUndoRedo`, the top of the `undoStack`
+  // is the current state.
   void doUndo() {
-    this->undoIx = clamp(0, this->undoIx-1, undoStack.size() - 1);
-    this->setCheckpoint(this->undoState[this->undoIx]);
+    if (undoStack.empty()) { return; }
+    if (!this->inUndoRedo) {
+      this->inUndoRedo = true; 
+      // we are entering into undo/redo. Save the state right before
+      // we began undo/redo, so that the user can redo their way
+      // back to the 'earliest' state.
+      T cur = getCheckpoint();
+      redoStack.push(cur);
+      
+      T prev = undoStack.top();
+      this->setCheckpoint(prev); // apply to setup the invariant.
+    } else {
+      assert(this->inUndoRedo);
+      if (this->undoStack.size() == 1) {
+        return; // this is already the state.
+      }
+      assert(this->undoStack.size() >= 2);
+      // once the user has started undoing, then can only stop by
+      // creating an undo memento.
+      T cur = undoStack.top();
+      redoStack.push(cur); // push the checkpoint of our state.
+      undoStack.pop(); // pop cur.
+      T prev = undoStack.top();
+      this->setCheckpoint(prev); // apply.
+    }
   }
 
   void doRedo() {
-    this->undoIx = clamp(0, this->undoIx-1, undoStack.size() - 1);
-    this->setCheckpoint(this->undoState[this->undoIx]);
-  }
+    if (redoStack.empty()) { return; }
+    assert(this->inUndoRedo);
+    T val = redoStack.top();
+    undoStack.push(val); // push into redos.
+
+    redoStack.pop();
+    this->setCheckpoint(val); // apply the invariant.
+  } 
 
   // save the current state for later undoing and redoing.
-  void saveCurrentStateAsUndoCheckpoint() {
-    // blow away everything above the stack. 
-    assert(undoIx < undoStack.size());
-    while(undoIx + 1 < undoStack.size()) {
-      undoStack.pop_back();
+  void mkUndoMemento() {
+    // abort being in undo/redo mode.
+    this->inUndoRedo = false;
+    redoStack = {};  // nuke redo stack.
+
+    T cur = getCheckpoint();
+    if (!undoStack.empty()) {
+      T &top = undoStack.top();
+      if (top == cur) { return; } // state has not changed, no point.  
     }
-    undoStack.push_back(getCheckpoint());
-    undoIx++;
-    assert(undoIx + 1 == undoStack.size());
+    undoStack.push(cur);
   }
+
+  // save the current state, and debounce the save by 1 second.
+  void mkUndoMementoRecent() {
+    // if we are in undo/redo, then we should not *automatically* cause us to
+    // quit undoRedo by making a memento.
+    if (this->inUndoRedo) { return; }
+    if (!debouncer.shouldAct()) { return; }
+    mkUndoMemento();
+  }
+
+  Undoer() {}
+
 
 protected:
   virtual T getCheckpoint() {
@@ -499,8 +580,12 @@ protected:
   };
 
 private:
-  std::vector<T> undoStack;
-  int undoIx = 0;
+  bool inUndoRedo = false; // if we are performing undo/redo.
+  std::stack<T> undoStack; // stack of undos.
+  std::stack<T> redoStack; // stack of redos.
+  // make it greater than `0.1` seconds so it is 2x the perceptible limit
+  // for humans. So it is a pause, but not necessarily a long one.
+  Debouncer debouncer = Debouncer(0, Debouncer::millisToNanos(30));
 };
 
 
@@ -517,6 +602,12 @@ struct FileConfigUndoState {
   json_object *leanInfoViewPlainGoal = nullptr;
   json_object *leanInfoViewPlainTermGoal = nullptr;
   json_object *leanHoverViewHover = nullptr;
+
+  // TODO: should we use a different fn rather than `==`?
+  bool operator == (const FileConfigUndoState &other) const {
+    return rows == other.rows; // only file state is part of undo state for debouncing.
+
+  }
 };
 
 
@@ -577,13 +668,23 @@ extern EditorConfig g_editor; // global editor handle.
 
 
 struct FileRow {
-  FileRow() {
-    bytes = (char*)malloc(0);
-  };
+  bool operator == (const FileRow &other) const {
+    if (this->raw_size != other.raw_size) { return false; }
+    for(int i = 0; i < this->raw_size; ++i) {
+      if (this->bytes[i] != other.bytes[i]) { return false; }
+    } 
+    return true;
+  }
   
   FileRow(const FileRow &other) {
     *this = other;
   }
+
+  ~FileRow() {
+    free(this->bytes);
+  }
+
+  FileRow() = default;
 
   FileRow &operator =(const FileRow &other) {
     this->raw_size = other.raw_size;
@@ -654,10 +755,6 @@ struct FileRow {
     return out;
   }
 
-
-  ~FileRow() {
-    free(this->bytes);
-  }
 
   int rxToCx(int rx) const {
     int cur_rx = 0;
@@ -834,7 +931,6 @@ int read_stdout_from_child(const char *buf, int bufsize);
 int read_stderr_from_child(const char *buf, int bufsize);
 void editorSetStatusMessage(const char *fmt, ...);
 char *editorPrompt(const char *prompt);
-int clamp(int lo, int val, int hi);
 
 
 /*** terminal ***/

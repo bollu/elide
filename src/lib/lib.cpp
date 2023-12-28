@@ -577,8 +577,8 @@ void fileConfigInsertEnterKey(FileConfig *f) {
 void fileConfigInsertChar(FileConfig *f, int c) {
   f->makeDirty();
 
-
   if (f->cursor.row == f->rows.size()) {
+    f->mkUndoMemento();
     fileConfigInsertRow(f, f->rows.size(), "", 0);
   }
 
@@ -1458,6 +1458,7 @@ void editorProcessKeypress() {
   if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in normal mode
     switch (c) {
     case 'D': {
+      g_editor.curFile.mkUndoMemento();
       fileConfigDeleteTillEndOfRow(&g_editor.curFile);
       return;
     }
@@ -1466,7 +1467,18 @@ void editorProcessKeypress() {
       die("bye!");
       return;
     }
+    case 'u': {
+      g_editor.curFile.doUndo();
+      return;
+    }
+    case 'r':
+    case 'U': {
+      g_editor.curFile.doRedo();
+      return;
+
+    }
     case 'x': {
+      g_editor.curFile.mkUndoMemento();
       fileConfigXCommand(&g_editor.curFile);
       break;
     }
@@ -1482,40 +1494,57 @@ void editorProcessKeypress() {
       break;
     }
     case 'o': {
+      g_editor.curFile.mkUndoMemento();
       fileConfigOpenRowBelow(&g_editor.curFile);
-      g_editor.vim_mode = VM_INSERT; return;
+      g_editor.vim_mode = VM_INSERT;
+      return;
     }
     case 'O': {
+      g_editor.curFile.mkUndoMemento();
       fileConfigOpenRowAbove(&g_editor.curFile);
-      g_editor.vim_mode = VM_INSERT; return;
+      g_editor.vim_mode = VM_INSERT;
+      return; 
     }
 
     case 'a': {
+      g_editor.curFile.mkUndoMemento();
       fileConfigCursorMoveCharRightNoWraparound(&g_editor.curFile);
-      g_editor.vim_mode = VM_INSERT; return;
+      g_editor.vim_mode = VM_INSERT;
+      return;
     }
     case 'd': {
-      fileConfigDeleteCurrentRow(&g_editor.curFile); return;
+      g_editor.curFile.mkUndoMemento();
+      fileConfigDeleteCurrentRow(&g_editor.curFile);
+      return;
     }
     case '$': {
-      fileConfigCursorMoveEndOfRow(&g_editor.curFile); return;
+      fileConfigCursorMoveEndOfRow(&g_editor.curFile);
+      return;
     }
     case '0': {
-      fileConfigCursorMoveBeginOfRow(&g_editor.curFile); return;
+      fileConfigCursorMoveBeginOfRow(&g_editor.curFile);
+      return;
     }
 
     case 'g':
     case '?': {
       // TODO: make this more local.
       fileConfigRequestGoalState(&g_editor.curFile);
-      g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL; return;
+      g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL;
+      return;
     }
     case 'i':
-      g_editor.vim_mode = VM_INSERT; return;
+      g_editor.curFile.mkUndoMemento();
+      g_editor.vim_mode = VM_INSERT;
+      return;
     } // end switch over key.
   } // end mode == VM_NORMAL
   else {
     assert (g_editor.vim_mode == VM_INSERT); 
+
+    // make an undo memento every second.
+    g_editor.curFile.mkUndoMementoRecent();
+
     switch (c) { // behaviors only in edit mode.
     case '\r':
       fileConfigInsertEnterKey(&g_editor.curFile);
