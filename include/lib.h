@@ -456,17 +456,77 @@ struct Cursor {
 };
 
 
-struct FileConfig {
+
+
+// T is a memento, from which the prior state can be
+// entirely reconstructed.
+template<typename T>
+struct Undoer : public T {
+public:
+  Undoer() {
+    this->undoStack.push_back(getCheckpoint());
+    this->undoIx = 0;
+  }
+
+  void doUndo() {
+    this->undoIx = clamp(0, this->undoIx-1, undoStack.size() - 1);
+    this->setCheckpoint(this->undoState[this->undoIx]);
+  }
+
+  void doRedo() {
+    this->undoIx = clamp(0, this->undoIx-1, undoStack.size() - 1);
+    this->setCheckpoint(this->undoState[this->undoIx]);
+  }
+
+  // save the current state for later undoing and redoing.
+  void saveCurrentStateAsUndoCheckpoint() {
+    // blow away everything above the stack. 
+    assert(undoIx < undoStack.size());
+    while(undoIx + 1 < undoStack.size()) {
+      undoStack.pop_back();
+    }
+    undoStack.push_back(getCheckpoint());
+    undoIx++;
+    assert(undoIx + 1 == undoStack.size());
+  }
+
+protected:
+  virtual T getCheckpoint() {
+    return *(T*)(this);
+  };
+  virtual void setCheckpoint(T state) {
+    *(T*)(this) = state;
+  };
+
+private:
+  std::vector<T> undoStack;
+  int undoIx = 0;
+};
+
+
+// NOTE: 
+// TextDocument for LSP does not need to be cached, as its value monotonically increases,
+// even during undo/redo.
+struct FileConfigUndoState {
+  std::vector<FileRow> rows; 
+  Cursor cursor; 
+  int cursor_render_col = 0;
+  int scroll_row_offset = 0;
+  int scroll_col_offset = 0;
+
+  json_object *leanInfoViewPlainGoal = nullptr;
+  json_object *leanInfoViewPlainTermGoal = nullptr;
+  json_object *leanHoverViewHover = nullptr;
+};
+
+
+// NOTE: in sublime text, undo/redo is a purely *file local* idea.
+// Do I want a *global* undo/redo? Probably not, no?
+// TODO: think about just copying the sublime text API :)
+struct FileConfig : public Undoer<FileConfigUndoState> {
   bool is_dirty = true; // have not synchronized state with Lean server.
   bool is_initialized = false;
-  Cursor cursor;
 
-  // cache of row[cursor.row].cxToRx(cursor.col)
-  int cursor_render_col = 0;
-  
-  // total number of rows.  
-  std::vector<FileRow> rows;
-    
   // offset for scrolling.
   int scroll_row_offset = 0;
   // column offset for scrolling. will render from col_offset till endof row.
@@ -480,13 +540,6 @@ struct FileConfig {
 
   // TextDocument for LSP
   TextDocumentItem text_document_item;
-
-  // plan goal object.
-  json_object *leanInfoViewPlainGoal = nullptr;
-  json_object *leanInfoViewPlainTermGoal = nullptr;
-
-  // hover view object.
-  json_object *leanHoverViewHover = nullptr;
 
   void makeDirty() {
     leanInfoViewPlainGoal = nullptr;
@@ -502,7 +555,6 @@ struct AbbreviationDict {
   int nrecords = 0;
   bool is_initialized = false;
 };
-
 
 
 struct EditorConfig {

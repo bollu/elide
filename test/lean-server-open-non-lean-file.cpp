@@ -32,7 +32,7 @@ int main() {
   fprintf(stderr, "### reading response[initialize]\n");
   response = state.read_json_response_from_child_blocking(request_id);
   fprintf(stderr, "  '%s'\n", json_object_to_json_string(response));
-
+  
   // initialize: send initialized
   req = lspCreateInitializedNotification();
   fprintf(stderr, "### notification [initialized]\n");
