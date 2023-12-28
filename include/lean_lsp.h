@@ -257,7 +257,7 @@ enum class CompletionTriggerKind {
 
 // textDocument/completion
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
-static json_object *lspCreateTextDocumentCompletionRequestt(Uri uri, const Position position, CompletionTriggerKind triggerKind) {
+static json_object *lspCreateTextDocumentCompletionRequest(Uri uri, const Position position, CompletionTriggerKind triggerKind) {
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
   json_object *textDocument = json_object_new_object();
@@ -271,4 +271,66 @@ static json_object *lspCreateTextDocumentCompletionRequestt(Uri uri, const Posit
   return o;
 };
 
+
+
+// textDocument/definition
+static json_object *lspCreateTextDocumentDefinitionRequest(Uri uri, const Position position) {
+  json_object *o = json_object_new_object();
+  // textDocumentIdentifier
+  json_object *textDocument = json_object_new_object();
+  json_object_object_add(textDocument, "uri", json_object_new_uri(uri));
+  json_object_object_add(o, "textDocument", textDocument);
+  
+  json_object_object_add(o, "position", json_object_new_position(position));
+  return o;
+};
+
+
+// textDocument/declaration
+static json_object *lspCreateTextDocumentDeclarationRequest(Uri uri, const Position position) {
+  json_object *o = json_object_new_object();
+  // textDocumentIdentifier
+  json_object *textDocument = json_object_new_object();
+  json_object_object_add(textDocument, "uri", json_object_new_uri(uri));
+  json_object_object_add(o, "textDocument", textDocument);
+  
+  json_object_object_add(o, "position", json_object_new_position(position));
+  return o;
+};
+
+
+
+// (* diagnostics struct parsing *)
+// [Trace - 02:39:26 AM] Received notification 'textDocument/publishDiagnostics'.
+// Params: {
+//   "version": 53,
+//   "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean",
+//   "diagnostics": [
+//     {
+//       "source": "Lean 4",
+//       "severity": 1,
+//       "range": {
+//         "start": {
+//           "line": 2,
+//           "character": 7
+//         },
+//         "end": {
+//           "line": 2,
+//           "character": 16
+//         }
+//       },
+//       "message": "unknown identifier 'Stringxxx'",
+//       "fullRange": {
+//         "start": {
+//           "line": 2,
+//           "character": 7
+//         },
+//         "end": {
+//           "line": 2,
+//           "character": 16
+//         }
+//       }
+//     }
+//   ]
+// }
 

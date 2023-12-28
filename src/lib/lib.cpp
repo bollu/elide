@@ -784,7 +784,7 @@ void fileConfigDebugPrint(FileConfig *file, abuf *buf) {
   for (int r = 0; r < file->rows.size(); r++) {
     if (r > 0) { buf->appendChar('\n'); }
     Ix<Codepoint> c(0);
-    buf->appendChar('\'');
+    // buf->appendChar('\'');
     for (; c < file->rows[r].ncodepoints(); c++) {
       if (r == file->cursor.row && c == file->cursor.col.toIx()) {
         buf->appendChar('|');
@@ -797,7 +797,7 @@ void fileConfigDebugPrint(FileConfig *file, abuf *buf) {
     if (r == file->cursor.row && c  == file->cursor.col.toIx()) {
         buf->appendChar('|');
     }
-    buf->appendChar('\'');
+    // buf->appendChar('\'');
   }
 }
 

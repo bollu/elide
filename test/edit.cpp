@@ -27,9 +27,9 @@ void test1() {
    char *afterStr = NULL;
 
    f.rows.push_back(FileRow());
-   const char beforeBytes[] = "  twospaces";
+   const char beforeStr[] = "  twospaces";
    printf("### testing creating newline at '  two|spaces'\n");
-   f.rows[0].setBytes(beforeBytes, strlen(beforeBytes), f);
+   f.rows[0].setBytes(beforeStr, strlen(beforeStr), f);
    f.cursor.row = 0;
    f.cursor.col = Size<Codepoint>(5);
    printFile(&f, "buffer state before");
@@ -51,9 +51,10 @@ void test2() {
   char *afterStr = NULL;
 
   f.rows.push_back(FileRow());
-  const char beforeBytes[] = "  aa bbb  \n   cc ddd  ";
+  const char beforeStr[] = "  test|  test2";
+  const char expetedBytes[] = "  test\n|  test2";
   printf("### testing next word motion at\n");
-  f.rows[0].setBytes(beforeBytes, strlen(beforeBytes), f);
+  f.rows[0].setBytes(beforeStr, strlen(beforeStr), f);
   f.cursor.row = 0;
   f.cursor.col = Size<Codepoint>(0);
   printFile(&f, "buffer state 0");
@@ -63,12 +64,39 @@ void test2() {
 
   fileConfigDebugPrint(&f, &buf);
   afterStr = buf.to_string();
-  assert(strcmp(afterStr, "'  two'\n'  |spaces'") == 0);
+  assert(strcmp(afterStr, expectedStr);
   free(afterStr);
 }
+
+
+// test cursor motion by word.
+void test3() {
+  FileConfig f;
+  abuf buf;
+  char *afterStr = NULL;
+
+  f.rows.push_back(FileRow());
+  const char beforeStr[] = "  test| test2";
+  const char expectedStr[] = "  test\n|  test2";
+  printf("### testing next word motion at\n");
+  f.rows[0].setBytes(beforeStr, strlen(beforeStr), f);
+  f.cursor.row = 0;
+  f.cursor.col = Size<Codepoint>(0);
+  printFile(&f, "buffer state 0");
+
+  fileConfigInsertEnterKey(&f);
+  printFile(&f, "buffer state 1");
+
+  fileConfigDebugPrint(&f, &buf);
+  afterStr = buf.to_string();
+  assert(strcmp(afterStr, expectedStr));
+  free(afterStr);
+}
+
 
 int main() {
   test1();
   test2();
+  test3();
 }
 

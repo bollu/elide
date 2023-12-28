@@ -12896,3 +12896,308 @@ Result: []
 Result: []
 
 
+
+[Trace - 12:53:32 PM] Sending request 'textDocument/hover - (199)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean"
+  },
+  "position": {
+    "line": 2,
+    "character": 16
+  }
+}
+
+
+[Trace - 12:53:32 PM] Received response 'textDocument/documentHighlight - (198)' in 10ms.
+Result: [
+  {
+    "range": {
+      "start": {
+        "line": 2,
+        "character": 13
+      },
+      "end": {
+        "line": 2,
+        "character": 19
+      }
+    },
+    "kind": 1
+  },
+  {
+    "range": {
+      "start": {
+        "line": 2,
+        "character": 23
+      },
+      "end": {
+        "line": 2,
+        "character": 29
+      }
+    },
+    "kind": 1
+  }
+]
+
+
+[Trace - 12:53:32 PM] Received response 'textDocument/codeAction - (197)' in 12ms.
+Result: []
+
+
+[Trace - 12:53:32 PM] Received response 'textDocument/hover - (199)' in 10ms.
+Result: {
+  "range": {
+    "start": {
+      "line": 2,
+      "character": 13
+    },
+    "end": {
+      "line": 2,
+      "character": 19
+    }
+  },
+  "contents": {
+    "value": "```lean\nString : Type\n```\n***\n`String` is the type of (UTF-8 encoded) strings.\n\nThe compiler overrides the data representation of this type to a byte sequence,\nand both `String.utf8ByteSize` and `String.length` are cached and O(1).\n\n***\n*import Init.Prelude*",
+    "kind": "markdown"
+  }
+}
+
+(* DEFINITION *)
+[Trace - 12:53:36 PM] Sending request 'textDocument/definition - (200)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean"
+  },
+  "position": {
+    "line": 2,
+    "character": 16
+  }
+}
+
+
+[Trace - 12:53:36 PM] Received response 'textDocument/definition - (200)' in 2ms.
+Result: [
+  {
+    "uri": "file:///home/bollu/.elan/toolchains/leanprover--lean4---4.0.0/src/lean/Init/Prelude.lean",
+    "range": {
+      "start": {
+        "line": 2270,
+        "character": 10
+      },
+      "end": {
+        "line": 2270,
+        "character": 16
+      }
+    }
+  }
+]
+
+
+[Trace - 12:53:41 PM] Sending request 'textDocument/codeAction - (203)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean"
+  },
+  "range": {
+    "start": {
+      "line": 2,
+      "character": 14
+    },
+    "end": {
+      "line": 2,
+      "character": 14
+    }
+  },
+  "context": {
+    "diagnostics": []
+  }
+}
+
+
+[Trace - 12:53:41 PM] Received response 'textDocument/codeAction - (203)' in 8ms.
+Result: []
+
+
+[Trace - 12:53:44 PM] Sending request 'textDocument/declaration - (204)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean"
+  },
+  "position": {
+    "line": 2,
+    "character": 14
+  }
+}
+
+
+[Trace - 12:53:44 PM] Received response 'textDocument/declaration - (204)' in 2ms.
+Result: [
+  {
+    "uri": "file:///home/bollu/.elan/toolchains/leanprover--lean4---4.0.0/src/lean/Init/Prelude.lean",
+    "range": {
+      "start": {
+        "line": 2270,
+        "character": 10
+      },
+      "end": {
+        "line": 2270,
+        "character": 16
+      }
+    }
+  }
+]
+
+
+
+
+[Trace - 12:53:32 PM] Sending request 'textDocument/hover - (199)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean"
+  },
+  "position": {
+    "line": 2,
+    "character": 16
+  }
+}
+
+
+[Trace - 12:53:32 PM] Received response 'textDocument/documentHighlight - (198)' in 10ms.
+Result: [
+  {
+    "range": {
+      "start": {
+        "line": 2,
+        "character": 13
+      },
+      "end": {
+        "line": 2,
+        "character": 19
+      }
+    },
+    "kind": 1
+  },
+  {
+    "range": {
+      "start": {
+        "line": 2,
+        "character": 23
+      },
+      "end": {
+        "line": 2,
+        "character": 29
+      }
+    },
+    "kind": 1
+  }
+]
+
+
+[Trace - 12:53:32 PM] Received response 'textDocument/codeAction - (197)' in 12ms.
+Result: []
+
+
+[Trace - 12:53:32 PM] Received response 'textDocument/hover - (199)' in 10ms.
+Result: {
+  "range": {
+    "start": {
+      "line": 2,
+      "character": 13
+    },
+    "end": {
+      "line": 2,
+      "character": 19
+    }
+  },
+  "contents": {
+    "value": "```lean\nString : Type\n```\n***\n`String` is the type of (UTF-8 encoded) strings.\n\nThe compiler overrides the data representation of this type to a byte sequence,\nand both `String.utf8ByteSize` and `String.length` are cached and O(1).\n\n***\n*import Init.Prelude*",
+    "kind": "markdown"
+  }
+}
+
+
+[Trace - 12:53:36 PM] Sending request 'textDocument/definition - (200)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean"
+  },
+  "position": {
+    "line": 2,
+    "character": 16
+  }
+}
+
+
+[Trace - 12:53:36 PM] Received response 'textDocument/definition - (200)' in 2ms.
+Result: [
+  {
+    "uri": "file:///home/bollu/.elan/toolchains/leanprover--lean4---4.0.0/src/lean/Init/Prelude.lean",
+    "range": {
+      "start": {
+        "line": 2270,
+        "character": 10
+      },
+      "end": {
+        "line": 2270,
+        "character": 16
+      }
+    }
+  }
+]
+
+
+[Trace - 12:53:41 PM] Sending request 'textDocument/codeAction - (203)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean"
+  },
+  "range": {
+    "start": {
+      "line": 2,
+      "character": 14
+    },
+    "end": {
+      "line": 2,
+      "character": 14
+    }
+  },
+  "context": {
+    "diagnostics": []
+  }
+}
+
+
+[Trace - 12:53:41 PM] Received response 'textDocument/codeAction - (203)' in 8ms.
+Result: []
+
+
+(* DECLARATOIN *)
+[Trace - 12:53:44 PM] Sending request 'textDocument/declaration - (204)'.
+Params: {
+  "textDocument": {
+    "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean"
+  },
+  "position": {
+    "line": 2,
+    "character": 14
+  }
+}
+
+(* DECLARATOIN *)
+[Trace - 12:53:44 PM] Received response 'textDocument/declaration - (204)' in 2ms.
+Result: [
+  {
+    "uri": "file:///home/bollu/.elan/toolchains/leanprover--lean4---4.0.0/src/lean/Init/Prelude.lean",
+    "range": {
+      "start": {
+        "line": 2270,
+        "character": 10
+      },
+      "end": {
+        "line": 2270,
+        "character": 16
+      }
+    }
+  }
+]
+

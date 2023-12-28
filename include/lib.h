@@ -458,6 +458,9 @@ struct FileConfig {
   json_object *leanInfoViewPlainGoal = nullptr;
   json_object *leanInfoViewPlainTermGoal = nullptr;
 
+  // hover view object.
+  json_object *leanHoverViewHover = nullptr;
+
   void makeDirty() {
     leanInfoViewPlainGoal = nullptr;
     is_dirty = true;
