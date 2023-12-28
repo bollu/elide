@@ -12,8 +12,8 @@ int main() {
   int nread = 0;
   json_object *req = NULL, *response = NULL;
   LspRequestId request_id(-1);
-
-  enableRawMode();
+  
+  // enableRawMode();
   LeanServerState state = LeanServerState::init(NULL);
 
   fprintf(stderr, "### reading child (stderr), expecting 'starting lean --server'...\n");
@@ -40,7 +40,7 @@ int main() {
   state.write_notification_to_child_blocking("initialized", req);
 
   // textDocument/didOpen
-  const char *file_path = "/home/bollu/software/edtr/test/test_file.lean";
+  const char *file_path = "test_file.lean";
   TextDocumentItem item; item.init_from_file_path(file_path);
   req = lspCreateDidOpenTextDocumentNotifiation(item);
   fprintf(stderr, "### notification [textDocument/didOpen]\n");
@@ -59,5 +59,3 @@ int main() {
   fprintf(stderr, " '%s'\n", json_object_to_json_string(response));
   return 0;
 };
-
-

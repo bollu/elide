@@ -236,6 +236,39 @@ static json_object *lspCreateLeanPlainGoalRequest(Uri uri, const Position positi
 };
 
 
-// struct PlainTermGoalResponse {};
+// textDocument/hover
+static json_object *lspCreateTextDocumentHoverRequest(Uri uri, const Position position) {
+  json_object *o = json_object_new_object();
+  // textDocumentIdentifier
+  json_object *textDocument = json_object_new_object();
+  json_object_object_add(textDocument, "uri", json_object_new_uri(uri));
+  json_object_object_add(o, "textDocument", textDocument);
+  
+  json_object_object_add(o, "position", json_object_new_position(position));
+  return o;
+};
 
-// struct PlainGoalResponse {};
+
+enum class CompletionTriggerKind {
+  Invoked = 1,
+  TriggerCharacter = 2,
+  TriggerForIncompleteCompletions = 3
+};
+
+// textDocument/completion
+// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
+static json_object *lspCreateTextDocumentCompletionRequestt(Uri uri, const Position position, CompletionTriggerKind triggerKind) {
+  json_object *o = json_object_new_object();
+  // textDocumentIdentifier
+  json_object *textDocument = json_object_new_object();
+  json_object_object_add(textDocument, "uri", json_object_new_uri(uri));
+  json_object_object_add(o, "textDocument", textDocument);
+  
+  json_object_object_add(o, "position", json_object_new_position(position));
+  json_object *context = json_object_new_object();
+  json_object_object_add(context, "triggerKind", json_object_new_int(int(triggerKind)));
+  json_object_object_add(o, "context", context);
+  return o;
+};
+
+

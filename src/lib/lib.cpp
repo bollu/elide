@@ -67,6 +67,8 @@ void _exec_lean_server_on_child(char *lakefile_dirpath) {
   }
 }
 
+// tries to find the lake for `file_path`,
+// and returns NULL if file_path is NULL.
 char *get_lakefile_dirpath(const char *file_path) {
   assert(file_path);
   // walk up directory tree of 'file_path' in a loop, printing parents,
@@ -132,9 +134,11 @@ LeanServerState LeanServerState::init(const char *file_path) {
   fputs("\n===\n", state.child_stdout_log_file);
   fputs("\n===\n", state.child_stderr_log_file);
 
-  char *lakefile_dirpath = get_lakefile_dirpath(file_path);
-  fprintf(stderr, "lakefile_dirpath: '%s'\n", lakefile_dirpath);
-  free(lakefile_dirpath);
+  if (file_path) {
+    char *lakefile_dirpath = get_lakefile_dirpath(file_path);
+    fprintf(stderr, "lakefile_dirpath: '%s'\n", lakefile_dirpath);
+    free(lakefile_dirpath);
+  }
 
   pid_t childpid = fork();
   if(childpid == -1) {
@@ -143,8 +147,6 @@ LeanServerState LeanServerState::init(const char *file_path) {
   };
 
   if(childpid == 0) {
-
-
     // child->parent, child will only write to this pipe, so close read end.
     close(state.child_stdout_to_parent_buffer[PIPE_READ_IX]);
     // child->parent, child will only write to this pipe, so close read end.
@@ -159,8 +161,13 @@ LeanServerState LeanServerState::init(const char *file_path) {
     dup2(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
     // it is only legal to call `read()` on stdin. So we tie the `PIPE_READ_IX` to `STDIN`
     dup2(state.parent_buffer_to_child_stdin[PIPE_READ_IX], STDIN_FILENO);
-    char *lakefile_dirpath = get_lakefile_dirpath(file_path);
-    _exec_lean_server_on_child(lakefile_dirpath);
+    if (file_path) {
+      // we have a file that we want to find the lakefile for.
+      char *lakefile_dirpath = get_lakefile_dirpath(file_path);
+      _exec_lean_server_on_child(lakefile_dirpath);
+    } else {
+      _exec_lean_server_on_child(NULL);
+    }
 
   } else {
     // parent will only write into this pipe, so close the read end.
@@ -502,19 +509,16 @@ void fileConfigDeleteCurrentRow(FileConfig *f) {
 
 
 
-void editorDelRow(int at) {
-  // assert (at >= 0);
-  // assert(at <= f->rows.size()); 
-
-  g_editor.curFile.makeDirty();
-  if (at < 0 || at >= g_editor.curFile.rows.size()) {
+void fileConfigDelRow(FileConfig *f, int at) {
+  f->makeDirty();
+  if (at < 0 || at >= f->rows.size()) {
     return;
   }
 
-  for(int i = at; i < g_editor.curFile.rows.size() - 1; ++i) {
-    g_editor.curFile.rows[i] = g_editor.curFile.rows[i+1];
+  for(int i = at; i < f->rows.size() - 1; ++i) {
+    f->rows[i] = f->rows[i+1];
   }
-  g_editor.curFile.rows.pop_back(); // drop last element.
+  f->rows.pop_back(); // drop last element.
 }
 
 
@@ -608,32 +612,47 @@ void fileConfigInsertChar(FileConfig *f, int c) {
   f->cursor.col++; // move cursor.
 }
 
-void editorDelChar() {
-  g_editor.curFile.makeDirty();
-  if (g_editor.curFile.cursor.row == g_editor.curFile.rows.size()) {
+// TODO: come up with the correct abstractions for these.
+// run the X command in vim.
+void fileConfigXCommand(FileConfig *f) {
+  f->makeDirty();
+  if (f->cursor.row == f->rows.size()) { return; }
+
+  FileRow *row = &f->rows[f->cursor.row];
+
+  // nothing under cursor.
+  if (f->cursor.col == row->ncodepoints()) { return; }
+  // delete under the cursor.
+  row->delCodepoint(f->cursor.col.toIx(), g_editor.curFile);
+}
+
+// TODO: study this and make a better abstraction for the cursor location.
+void fileConfigBackspace(FileConfig *f) {
+  f->makeDirty();
+  if (f->cursor.row == f->rows.size()) {
     return;
   }
-  if (g_editor.curFile.cursor.col == Size<Codepoint>(0) && g_editor.curFile.cursor.row == 0)
+  if (f->cursor.col == Size<Codepoint>(0) && f->cursor.row == 0)
     return;
 
-  FileRow *row = &g_editor.curFile.rows[g_editor.curFile.cursor.row];
+  FileRow *row = &f->rows[f->cursor.row];
 
   // if col > 0, then delete at cursor. Otherwise, join lines toegether.
-  if (g_editor.curFile.cursor.col > Size<Codepoint>(0)) {
+  if (f->cursor.col > Size<Codepoint>(0)) {
     // delete at the cursor.
-    row->delCodepoint(g_editor.curFile.cursor.col.largestIx(), g_editor.curFile);
-    g_editor.curFile.cursor.col--;
+    row->delCodepoint(f->cursor.col.largestIx(), g_editor.curFile);
+    f->cursor.col--;
   } else {
     // place cursor at last column of prev row.
-    g_editor.curFile.cursor.col = g_editor.curFile.rows[g_editor.curFile.cursor.row - 1].ncodepoints();
+    f->cursor.col = f->rows[f->cursor.row - 1].ncodepoints();
     // append string.
     for(Ix<Codepoint> i(0); i < row->ncodepoints(); ++i) {
-      g_editor.curFile.rows[g_editor.curFile.cursor.row - 1].appendCodepoint(row->getCodepoint(i), g_editor.curFile);
+      f->rows[f->cursor.row - 1].appendCodepoint(row->getCodepoint(i), g_editor.curFile);
     }
     // delete current row
-    editorDelRow(g_editor.curFile.cursor.row);
+    fileConfigDelRow(f, f->cursor.row);
     // go to previous row.
-    g_editor.curFile.cursor.row--;
+    f->cursor.row--;
   }
 }
 
@@ -1398,6 +1417,23 @@ int editorReadRawEscapeSequence() {
   return c;
 }
 
+
+// open row below ('o'.)
+void fileConfigOpenRowBelow(FileConfig *f) {
+  if (f->cursor.row == f->rows.size()) {
+    fileConfigInsertRow(&g_editor.curFile, f->cursor.row, nullptr, 0);
+  } else {
+    fileConfigInsertRow(&g_editor.curFile, f->cursor.row + 1, nullptr, 0);
+    f->cursor.row += 1;
+    f->cursor.col = Size<Codepoint>(0);
+  }
+};
+
+// open row above ('O');
+void fileConfigOpenRowAbove(FileConfig *f) {
+  fileConfigInsertRow(&g_editor.curFile, 0, nullptr, 0);
+}
+
 void editorProcessKeypress() {
   int nread;
   int c = editorReadRawEscapeSequence();
@@ -1430,6 +1466,10 @@ void editorProcessKeypress() {
       die("bye!");
       return;
     }
+    case 'x': {
+      fileConfigXCommand(&g_editor.curFile);
+      break;
+    }
     case 'h':
     case 'j':
     case 'k':
@@ -1442,17 +1482,11 @@ void editorProcessKeypress() {
       break;
     }
     case 'o': {
-      if (g_editor.curFile.cursor.row == g_editor.curFile.rows.size()) {
-        fileConfigInsertRow(&g_editor.curFile, g_editor.curFile.cursor.row, nullptr, 0);
-      } else {
-        fileConfigInsertRow(&g_editor.curFile, g_editor.curFile.cursor.row + 1, nullptr, 0);
-        g_editor.curFile.cursor.row += 1;
-        g_editor.curFile.cursor.col = Size<Codepoint>(0);
-      }
+      fileConfigOpenRowBelow(&g_editor.curFile);
       g_editor.vim_mode = VM_INSERT; return;
     }
     case 'O': {
-      fileConfigInsertEnterKey(&g_editor.curFile);
+      fileConfigOpenRowAbove(&g_editor.curFile);
       g_editor.vim_mode = VM_INSERT; return;
     }
 
@@ -1486,8 +1520,8 @@ void editorProcessKeypress() {
     case '\r':
       fileConfigInsertEnterKey(&g_editor.curFile);
       return;
-    case 127: { // this is delete, app
-      editorDelChar();
+    case 127: { // this is backspace, apparently
+      fileConfigBackspace(&g_editor.curFile);
       return;
     }
     // when switching to normal mode, sync the lean state. 

@@ -4,13 +4,21 @@ add_executable(lean_server_launch_exit lean-server-launch-exit.cpp)
 target_link_libraries(lean_server_launch_exit PRIVATE libedtr)
 add_test(NAME lean_server_launch_exit COMMAND $<TARGET_FILE:lean_server_launch_exit>)
 
+file(COPY test_file.lean DESTINATION .) # copy test file.
+
 add_executable(lean_server_open_file lean-server-open-file.cpp)
 target_link_libraries(lean_server_open_file PRIVATE libedtr)
 add_test(NAME lean_server_open_file COMMAND $<TARGET_FILE:lean_server_open_file>)
 
+add_executable(lean_server_hover lean-server-hover.cpp)
+target_link_libraries(lean_server_hover PRIVATE libedtr)
+add_test(NAME lean_server_hover COMMAND $<TARGET_FILE:lean_server_hover>)
+
 add_executable(lean_server_open_non_lean_file lean-server-open-non-lean-file.cpp)
 target_link_libraries(lean_server_open_non_lean_file PRIVATE libedtr)
 add_test(NAME lean_server_open_non_lean_file COMMAND $<TARGET_FILE:lean_server_open_non_lean_file>)
+file(COPY test_file.txt DESTINATION .) # copy test file.
+
 
 add_executable(utf8 utf8.cpp)
 target_link_libraries(utf8 PRIVATE libedtr)

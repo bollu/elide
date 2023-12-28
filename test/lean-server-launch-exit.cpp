@@ -9,9 +9,9 @@ const char* __asan_default_options() { return "detect_leaks=0"; }
 
 // TODO: think about how to make all of this non-blocking.
 int main() {
-  for(int i = 0; i < 2; ++i)  {
-    if (i == 0) { enableRawMode(); } 
-    else { disableRawMode(); }
+  // for(int i = 0; i < 2; ++i)  {
+    // if (i == 0) { enableRawMode(); } 
+    // else { disableRawMode(); }
 
     static const int BUF_SIZE = 4096;
     char BUF[BUF_SIZE];
@@ -42,7 +42,7 @@ int main() {
     req = lspCreateInitializedNotification();
     fprintf(stderr, "### writing [initialized] '%s'\n", json_object_to_json_string(req));
     state.write_notification_to_child_blocking("initialized", req);
-  }
+  // }
 
   fprintf(stderr, "### quitting...\n");
   exit(0);

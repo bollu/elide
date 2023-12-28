@@ -775,7 +775,7 @@ void editorDelRow(int at);
 bool is_space_or_tab(char c);
 void fileConfigInsertEnterKey(FileConfig *f);
 void fileConfigInsertChar(FileConfig *f, int c); // 32 bit.
-void editorDelChar();
+void fileConfigDelChar(FileConfig *f);
 void fileConfigOpen(FileConfig *f, const char *filename);
 void fileConfigRowsToBuf(FileConfig *f, abuf *buf);
 void fileConfigDebugPrint(FileConfig *f, abuf *buf); 
