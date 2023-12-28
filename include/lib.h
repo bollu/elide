@@ -419,6 +419,33 @@ bool Ix<T>::operator <(const Size<T> &other) const {
   return ix < other.size;
 }
 
+// Bounded int, with bounds `[0, MAX]`.
+template<typename T> // tagged with Size/Ix<Codepoint/Byte>
+struct bint {
+  int lo;
+  int hi;
+  int val;
+  
+  static bint combine(bint x, bint y, std::function<int(int, int)> f) {
+    return bint(std::max<int>(x.lo, y.lo), 
+    	f(x.val, y.val),
+	std::min<int>(x.hi, y.hi)); 
+  }
+
+  bint(int val, int hi) : lo(0), val(val), hi(hi) {
+    val = std::min<int>(std::max<int>(lo, val), hi);
+  }
+
+  bint(int lo, int val, int hi) : lo(lo), val(val), hi(hi) {
+    val = std::min<int>(std::max<int>(lo, val), hi);
+  }
+
+  operator int() const {
+    return val;
+  }
+};
+
+
 struct FileRow;
 
 struct Cursor {

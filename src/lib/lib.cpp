@@ -1348,6 +1348,7 @@ void editorMoveCursor(int key) {
     }
     break;
   case CTRL_KEY('d'):
+    // interesting insight: to mimic vim's behaviour, we must keep the `val` the same, while only changing the `bound` of the ring!
     g_editor.curFile.cursor.row = std::min<int>(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.rows.size());
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
       g_editor.curFile.cursor.col = 
