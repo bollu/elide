@@ -22,6 +22,13 @@
 #include "uri_encode.h"
 #include "lean_lsp.h"
 
+// https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+// [(<accent>;)?<forground>;<background>;
+#define ESCAPE_CODE_DULL "\x1b[90;40m" // briht black foreground, black background
+#define ESCAPE_CODE_CURSOR_INSERT "\x1b[30;47m" // black foreground, white background
+#define ESCAPE_CODE_CURSOR_NORMAL "\x1b[30;100m" // black foreground, bright black background
+#define ESCAPE_CODE_CURSOR_SELECT "\x1b[30;43m" // black foreground, yellow background
+#define ESCAPE_CODE_UNSET "\x1b[0m"
 #define CHECK_POSIX_CALL_0(x) { do { int success = x == 0; if(!success) { perror("POSIX call failed"); }; assert(success); } while(0); }
 // check that minus 1 is notreturned.
 #define CHECK_POSIX_CALL_M1(x) { do { int fail = x == -1; if(fail) { perror("POSIX call failed"); }; assert(!fail); } while(0); }
@@ -342,12 +349,6 @@ json_object *LeanServerState::read_json_response_from_child_blocking(LspRequestI
 
 void editorSetStatusMessage(const char *fmt, ...);
 
-// https://vt100.net/docs/vt100-ug/chapter3.html#CPR
-
-// control key: maps to 1...26,
-// 00011111
-// #define CTRL_KEY(k) ((k) & ((1 << 6) - 1))
-#define CTRL_KEY(k) ((k)&0x1f)
 
 /*** data ***/
 EditorConfig g_editor;
@@ -470,7 +471,7 @@ int getWindowSize(int *rows, int *cols) {
 // insert a new row at location `at`, and store `s` at that row.
 // so rows'[at] = <new str>, rows'[at+k] = rows[at + k - 1];
 // This also copies the indentation from the previous line into the new line.
-void fileConfigInsertRow(FileConfig *f, int at, const char *s, size_t len) {
+void fileConfigInsertRowBefore(FileConfig *f, int at, const char *s, size_t len) {
   // assert (at >= 0);
   // assert(at <= f->rows.size()); 
 
@@ -527,7 +528,7 @@ void fileConfigInsertEnterKey(FileConfig *f) {
   f->makeDirty();
   if (f->cursor.col == Size<Codepoint>(0)) {
     // at first column, insert new row.
-    fileConfigInsertRow(f, f->cursor.row, "", 0);
+    fileConfigInsertRowBefore(f, f->cursor.row, "", 0);
     // place cursor at next row (f->cursor.row + 1), first column (cx=0)
     f->cursor.row++;
     f->cursor.col = Size<Codepoint>(0);
@@ -558,7 +559,7 @@ void fileConfigInsertEnterKey(FileConfig *f) {
     }
 
     // create a row at f->cursor.row + 1 containing data;
-    fileConfigInsertRow(f, f->cursor.row + 1, new_row_contents.buf(), new_row_contents.len());
+    fileConfigInsertRowBefore(f, f->cursor.row + 1, new_row_contents.buf(), new_row_contents.len());
 
     // pointer invalidated, get pointer to current row again,
     row = &f->rows[f->cursor.row];
@@ -570,12 +571,12 @@ void fileConfigInsertEnterKey(FileConfig *f) {
   }
 }
 
-void fileConfigInsertChar(FileConfig *f, int c) {
+void fileConfigInsertCharBeforeCursor(FileConfig *f, int c) {
   f->makeDirty();
 
   if (f->cursor.row == f->rows.size()) {
     f->mkUndoMemento();
-    fileConfigInsertRow(f, f->rows.size(), "", 0);
+    fileConfigInsertRowBefore(f, f->rows.size(), "", 0);
   }
 
   FileRow *row = &f->rows[f->cursor.row];
@@ -594,13 +595,13 @@ void fileConfigInsertChar(FileConfig *f, int c) {
       // the full string, plus the backslash.
       for(int i = 0; i < info.matchlen + 1; ++i) {
         assert((g_editor.abbrevDict.unabbrevs[info.matchix][i] & (1 << 7)) == 0); // ASCII;
-        row->delCodepoint(Ix<Codepoint>(f->cursor.col.largestIx()), g_editor.curFile);
+        row->delCodepointAt(Ix<Codepoint>(f->cursor.col.largestIx()), g_editor.curFile);
         f->cursor.col--;
       }
 
       // TODO: check if we have `toInserts` that are more than 1 codepoint.
       const char *toInsert = g_editor.abbrevDict.abbrevs[info.matchix];
-        row->insertCodepoint(f->cursor.col, toInsert, g_editor.curFile);
+        row->insertCodepointBefore(f->cursor.col, toInsert, g_editor.curFile);
       f->cursor.col++;
     }
   }
@@ -619,7 +620,7 @@ void fileConfigXCommand(FileConfig *f) {
   // nothing under cursor.
   if (f->cursor.col == row->ncodepoints()) { return; }
   // delete under the cursor.
-  row->delCodepoint(f->cursor.col.toIx(), g_editor.curFile);
+  row->delCodepointAt(f->cursor.col.toIx(), g_editor.curFile);
 }
 
 // TODO: study this and make a better abstraction for the cursor location.
@@ -636,7 +637,7 @@ void fileConfigBackspace(FileConfig *f) {
   // if col > 0, then delete at cursor. Otherwise, join lines toegether.
   if (f->cursor.col > Size<Codepoint>(0)) {
     // delete at the cursor.
-    row->delCodepoint(f->cursor.col.largestIx(), g_editor.curFile);
+    row->delCodepointAt(f->cursor.col.largestIx(), g_editor.curFile);
     f->cursor.col--;
   } else {
     // place cursor at last column of prev row.
@@ -708,7 +709,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // $/lean/plainGoal
   if (file_config->leanInfoViewPlainGoal) {
-    json_object_put(file_config->leanInfoViewPlainTermGoal);
+    // json_object_put(file_config->leanInfoViewPlainTermGoal);
     file_config->leanInfoViewPlainGoal = nullptr;
   }
 
@@ -730,7 +731,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // $/lean/plainTermGoal
   if (file_config->leanInfoViewPlainTermGoal) {
-    json_object_put(file_config->leanInfoViewPlainTermGoal);
+    // json_object_put(file_config->leanInfoViewPlainTermGoal);
     file_config->leanInfoViewPlainTermGoal = nullptr;
   }
 
@@ -742,7 +743,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // textDocument/hover
   if (file_config->leanHoverViewHover) {
-    json_object_put(file_config->leanInfoViewPlainTermGoal);
+    // json_object_put(file_config->leanInfoViewPlainTermGoal);
     file_config->leanHoverViewHover = nullptr;
   }
 
@@ -774,7 +775,7 @@ void fileConfigOpen(FileConfig *f, const char *filename) {
            (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) {
       linelen--;
     }
-    fileConfigInsertRow(f, f->rows.size(), line, linelen);
+    fileConfigInsertRowBefore(f, f->rows.size(), line, linelen);
   }
   free(line);
   fclose(fp);
@@ -906,7 +907,7 @@ void editorDrawRows(abuf &ab) {
     // convert the line number into a string, and write it.
     {
       // code in view mode is renderered gray
-      if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[90;40m"); }
+      if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr(ESCAPE_CODE_DULL); }
 
       char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
       int ix = write_int_to_str(line_number_str, filerow + 1);
@@ -1044,7 +1045,7 @@ void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
       if (i == (int) tab) {
         buf->appendstr("\x1b[1;97m");
       } else {
-        buf->appendstr("\x1b[90;40m");
+        buf->appendstr(ESCAPE_CODE_DULL);
       }
       buf->appendstr("┎");
       if (i == (int) tab) {
@@ -1297,10 +1298,33 @@ void editorDrawInfoView() {
 
 }
 
+void editorDrawCompletionMode() {
+  abuf ab;
+  // VT100 escapes.
+  // \x1b: escape. J: erase in display. [2J: clear entire screen
+  ab.appendstr("\x1b[2J");
+  // H: cursor position. [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  ab.appendstr("\x1b[1;1H");
+  
+  ab.appendstr("@@@ COMPLETION MODE \r\n");
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+}
+
+void editorDrawCtrlPMode() {
+  abuf ab;
+  ctrlpDraw(&g_editor.curFile.ctrlp, &ab);
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+}
+
 void editorDraw() {
   if (g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT) {
     editorDrawNormalInsertMode();
     return;
+  } else if (g_editor.vim_mode == VM_COMPLETION) {
+    editorDrawCompletionMode();
+  } else if (g_editor.vim_mode == VM_CTRLP) {
+    editorDrawCtrlPMode();
   } else {
     assert(g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL);
     editorDrawInfoView();
@@ -1486,7 +1510,7 @@ void fileConfigDeleteTillEndOfRow(FileConfig *f) {
   if (f->cursor.row < f->rows.size()) {
     FileRow *row = &f->rows[f->cursor.row]; 
     while(row->ncodepoints() > f->cursor.col) {
-        row->delCodepoint(row->ncodepoints().largestIx(), *f);
+        row->delCodepointAt(row->ncodepoints().largestIx(), *f);
     }
   }
 }
@@ -1527,14 +1551,14 @@ void editorMoveCursor(int key) {
     }
     break;
   case CTRL_KEY('d'):
-    g_editor.curFile.cursor.row = clampu(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.rows.size());
+    g_editor.curFile.cursor.row = clampu<int>(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.rows.size());
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
       g_editor.curFile.cursor.col = 
         std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     }
     break;
   case CTRL_KEY('u'):
-    g_editor.curFile.cursor.row = clamp0(g_editor.curFile.cursor.row - g_editor.screenrows / 4);
+    g_editor.curFile.cursor.row = clamp0<int>(g_editor.curFile.cursor.row - g_editor.screenrows / 4);
     g_editor.curFile.cursor.col = 
       std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     break;
@@ -1593,6 +1617,9 @@ int editorReadRawEscapeSequence() {
     };
     return '\x1b';
   }
+  else if (c == 127) {
+    return KEYEVENT_BACKSPACE;
+  }
   return c;
 }
 
@@ -1600,9 +1627,9 @@ int editorReadRawEscapeSequence() {
 // open row below ('o'.)
 void fileConfigOpenRowBelow(FileConfig *f) {
   if (f->cursor.row == f->rows.size()) {
-    fileConfigInsertRow(&g_editor.curFile, f->cursor.row, nullptr, 0);
+    fileConfigInsertRowBefore(&g_editor.curFile, f->cursor.row, nullptr, 0);
   } else {
-    fileConfigInsertRow(&g_editor.curFile, f->cursor.row + 1, nullptr, 0);
+    fileConfigInsertRowBefore(&g_editor.curFile, f->cursor.row + 1, nullptr, 0);
     f->cursor.row += 1;
     f->cursor.col = Size<Codepoint>(0);
   }
@@ -1610,7 +1637,7 @@ void fileConfigOpenRowBelow(FileConfig *f) {
 
 // open row above ('O');
 void fileConfigOpenRowAbove(FileConfig *f) {
-  fileConfigInsertRow(&g_editor.curFile, 0, nullptr, 0);
+  fileConfigInsertRowBefore(&g_editor.curFile, 0, nullptr, 0);
 }
 
 void editorProcessKeypress() {
@@ -1618,7 +1645,6 @@ void editorProcessKeypress() {
   int c = editorReadRawEscapeSequence();
 
   if (g_editor.vim_mode == VM_COMPLETION) {
-
     if (c == CTRL_KEY('\\') ||  c == CTRL_KEY('c')) {
       g_editor.vim_mode = VM_INSERT; return;
     }
@@ -1632,23 +1658,17 @@ void editorProcessKeypress() {
     }
   }
   else if (g_editor.vim_mode == VM_CTRLP) {
-    if (c == CTRL_KEY('p') || c == CTRL_KEY('c')) {
-      g_editor.vim_mode = g_editor.curFile.ctrlp.previous_state; return;
-    }
-    else if (c == '\r') {
-      // TODO: make the completer accept the autocomplete.
-      return;
-    } else if (isprint(c)) {
-      // ctrlpInsertChar(c);
+    ctrlpHandleInput(&g_editor.curFile.ctrlp, c);
+    if (ctrlpWhenQuit(&g_editor.curFile.ctrlp)) {
+      g_editor.vim_mode = g_editor.curFile.ctrlp.previous_state;
       return;
     }
   }
-
   else if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
     switch(c) {
     case 'q': {
       fileConfigSave(&g_editor.curFile);
-      die("bye!");
+      exit(0);
       return;
     }
     case '\t': {
@@ -1666,8 +1686,7 @@ void editorProcessKeypress() {
     }
     }
   }
-
-  if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in normal mode
+  else if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in normal mode
     switch (c) {
     case CTRL_KEY('p'): {
       g_editor.curFile.ctrlp.previous_state = VM_NORMAL;
@@ -1776,7 +1795,7 @@ void editorProcessKeypress() {
     case '\r':
       fileConfigInsertEnterKey(&g_editor.curFile);
       return;
-    case 127: { // this is backspace, apparently
+    case KEYEVENT_BACKSPACE: { // this is backspace, apparently
       fileConfigBackspace(&g_editor.curFile);
       return;
     }
@@ -1789,7 +1808,7 @@ void editorProcessKeypress() {
    }
     default:
       if (isprint(c)){
-        fileConfigInsertChar(&g_editor.curFile, c);
+        fileConfigInsertCharBeforeCursor(&g_editor.curFile, c);
         return;
       }
     } // end switch case.
@@ -1989,3 +2008,146 @@ void load_abbreviation_dict_from_file(AbbreviationDict *dict, const char *abbrev
   }
   load_abbreviation_dict_from_json(dict, o);
 };
+
+/** ctrlp **/
+
+
+// convert level 'quitPressed' into edge trigger.
+bool ctrlpWhenQuit(CtrlPView *view) {
+  const bool out = view->quitPressed;
+  view->quitPressed = false;
+  return out;
+}
+
+void ctrlpHandleInput(CtrlPView *view, int c) {
+  assert(view->textCol <= view->textArea.ncodepoints());
+  if (view->textAreaMode == TAM_Normal) {
+    if (c == 'h' || c == KEYEVENT_ARROW_LEFT) {
+      view->textCol = view->textCol.sub0(1);
+    } else if (c == 'l' || c == KEYEVENT_ARROW_RIGHT) {
+      view->textCol = 
+        clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
+    } else if (c == '$') {
+      view->textCol = view->textArea.ncodepoints();
+    } else if (c == '0') {
+      view->textCol = 0;
+    } else if (c == 'w') {
+        // TODO: move word.
+      view->textCol = 
+        clampu<Size<Codepoint>>(view->textCol + 4, view->textArea.ncodepoints());
+    } else if (c == 'x') {
+      if (view->textCol < view->textArea.ncodepoints()) {
+        view->textArea.delCodepointAt(view->textCol.toIx());
+      }
+    } 
+    else if (c == 'b') {
+      view->textCol = view->textCol.sub0(4);
+      // TODO: move word back.
+    } else if (c == 'i') {
+      view->textAreaMode = TAM_Insert;
+    }  else if (c == 'a') {
+      view->textCol = 
+        clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
+      view->textAreaMode = TAM_Insert;
+    } else if (c == CTRL_KEY('c') || c == CTRL_KEY('p') || c == 'q') {
+      // quit and go back to previous state.
+      view->quitPressed = true;
+    }
+ 
+  } else {
+    assert(view->textAreaMode == TAM_Insert);
+    if (c == CTRL_KEY('c') || c == CTRL_KEY('p')) {
+      view->textAreaMode = TAM_Normal;
+      // quit and go back to previous state.
+    } else if (c == KEYEVENT_ARROW_LEFT) {
+      view->textCol = view->textCol.sub0(1);
+    } else if (c == KEYEVENT_ARROW_RIGHT) {
+      view->textCol = 
+        clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
+    } else if (c == CTRL_KEY('p')) {
+      view->quitPressed = true;
+    } else if (c == KEYEVENT_BACKSPACE) {
+      if (view->textArea.ncodepoints() > 0) {
+        view->textArea.delCodepointAt(view->textCol.largestIx());
+        view->textCol = view->textCol.sub0(1);
+      }
+    } else if (isprint(c)) {
+      view->textArea.insertCodepointBefore(view->textCol, (const char *)&c);
+      view->textCol += 1;
+    }
+  } 
+}
+
+void ctrlpDraw(const CtrlPView *view, abuf *ab) {
+  // VT100 escapes.
+  // \x1b: escape. J: erase in display. [2J: clear entire screen
+  ab->appendstr("\x1b[2J");
+  // H: cursor position. [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  ab->appendstr("\x1b[1;1H");
+
+  ab->appendstr("\x1b[?25l"); // hide cursor
+
+  // append format string.
+  ab->appendfmtstr(120, "┎CTRLP MODE (%s)┓\r\n", 
+    textAreaModeToString(view->textAreaMode));
+  
+  // need to consider a window around the character.
+  // this is a nice design pattern.
+  // TODO: refactor into SquishyAABB.
+  const int LEFT_WINDOW_PADDING = 40;
+  const int RIGHT_WINDOW_PADDING = 40;
+  const int BORDER_WIDTH = 3; // ellipsis width;
+  const int LEFT_WINDOW_MARGIN = LEFT_WINDOW_PADDING - BORDER_WIDTH;
+  const int RIGHT_WINDOW_MARGIN = RIGHT_WINDOW_PADDING + BORDER_WIDTH;
+
+  const int NCHARS = 40;
+
+  Size<Codepoint> lm = view->textCol.sub0(LEFT_WINDOW_MARGIN);
+  Size<Codepoint> lp = view->textCol.sub0(LEFT_WINDOW_PADDING);
+  Size<Codepoint> rp = clampu(view->textCol + RIGHT_WINDOW_PADDING, view->textArea.ncodepoints());
+  Size<Codepoint> rm = clampu(view->textCol + RIGHT_WINDOW_MARGIN, view->textArea.ncodepoints());
+
+  assert(lp <= view->textCol);
+  assert(view->textCol <= rp);
+
+  // ab->appendstr(ESCAPE_CODE_DULL);
+  for(auto i = lm; i < lp; ++i) {
+    ab->appendChar('.');
+  }
+  // ab->appendstr(ESCAPE_CODE_UNSET);
+  for(auto i = lp; i <= rp; ++i) {
+
+    if (i == view->textCol) {
+      if (view->textAreaMode == TAM_Normal) {
+        ab->appendstr(ESCAPE_CODE_CURSOR_NORMAL);
+      } else {
+        assert(view->textAreaMode == TAM_Insert);
+        ab->appendstr(ESCAPE_CODE_CURSOR_INSERT);
+      }
+    }
+
+    if (i < view->textArea.ncodepoints()) {
+      ab->appendCodepoint(view->textArea.getCodepoint(i.toIx()));
+    } else {
+      assert(i == view->textArea.ncodepoints());
+      if (i == view->textCol) {
+        ab->appendstr(" "); // draw the cursor.
+      }
+    }
+    if (i == view->textCol) {
+      ab->appendstr(ESCAPE_CODE_UNSET);
+    }
+  }
+  // ab->appendstr(ESCAPE_CODE_DULL);
+  for(auto i = rp+1; i < rm; ++i) {
+    ab->appendChar('.');
+  }
+  // ab->appendstr(ESCAPE_CODE_UNSET);
+  ab->appendstr("\r\n");
+
+  // H: cursor position. [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  ab->appendstr("\x1b[1;1H");
+
+}

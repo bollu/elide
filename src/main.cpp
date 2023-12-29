@@ -43,6 +43,6 @@ int main(int argc, char **argv){
     editorDraw();
     editorProcessKeypress();
   };
-
+  disableRawMode();
   return 0;
 }

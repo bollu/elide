@@ -1,23 +1,31 @@
-static int clamp(int lo, int val, int hi) {
-  return std::min<int>(std::max<int>(lo, val), hi);
+template<typename T>
+static int clamp(T lo, T val, T hi) {
+  return std::min<T>(std::max<T>(lo, val), hi);
 }
 
-static int clamplu(int lo, int val, int hi) {
-  return clamp(lo, val, hi);
+template<typename T>
+static T clamplu(T lo, T val, T hi) {
+  return clamp<T>(lo, val, hi);
 }
-static int clampl(int lo, int val) {
-  return std::max<int>(lo, val);
-};
-static int clampu(int val, int hi) {
-  return std::min<int>(val, hi);
+
+template<typename T>
+static T clampl(T lo, T val) {
+  return std::max<T>(lo, val);
 };
 
-static int clamp0(int val) {
-  return clampl(0, val);
+template<typename T>
+static T clampu(T val, T hi) {
+  return std::min<T>(val, hi);
 };
 
-static int clamp0u(int val, int hi) {
-  return clamplu(0, val, hi);
+template<typename T>
+static T clamp0(T val) {
+  return clampl<T>(T(0), val);
+};
+
+template<typename T>
+static T clamp0u(T val, T hi) {
+  return clamplu<T>(0, val, hi);
 }
 
 
@@ -88,7 +96,7 @@ template<typename T>
 struct Size {
   int size = 0;
   explicit Size() = default;
-  explicit Size(int size) : size(size) {};
+  Size(int size) : size(size) {};
   Size &operator = (const Size<T> &other) {
     this->size = other.size;
     return *this;
@@ -117,6 +125,15 @@ struct Size {
     return Ix<T>(this->size - 1);
   }
 
+  // mirrors the index from the left to be its flipped version from the right.
+  // sends:
+  //   0 -> n - 1
+  //   1 -> n - 2
+  //   ...
+  //   n - 1 -> 0
+  Ix<T> mirrorIx(Ix<T> ix) const {
+    return Ix<T>(this->largestIx().ix - ix.ix);
+  }
 
   // convert from size T to size S.
   // Can covert from e.g. Codepoints to Bytes if one is dealing with ASCII,
@@ -134,11 +151,16 @@ struct Size {
     return Size<T>(this->size + other.size);
   }
 
-  Size<T> operator - (const Size<T> &other) const {
-    int out = (this->size - other.size);
-    assert(out >= 0);
-    return out;
+  // subtract with clamping down to zero.
+  Size<T> sub0(const Size<T> &other) const {
+    return Size<T>(clamp0<int>(this->size - other.size));
   }
+
+  // Size<T> operator - (const Size<T> &other) const {
+  //   int out = (this->size - other.size);
+  //   assert(out >= 0);
+  //   return out;
+  // }
 
   bool operator < (const Size<T> &other) const {
     return this->size < other.size;

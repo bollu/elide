@@ -21,6 +21,12 @@
 #include "lean_lsp.h"
 #include "mathutil.h"
 
+// https://vt100.net/docs/vt100-ug/chapter3.html#CPR
+// control key: maps to 1...26,
+// 00011111
+// #define CTRL_KEY(k) ((k) & ((1 << 6) - 1))
+#define CTRL_KEY(k) ((k)&0x1f)
+
 static int utf8_next_code_point_len(const char *str);
 
 struct abuf {
@@ -54,6 +60,56 @@ struct abuf {
     this->appendbuf(codepoint, len);
   }
 
+  // TODO: rename API
+  Size<Byte> getCodepointBytesAt(Ix<Codepoint> i) const {
+    return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
+  }
+
+
+  // insert a single codepoint.
+  void insertCodepointBefore(Size<Codepoint> at, const char *codepoint) {
+    assert(at.size >= 0);
+    assert(at.size <= this->_len);
+
+    // TODO: refactor by changing type to `abuf`.
+    Size<Byte> nbytesUptoAt = Size<Byte>(0);
+    for(Ix<Codepoint> i(0); i < at; i++)  {
+      nbytesUptoAt += this->getCodepointBytesAt(i);
+    }
+
+    const Size<Byte> nNewBytes(utf8_next_code_point_len(codepoint));
+    this->_buf = (char*)realloc(this->_buf, this->_len + nNewBytes.size);
+      
+    for(int oldix = this->_len - 1; oldix >= nbytesUptoAt.size; oldix--) {
+      // push bytes from `i` into `i + nNewBytes`.
+      this->_buf[oldix + nNewBytes.size] = this->_buf[oldix];
+    }    
+
+    // copy new bytes into into location.
+    for(int i = 0; i < nNewBytes.size; ++i)  {
+      this->_buf[nbytesUptoAt.size + i] = codepoint[i];
+    }
+    this->_len += nNewBytes.size;
+  }
+
+  void delCodepointAt(Ix<Codepoint> at) {
+    // TODO: refactor by changing type to `abuf`.
+    Size<Byte> startIx = Size<Byte>(0);
+    for(Ix<Codepoint> i(0); i < at; i++)  {
+      startIx += this->getCodepointBytesAt(i);
+    }
+
+    const Size<Byte> ntoskip = this->getCodepointBytesAt(at);
+    
+    for(int i = startIx.size; i < this->_len - ntoskip.size; i++) {
+      this->_buf[i] = this->_buf[i + ntoskip.size];
+    }    
+    this->_len -= ntoskip.size;
+    // resize to eliminate leftover.
+    this->_buf = (char *)realloc(this->_buf, this->_len);
+  }
+
+
   // append a sequence of n UTF-8 codepoints.
   void appendCodepoints(const char *codepoint, int n) {
     int delta = 0;
@@ -70,7 +126,7 @@ struct abuf {
   // take the substring of [start,start+len) and convert it to a string.
   // pointer returned must be free.
   char *to_string_start_len(int start, int slen) {
-    slen = clamp0u(slen, this->len() - start); 
+    slen = clamp0u<int>(slen, this->len() - start); 
       // std::max<int>(0, std::min<int>(slen, this->_len - start));
     assert(slen >= 0);
     char *out = (char *)calloc(slen + 1, sizeof(char));
@@ -176,6 +232,12 @@ struct abuf {
       delta += utf8_next_code_point_len(this->_buf + delta);
     }
     return this->_buf + delta;
+  }
+
+
+  const char *getCodepointFromRight(Ix<Codepoint> ix) const {
+    assert(ix < this->ncodepoints());
+    this->getCodepoint(this->ncodepoints().mirrorIx(ix));
   }
 
 private:
@@ -409,7 +471,7 @@ private:
   std::stack<T> redoStack; // stack of redos.
   // make it greater than `0.1` seconds so it is 2x the perceptible limit
   // for humans. So it is a pause, but not necessarily a long one.
-  Debouncer debouncer = Debouncer(0, Debouncer::millisToNanos(30));
+  Debouncer debouncer = Debouncer(0, Debouncer::millisToNanos(150));
 };
 
 
@@ -424,47 +486,61 @@ static InfoViewTab infoViewTabCycleNext(InfoViewTab t);
 
 // a struct to encapsulate a child proces that is line buffered,
 // which is a closure plus a childpid. 
+template<typename T>
 struct ChildProcessLineBuffered {
+  // stdout buffer of the child that is stored here before being processed.
+  abuf child_stdout_buffer;
+  // PID of the child process that is running.
   int childpid;
+  // data that is written to by the processor that processes lines.
+  T data;
   // process a line. **This is assumed to be fast.**
-  std::function<void(const char *str, int ix, int len)> processor;
-  ChildProcessLineBuffered(const char *path, const char *command, char **args);
+  std::function<void(const char *str, int ix, int len, T&data)> processor;
+  bool initialized = false;
 
-  void killSync(); // kills the process synchronously.
+  static void nopInitAndCleanup(T& data) {};
+
+  // (re)start the process synchronously.
+  // data is initialized with `initData`, and old data is deleted with cleanupData.
+  void restartSync(const char *path, const char *command, char **args,
+    std::function<void(T&data)> initData=ChildProcessLineBuffered<T>::nopInitAndCleanup(),
+    std::function<void(T&data)> cleanupData=ChildProcessLineBuffered<T>::nopInitAndCleanup()); 
+  // kills the process synchronously.
+  void killSync();
 };
 
-// enapsulates the logic of having a single line of text area.
-struct SingleLineTextAreaState {
-  abuf buf;
-  bool _dirty = false;
+// // enapsulates the logic of having a single line of text area.
+// struct SingleLineTextAreaState {
+//   abuf buf;
+//   bool _dirty = false;
 
-  void draw(abuf *out, int screenrows, int screencols) {
-    const char *ELLIPSIS = "...";
-    const int NUM_ELLIPSIS = strlen(ELLIPSIS);
-    // TODO: this should be done based on codepoints.
-    // TODO: create an abstraction for intervals and pushing the bounds left and right
-    const int ndraw = std::min<int>(screencols - NUM_ELLIPSIS, buf.ncodepoints().size);
-    if (ndraw < buf.ncodepoints().size)  {
-      out->appendstr(ELLIPSIS);
-    };
-    for(int i = 0; i < ndraw; ++i) {
-      out->appendCodepoint(buf.getCodepoint(Ix<Codepoint>(buf.ncodepoints().size - 1 - i)));
-    }
-  }
-};
+//   void draw(abuf *out, int screenrows, int screencols) {
+//     const char *ELLIPSIS = "...";
+//     const int NUM_ELLIPSIS = strlen(ELLIPSIS);
+//     // TODO: this should be done based on codepoints.
+//     // TODO: create an abstraction for intervals and pushing the bounds left and right
+//     const int ndraw = std::min<int>(screencols - NUM_ELLIPSIS, buf.ncodepoints().size);
+//     if (ndraw < buf.ncodepoints().size)  {
+//       out->appendstr(ELLIPSIS);
+//     };
+//     for(int i = 0; i < ndraw; ++i) {
+//       out->appendCodepoint(buf.getCodepoint(Ix<Codepoint>(buf.ncodepoints().size - 1 - i)));
+//     }
+//   }
+// };
 
-// A single line text area.
-struct SingleLineTextArea : Undoer<SingleLineTextAreaState> {
-  bool whenQuit() { const bool out = this->_quit; this->_quit = false; return out; }
-  // converts level trigger of dirty into edge trigger.
-  bool whenDirty() { bool out = _dirty; _dirty = false; return out; };
+// // A single line text area.
+// struct SingleLineTextArea : Undoer<SingleLineTextAreaState> {
+//   bool whenQuit() { const bool out = this->_quit; this->_quit = false; return out; }
+//   // converts level trigger of dirty into edge trigger.
+//   bool whenDirty() { bool out = _dirty; _dirty = false; return out; };
 
-  void show() { _quit = false; }
-  void handleKeypress(int c);
-  abuf getText() { return buf; };  
-private:
-  bool _quit = false;
-};
+//   void show() { _quit = false; }
+//   void handleKeypress(int c);
+//   abuf getText() { return buf; };  
+// private:
+//   bool _quit = false;
+// };
 
 
 // autocomplete view.
@@ -516,8 +592,8 @@ struct CompletionView {
 
 // TODO: have notion of project path?
 // base it off of `lakefile.lean`, or `.git`, or keep in the current path.
-// rg TEXT_STRING PROJECT_PATH -g FILE_PATH_GLOB
-// find ../ -name "*.cpp" 
+// rg TEXT_STRING PROJECT_PATH -g FILE_PATH_GLOB # find all files w/contents matching pattern.
+// rg  --files -g FILE_PATH_GLOB # find all files w/ filename matching pattern.
 // struct SearchView {
 //   Cursor cursor; // cursor in the search view.
 
@@ -558,12 +634,43 @@ struct FileConfigUndoState {
   }
 };
 
+enum TextAreaMode {
+  TAM_Normal,
+  TAM_Insert
+};
+
+static const char *textAreaModeToString(TextAreaMode mode) {
+  switch(mode) {
+  case TAM_Normal: return "normal";
+  case TAM_Insert: return "insert";
+  }
+  assert(false && "unreachable: must handle all 'TextAreaMode's.");
+}
 
 // data associated to the per-file `CtrlP` view.
 struct CtrlPView {
   VimMode previous_state;
+  TextAreaMode textAreaMode;
+
+  // if searching for files, the fields row, colstart, colend, text are to be ignored.
+  struct SearchInfo {
+    abuf filepath;
+    abuf text;
+    int row = 0;
+    int colstart = 0;
+    int colend = 0;
+  };
+
+  abuf textArea;
+  Size<Codepoint> textCol;
+  ChildProcessLineBuffered<std::vector<SearchInfo>> rgProcess;
+  bool quitPressed = false;
 };
 
+// convert level 'quitPressed' into edge trigger.
+bool ctrlpWhenQuit(CtrlPView *view);
+void ctrlpHandleInput(CtrlPView *view, int c);
+void ctrlpDraw(const CtrlPView *view, abuf *buf);
 
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
 // Do I want a *global* undo/redo? Probably not, no?
@@ -700,14 +807,14 @@ struct FileRow {
   }
 
   // TODO: rename API
-  Size<Byte> getBytesAt(Ix<Codepoint> i) const {
+  Size<Byte> getCodepointBytesAt(Ix<Codepoint> i) const {
     return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
   }
 
   Size<Byte> getBytesTill(Size<Codepoint> n) const {
     Size<Byte> out(0);
     for(Ix<Codepoint> i(0); i < n; ++i)  {
-      out += getBytesAt(i);
+      out += getCodepointBytesAt(i);
     }
     return out;
   }
@@ -737,7 +844,7 @@ struct FileRow {
       } else {
         rx += 1; // just 1.
       }
-      p += this->getBytesAt(j).size;
+      p += this->getCodepointBytesAt(j).size;
     }
     return rx;
   }
@@ -751,7 +858,7 @@ struct FileRow {
 
     Size<Byte> byte_at(0);
     for(Ix<Codepoint> i(0); i < at; ++i) {
-      byte_at += this->getBytesAt(i);
+      byte_at += this->getCodepointBytesAt(i);
     }
 
     for(int i = this->raw_size; i >= byte_at.size+1; i--) {
@@ -780,17 +887,17 @@ struct FileRow {
 
   }
   
-  void delCodepoint(Ix<Codepoint> at, FileConfig &E) {
+  void delCodepointAt(Ix<Codepoint> at, FileConfig &E) {
     assert(at.ix >= 0);
     assert(at.ix < this->raw_size);
 
     // TODO: refactor by changing type to `abuf`.
     Size<Byte> startIx = Size<Byte>(0);
     for(Ix<Codepoint> i(0); i < at; i++)  {
-      startIx += this->getBytesAt(i);
+      startIx += this->getCodepointBytesAt(i);
     }
 
-    const Size<Byte> ntoskip = this->getBytesAt(at);
+    const Size<Byte> ntoskip = this->getCodepointBytesAt(at);
     
     for(int i = startIx.size; i < this->raw_size - ntoskip.size; i++) {
       this->bytes[i] = this->bytes[i + ntoskip.size];
@@ -804,14 +911,14 @@ struct FileRow {
   }
 
   // insert a single codepoint.
-  void insertCodepoint(Size<Codepoint> at, const char *codepoint, FileConfig &E) {
+  void insertCodepointBefore(Size<Codepoint> at, const char *codepoint, FileConfig &E) {
     assert(at.size >= 0);
     assert(at.size <= this->raw_size);
 
     // TODO: refactor by changing type to `abuf`.
     Size<Byte> nbytesUptoAt = Size<Byte>(0);
     for(Ix<Codepoint> i(0); i < at; i++)  {
-      nbytesUptoAt += this->getBytesAt(i);
+      nbytesUptoAt += this->getCodepointBytesAt(i);
     }
 
     const Size<Byte> nNewBytes(utf8_next_code_point_len(codepoint));
@@ -835,7 +942,7 @@ struct FileRow {
     assert(ncodepoints_new <= this->ncodepoints());
     Size<Byte> nbytes(0);
     for(Ix<Codepoint> i(0); i < ncodepoints_new; i++)  {
-      nbytes += this->getBytesAt(i);
+      nbytes += this->getCodepointBytesAt(i);
     }
     this->bytes = (char*)realloc(this->bytes, nbytes.size);
     this->raw_size = nbytes.size;
@@ -899,17 +1006,19 @@ enum KeyEvent {
   KEYEVENT_ARROW_RIGHT,
   KEYEVENT_ARROW_UP,
   KEYEVENT_ARROW_DOWN,
+  KEYEVENT_BACKSPACE
+
 };
 int editorReadKey();
 void getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
-void fileConfigInsertRow(FileConfig *f, int at, const char *s, size_t len);
+void fileConfigInsertRowBefore(FileConfig *f, int at, const char *s, size_t len);
 void editorDelRow(int at);
 // Delete character at location `at`.
 // Invariant: `at in [0, row->size)`.
 bool is_space_or_tab(char c);
 void fileConfigInsertEnterKey(FileConfig *f);
-void fileConfigInsertChar(FileConfig *f, int c); // 32 bit.
+void fileConfigInsertCharBeforeCursor(FileConfig *f, int c); // 32 bit.
 void fileConfigDelChar(FileConfig *f);
 void fileConfigOpen(FileConfig *f, const char *filename);
 void fileConfigRowsToBuf(FileConfig *f, abuf *buf);
