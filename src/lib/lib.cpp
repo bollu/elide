@@ -985,8 +985,8 @@ void editorDrawRows(abuf &ab) {
       assert(g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT);
 
       if (filerow == g_editor.curFile.cursor.row) {
-        for(Ix<Codepoint> i(0); i < NCOLS; ++i) {
-          drawColWithCursor(&ab, row, i, g_editor.curFile.cursor.col, textAreaMode);
+        for(Size<Codepoint> i(0); i <= NCOLS; ++i) {
+          drawColWithCursor(&ab, &row, i, g_editor.curFile.cursor.col, textAreaMode);
         }
       }
     } else if (filerow == g_editor.curFile.rows.size() && g_editor.curFile.cursor.row == filerow) {

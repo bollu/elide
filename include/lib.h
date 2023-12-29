@@ -61,7 +61,7 @@ struct abuf {
   }
 
   // TODO: rename API
-  Size<Byte> getCodepointBytesAt(Ix<Codepoint> i) const {
+  Size<Byte> getCodepoint_bufAt(Ix<Codepoint> i) const {
     return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
   }
 
@@ -72,34 +72,34 @@ struct abuf {
     assert(at.size <= this->_len);
 
     // TODO: refactor by changing type to `abuf`.
-    Size<Byte> nbytesUptoAt = Size<Byte>(0);
+    Size<Byte> n_bufUptoAt = Size<Byte>(0);
     for(Ix<Codepoint> i(0); i < at; i++)  {
-      nbytesUptoAt += this->getCodepointBytesAt(i);
+      n_bufUptoAt += this->getCodepoint_bufAt(i);
     }
 
-    const Size<Byte> nNewBytes(utf8_next_code_point_len(codepoint));
-    this->_buf = (char*)realloc(this->_buf, this->_len + nNewBytes.size);
+    const Size<Byte> nNew_buf(utf8_next_code_point_len(codepoint));
+    this->_buf = (char*)realloc(this->_buf, this->_len + nNew_buf.size);
       
-    for(int oldix = this->_len - 1; oldix >= nbytesUptoAt.size; oldix--) {
-      // push bytes from `i` into `i + nNewBytes`.
-      this->_buf[oldix + nNewBytes.size] = this->_buf[oldix];
+    for(int oldix = this->_len - 1; oldix >= n_bufUptoAt.size; oldix--) {
+      // push _buf from `i` into `i + nNew_buf`.
+      this->_buf[oldix + nNew_buf.size] = this->_buf[oldix];
     }    
 
-    // copy new bytes into into location.
-    for(int i = 0; i < nNewBytes.size; ++i)  {
-      this->_buf[nbytesUptoAt.size + i] = codepoint[i];
+    // copy new _buf into into location.
+    for(int i = 0; i < nNew_buf.size; ++i)  {
+      this->_buf[n_bufUptoAt.size + i] = codepoint[i];
     }
-    this->_len += nNewBytes.size;
+    this->_len += nNew_buf.size;
   }
 
   void delCodepointAt(Ix<Codepoint> at) {
     // TODO: refactor by changing type to `abuf`.
     Size<Byte> startIx = Size<Byte>(0);
     for(Ix<Codepoint> i(0); i < at; i++)  {
-      startIx += this->getCodepointBytesAt(i);
+      startIx += this->getCodepoint_bufAt(i);
     }
 
-    const Size<Byte> ntoskip = this->getCodepointBytesAt(at);
+    const Size<Byte> ntoskip = this->getCodepoint_bufAt(at);
     
     for(int i = startIx.size; i < this->_len - ntoskip.size; i++) {
       this->_buf[i] = this->_buf[i + ntoskip.size];
@@ -551,7 +551,7 @@ struct CompletionView {
     if (textArea->whenDirty()) {
       json_object *req = 
         lspCreateTextDocumentCompletionRequest(f->text_document_item.uri, 
-          Position(f->cursor.row, cursorColBytes.size),
+          Position(f->cursor.row, cursorCol_buf.size),
           CompletionTriggerKind::Invoked);
       request_id = f->lean_server_state.write_request_to_child_blocking("textDocument/completion", req);
       json_object_put(req);
@@ -731,11 +731,11 @@ struct EditorConfig {
 extern EditorConfig g_editor; // global editor handle.
 
 
-struct FileRow {
+struct FileRow : public abuf {
   bool operator == (const FileRow &other) const {
-    if (this->raw_size != other.raw_size) { return false; }
-    for(int i = 0; i < this->raw_size; ++i) {
-      if (this->bytes[i] != other.bytes[i]) { return false; }
+    if (this->_len != other._len) { return false; }
+    for(int i = 0; i < this->_len; ++i) {
+      if (this->_buf[i] != other._buf[i]) { return false; }
     } 
     return true;
   }
@@ -745,46 +745,46 @@ struct FileRow {
   }
 
   ~FileRow() {
-    free(this->bytes);
+    free(this->_buf);
   }
 
   FileRow() = default;
 
   FileRow &operator =(const FileRow &other) {
-    this->raw_size = other.raw_size;
-    this->bytes = (char*)realloc(this->bytes, sizeof(char) * this->raw_size);
-    // memcpy is legal only if raw_size > 0
-    if (other.raw_size > 0) {
-      memcpy(bytes, other.bytes, this->raw_size);
+    this->_len = other._len;
+    this->_buf = (char*)realloc(this->_buf, sizeof(char) * this->_len);
+    // memcpy is legal only if _len > 0
+    if (other._len > 0) {
+      memcpy(_buf, other._buf, this->_len);
     }
 
     return *this;
   }
 
   Size<Byte> nbytes() const {
-    return Size<Byte>(this->raw_size);
+    return Size<Byte>(this->_len);
   }
 
   char getByte(Ix<Byte> ix) const {
     assert(ix < this->nbytes());
-    return this->bytes[ix.ix];
+    return this->_buf[ix.ix];
   }
 
   Size<Codepoint> ncodepoints() const {
     int count = 0;
     int ix = 0;
-    while(ix < this->raw_size) {
-      ix += utf8_next_code_point_len(this->bytes + ix);
+    while(ix < this->_len) {
+      ix += utf8_next_code_point_len(this->_buf + ix);
       count++;
     }
-    assert(ix == this->raw_size);
+    assert(ix == this->_len);
     return Size<Codepoint>(count);
   }
 
   const char *debugToString() const {
     char *str = (char*)malloc(this->nbytes().size + 1);
     for(int i = 0; i < this->nbytes().size; ++i) {
-      str[i] = this->bytes[i];
+      str[i] = this->_buf[i];
     }
     str[this->nbytes().size] = '\0';
     return str;
@@ -794,27 +794,27 @@ struct FileRow {
     assert(ix < this->ncodepoints());
     int delta = 0;
     for(Ix<Codepoint> i(0); i < ix; i++) {
-      delta += utf8_next_code_point_len(this->bytes + delta);
+      delta += utf8_next_code_point_len(this->_buf + delta);
     }
-    return this->bytes + delta;
+    return this->_buf + delta;
   }
 
-  // get the raw bytes. While functionally equivalent to
+  // get the raw _buf. While functionally equivalent to
   // getCodepoint, this gives one more license to do things like `memcpy`
   // and not have it look funny.
   const char *getRawBytesPtrUnsafe() const {
-    return this->bytes;
+    return this->_buf;
   }
 
   // TODO: rename API
-  Size<Byte> getCodepointBytesAt(Ix<Codepoint> i) const {
+  Size<Byte> getCodepoint_bufAt(Ix<Codepoint> i) const {
     return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
   }
 
   Size<Byte> getBytesTill(Size<Codepoint> n) const {
     Size<Byte> out(0);
     for(Ix<Codepoint> i(0); i < n; ++i)  {
-      out += getCodepointBytesAt(i);
+      out += getCodepoint_bufAt(i);
     }
     return out;
   }
@@ -822,8 +822,8 @@ struct FileRow {
 
   int rxToCx(int rx) const {
     int cur_rx = 0;
-    for (int cx = 0; cx < this->raw_size; cx++) {
-      if (bytes[cx] == '\t') {
+    for (int cx = 0; cx < this->_len; cx++) {
+      if (_buf[cx] == '\t') {
         cur_rx += (NSPACES_PER_TAB - 1) - (cur_rx % NSPACES_PER_TAB);
       }
       cur_rx++;
@@ -837,14 +837,14 @@ struct FileRow {
   int cxToRx(Size<Codepoint> cx) const {
     assert(cx <= this->ncodepoints());
     int rx = 0;
-    char *p = this->bytes;
+    char *p = this->_buf;
     for (Ix<Codepoint> j(0); j < cx; ++j) {
       if (*p == '\t') {
         rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
       } else {
         rx += 1; // just 1.
       }
-      p += this->getCodepointBytesAt(j).size;
+      p += this->getCodepoint_bufAt(j).size;
     }
     return rx;
   }
@@ -853,19 +853,19 @@ struct FileRow {
   // final.
   void insertByte(Size<Codepoint> at, int c, FileConfig &E) {
     assert(at.size >= 0);
-    assert(at.size <= this->raw_size);
-    bytes = (char *)realloc(bytes, this->raw_size + 1);
+    assert(at.size <= this->_len);
+    _buf = (char *)realloc(_buf, this->_len + 1);
 
     Size<Byte> byte_at(0);
     for(Ix<Codepoint> i(0); i < at; ++i) {
-      byte_at += this->getCodepointBytesAt(i);
+      byte_at += this->getCodepoint_bufAt(i);
     }
 
-    for(int i = this->raw_size; i >= byte_at.size+1; i--) {
-      this->bytes[i] = this->bytes[i - 1];
+    for(int i = this->_len; i >= byte_at.size+1; i--) {
+      this->_buf[i] = this->_buf[i - 1];
     }    
-    bytes[byte_at.size] = c;
-    this->raw_size += 1;
+    _buf[byte_at.size] = c;
+    this->_len += 1;
     this->rebuild_render_cache(E);
 
     // TODO: add an assert to check that the string is well-formed code points.
@@ -874,13 +874,13 @@ struct FileRow {
 
 
   // set the data.
-  // TODO: think if we should expose bytes API.
+  // TODO: think if we should expose _buf API.
   // TODO: force copy codepoint by codepoint.
   void setBytes(const char *buf, int len, FileConfig &E) {
-    this->raw_size = len;
-    bytes = (char *)realloc(bytes, sizeof(char) * this->raw_size);
+    this->_len = len;
+    _buf = (char *)realloc(_buf, sizeof(char) * this->_len);
     for(int i = 0; i < len; ++i) {
-      bytes[i] = buf[i];
+      _buf[i] = buf[i];
     }
     this->rebuild_render_cache(E);
     E.is_dirty = true;
@@ -889,22 +889,22 @@ struct FileRow {
   
   void delCodepointAt(Ix<Codepoint> at, FileConfig &E) {
     assert(at.ix >= 0);
-    assert(at.ix < this->raw_size);
+    assert(at.ix < this->_len);
 
     // TODO: refactor by changing type to `abuf`.
     Size<Byte> startIx = Size<Byte>(0);
     for(Ix<Codepoint> i(0); i < at; i++)  {
-      startIx += this->getCodepointBytesAt(i);
+      startIx += this->getCodepoint_bufAt(i);
     }
 
-    const Size<Byte> ntoskip = this->getCodepointBytesAt(at);
+    const Size<Byte> ntoskip = this->getCodepoint_bufAt(at);
     
-    for(int i = startIx.size; i < this->raw_size - ntoskip.size; i++) {
-      this->bytes[i] = this->bytes[i + ntoskip.size];
+    for(int i = startIx.size; i < this->_len - ntoskip.size; i++) {
+      this->_buf[i] = this->_buf[i + ntoskip.size];
     }    
-    this->raw_size -= ntoskip.size;
+    this->_len -= ntoskip.size;
     // resize to eliminate leftover.
-    this->bytes = (char *)realloc(this->bytes, this->raw_size);
+    this->_buf = (char *)realloc(this->_buf, this->_len);
     this->rebuild_render_cache(g_editor.curFile);
     E.makeDirty();
 
@@ -913,27 +913,27 @@ struct FileRow {
   // insert a single codepoint.
   void insertCodepointBefore(Size<Codepoint> at, const char *codepoint, FileConfig &E) {
     assert(at.size >= 0);
-    assert(at.size <= this->raw_size);
+    assert(at.size <= this->_len);
 
     // TODO: refactor by changing type to `abuf`.
-    Size<Byte> nbytesUptoAt = Size<Byte>(0);
+    Size<Byte> nBytesUpto = Size<Byte>(0);
     for(Ix<Codepoint> i(0); i < at; i++)  {
-      nbytesUptoAt += this->getCodepointBytesAt(i);
+      nBytesUpto += this->getCodepoint_bufAt(i);
     }
 
-    const Size<Byte> nNewBytes(utf8_next_code_point_len(codepoint));
-    this->bytes = (char*)realloc(this->bytes, this->raw_size + nNewBytes.size);
+    const Size<Byte> nNew_buf(utf8_next_code_point_len(codepoint));
+    this->_buf = (char*)realloc(this->_buf, this->_len + nNew_buf.size);
       
-    for(int oldix = this->raw_size - 1; oldix >= nbytesUptoAt.size; oldix--) {
-      // push bytes from `i` into `i + nNewBytes`.
-      this->bytes[oldix + nNewBytes.size] = this->bytes[oldix];
+    for(int oldix = this->_len - 1; oldix >= nBytesUpto.size; oldix--) {
+      // push _buf from `i` into `i + nNew_buf`.
+      this->_buf[oldix + nNew_buf.size] = this->_buf[oldix];
     }    
 
-    // copy new bytes into into location.
-    for(int i = 0; i < nNewBytes.size; ++i)  {
-      this->bytes[nbytesUptoAt.size + i] = codepoint[i];
+    // copy new _buf into into location.
+    for(int i = 0; i < nNew_buf.size; ++i)  {
+      this->_buf[nBytesUpto.size + i] = codepoint[i];
     }
-    this->raw_size += nNewBytes.size;
+    this->_len += nNew_buf.size;
     E.makeDirty();
   }
 
@@ -942,10 +942,10 @@ struct FileRow {
     assert(ncodepoints_new <= this->ncodepoints());
     Size<Byte> nbytes(0);
     for(Ix<Codepoint> i(0); i < ncodepoints_new; i++)  {
-      nbytes += this->getCodepointBytesAt(i);
+      nbytes += this->getCodepoint_bufAt(i);
     }
-    this->bytes = (char*)realloc(this->bytes, nbytes.size);
-    this->raw_size = nbytes.size;
+    this->_buf = (char*)realloc(this->_buf, nbytes.size);
+    this->_len = nbytes.size;
     this->rebuild_render_cache(E);
     E.is_dirty = true;
 
@@ -954,9 +954,9 @@ struct FileRow {
   // append a codepoint.
   void appendCodepoint(const char *codepoint, FileConfig &E) {
     Size<Byte> nbytes(utf8_next_code_point_len(codepoint));
-    bytes = (char *)realloc(bytes, raw_size + nbytes.size);
-    memcpy(bytes + this->raw_size, codepoint, nbytes.size);
-    this->raw_size += nbytes.size; // TODO: change raw_size to be Size<Byte>.
+    _buf = (char *)realloc(_buf, _len + nbytes.size);
+    memcpy(_buf + this->_len, codepoint, nbytes.size);
+    this->_len += nbytes.size; // TODO: change _len to be Size<Byte>.
     this->rebuild_render_cache(E);
     E.is_dirty = true;
 
@@ -965,8 +965,8 @@ struct FileRow {
 
 
 private:
-  int raw_size = 0;
-  char *bytes = nullptr; // BUFFER (nonn null terminated.)
+  int _len = 0;
+  char *_buf = nullptr; // BUFFER (nonn null terminated.)
   
   // should be private? since it updates info cache.
   void rebuild_render_cache(FileConfig &E) {
@@ -977,10 +977,10 @@ private:
 
   void _checkIsWellFormedUtf8() const {
     int ix = 0;
-    while(ix < this->raw_size) {
-      ix += utf8_next_code_point_len(this->bytes + ix);
+    while(ix < this->_len) {
+      ix += utf8_next_code_point_len(this->_buf + ix);
     };
-    assert(ix == this->raw_size);
+    assert(ix == this->_len);
 
   }
 
@@ -1092,7 +1092,7 @@ char *get_executable_path();
 char *get_abbreviations_dict_path();
 
 
-// return the length (in bytes) of the next code point.
+// return the length (in _buf) of the next code point.
 static int utf8_next_code_point_len(const char *str) {
   assert(str);
   char c = str[0];
@@ -1120,7 +1120,7 @@ static const char *utf8_next_code_point(const char *str) {
   return str + utf8_next_code_point_len(str); 
 }
 
-// return the length (in bytes) of the previous code point at index `ix`.
+// return the length (in _buf) of the previous code point at index `ix`.
 // If incomplete, then returns `0`. 
 // byte1    | byte2    |  byte3   | byte4    |
 // 0xxxxxxx |          |          |          | 
