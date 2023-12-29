@@ -1,7 +1,7 @@
 #include "lib.h"
 
 void test1() {
-  printf("@@@ test1: checking rg JSON output.\n");
+  printf("━━━━━test1: checking rg JSON output━━━━━\n");
   RgProcess process;
   std::vector<std::string> args;
   args.push_back("quux");
@@ -35,9 +35,8 @@ void test1() {
   assert(total_lines == 4);
 }
 
-
 void test2() {
-  printf("@@@ test2: checking rg file output.\n");
+  printf("━━━━━test2: checking rg file output━━━━━\n");
   RgProcess process;
   std::vector<std::string> args;
   args.push_back("--files");
@@ -70,9 +69,33 @@ void test2() {
   printf("### Total [nlines=%d]\n", total_lines);
   assert(total_lines == 1);
 }
+
+
+void test3() {
+  printf("━━━━━test3: CtrlPView::RgArgs creation━━━━━\n");
+  abuf buf = abuf::from_copy_str("rg.txt");
+  printf("### testing command '%s'\n", buf.to_string());
+  CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
+  assert(args.filePattern  == "rg.txt");
+  assert(args.dirPatterns.size() == 0);
+  assert(args.searchPatterns.size() == 0);
+
+  std::vector<std::string> argsVec = CtrlPView::rgArgsToCommandLineArgs(args);  
+  printf("### args vec[size=%d]\n", (int)argsVec.size());
+  for(int i = 0; i < argsVec.size(); ++i) {
+    printf("  . %s\n", argsVec[i].c_str());
+  }  
+  assert(argsVec.size() == 3);
+  assert(argsVec[0] == "--files");
+  assert(argsVec[1] == "-g");
+  assert(argsVec[2] == "rg.txt");
+}
+
+
 int main() {
   test1();
   test2();
+  test3();
   return 0;
 }
 

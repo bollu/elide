@@ -2069,7 +2069,7 @@ bool ctrlpWhenQuit(CtrlPView *view) {
 
 CtrlPView::RgArgs CtrlPView::parseUserCommand(abuf buf) {
   CtrlPView::RgArgs args;
-  args.filePattern = std::string(buf.buf());
+  args.filePattern = std::string(buf.to_string());
   return args;
 };
 
@@ -2078,7 +2078,6 @@ CtrlPView::RgArgs CtrlPView::parseUserCommand(abuf buf) {
 std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs args) {
   assert(args.dirPatterns.size() == 0);
   assert(args.searchPatterns.size() == 0);
-  assert(args.isRunnable());
 
   std::vector<std::string> out;
   out.push_back("--files");
@@ -2161,7 +2160,6 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
 
     // invoke the new rg process.
     CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea);
-    if (!args.isRunnable()) { return; } // nothing to run.
     view->rgProcess.execpAsync(cwd, CtrlPView::rgArgsToCommandLineArgs(args));
   }
 }

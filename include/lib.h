@@ -871,11 +871,6 @@ struct CtrlPView {
     std::vector<std::string> dirPatterns;
     std::string filePattern;
     std::vector<std::string> searchPatterns;
-
-    bool isRunnable() const {
-      // only run if there is something to be searched for.
-      return filePattern.size() > 0 || searchPatterns.size() > 0;
-    }
   };
   // top := FILEGLOB? ARG*
   // ARG := "@" SEARCHDIR | "/"" SEARCHSTR
