@@ -1020,6 +1020,35 @@ void editorDrawInfoViewGoal(abuf *ab, const char *str) {
   }
 
 }
+
+void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
+    assert(tab >= 0 && tab < IVT_NumTabs);
+    const char *str[IVT_NumTabs] = {"Tactics", "Messages"};    
+    // TODO: add a concept of a tab being enabled.
+
+    for(int i = 0; i < IVT_NumTabs; ++i) {
+      if (i == (int) tab) {
+        buf->appendstr("\x1b[1;97m");
+      } else {
+        buf->appendstr("\x1b[90;40m");
+      }
+      buf->appendstr("┎");
+      if (i == (int) tab) {
+        buf->appendstr("■ ");
+      } else {
+        buf->appendstr("□ ");
+        // buf->appendstr("♯ "); // disabled.
+      }
+      
+      buf->appendstr(str[i]);
+      buf->appendstr("┓");
+
+      buf->appendstr("\x1b[0m");
+
+    }
+    buf->appendstr("\r\n");
+}
+
 void editorDrawInfoViewTacticsTab() {
   abuf ab;
 
@@ -1051,7 +1080,8 @@ void editorDrawInfoViewTacticsTab() {
 
   // always append a space, since we decrement a row from screen rows
   // to make space for status bar.
-  ab.appendstr("@@@ LEAN INFOVIEW @@@ \r\n");
+  // ab.appendstr("@@@ LEAN INFOVIEW @@@ \r\n");
+  editorDrawInfoViewTacticsTabbar(IVT_Tactic, &ab);
   assert(g_editor.curFile.leanInfoViewPlainGoal);
   assert(g_editor.curFile.leanInfoViewPlainTermGoal);
   // ab.appendfmtstr(120, "gl: %s \x1b[K \r\n", 
@@ -1206,7 +1236,7 @@ void editorDrawInfoViewMessagesTab() {
 
   // always append a space, since we decrement a row from screen rows
   // to make space for status bar.
-  ab.appendstr("@@@ LEAN MESSAGES @@@ \r\n");
+  editorDrawInfoViewTacticsTabbar(IVT_Messages, &ab);
   // The K command (Erase In Line) erases part of the current line.
   // by default, arg is 0, which erases everything to the right of the
   // cursor.
