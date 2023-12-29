@@ -1678,6 +1678,7 @@ void editorProcessKeypress() {
     }
     case CTRL_KEY('c'):
     case 'g':
+    case ' ':
     case '?': {
       g_editor.vim_mode = VM_NORMAL; return;
     }
@@ -1763,6 +1764,7 @@ void editorProcessKeypress() {
     }
 
     case 'g':
+    case ' ':
     case '?': {
       // TODO: make this more local.
       fileConfigRequestGoalState(&g_editor.curFile);
