@@ -37,6 +37,53 @@
 void disableRawMode();
 void enableRawMode();
 
+/** terminal rendering utils for consistent styling. **/
+
+// draw the text 'codepoint', plus the cursor backgrounding in text area mode 'tam' into
+// abuf 'dst'.
+void abufAppendCodepointWithCursor(abuf *dst, TextAreaMode tam, const char *codepoint) {
+  if (tam == TAM_Normal) {
+    dst->appendstr(ESCAPE_CODE_CURSOR_NORMAL);
+  } else {
+    assert(tam == TAM_Insert);
+    dst->appendstr(ESCAPE_CODE_CURSOR_INSERT);
+  }
+  dst->appendCodepoint(codepoint); // draw the text.
+  dst->appendstr(ESCAPE_CODE_UNSET);
+}
+
+
+// draw the text + cursor at position cursorIx into abuf 'dst'.
+//   dst: destination buffer to append into.
+//   row : the row to be drawn. 
+//   colIx : index of the column to be drawn. `0 <= colIx <= row.ncodepoints()`.
+//   cursorIx : index of cursor, of value `0 <= cursorIx <= row.ncodepoints()`.
+//   tam : text area mode, affects if the cursor will be bright or dull.
+void drawColWithCursor(abuf *dst, const abuf *row, 
+  Size<Codepoint> colIx, 
+  Size<Codepoint> cursorIx, 
+  TextAreaMode tam) {
+  assert (cursorIx <= row->ncodepoints());
+  assert (colIx <= row->ncodepoints());
+  const bool cursorAtCol = colIx == cursorIx;
+
+  if (colIx < row->ncodepoints()) {
+    const char *codepoint = row->getCodepoint(colIx.toIx());
+    if (cursorAtCol) {
+      abufAppendCodepointWithCursor(dst, tam, codepoint);
+    } else {
+      dst->appendCodepoint(codepoint);
+    }
+  } else {
+    assert(colIx == row->ncodepoints());
+    if (cursorAtCol) {
+      abufAppendCodepointWithCursor(dst, tam, " ");
+    }
+    // nothing to render here, just a blank space. 
+  }
+}
+
+
 
 /*** lean server state ***/
 // quick refresher on how pipes work:
@@ -368,7 +415,10 @@ void die(const char *fmt, ...) {
 }
 
 void disableRawMode() {
-
+  // show hidden cursor
+  const char *showCursor = "\x1b[?25h";
+  // no point catching errors at this state, we are closing soon anyway.
+  int _ = write(STDOUT_FILENO, showCursor, strlen(showCursor));
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_editor.orig_termios) == -1) {
     die("tcsetattr");
   }
@@ -891,7 +941,6 @@ int write_int_to_str(char *s, int num) {
 }
 
 
-
 void editorDrawRows(abuf &ab) {
   // When we print the line number, tilde, we then print a
   // "\r\n" like on any other line, but this causes the terminal to scroll in
@@ -925,12 +974,25 @@ void editorDrawRows(abuf &ab) {
     }
     // code in view mode is renderered gray
     if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[37;40m"); }
+
+    const TextAreaMode textAreaMode = 
+      g_editor.vim_mode == VM_NORMAL ? TextAreaMode::TAM_Normal : TAM_Insert;
+
     if (filerow < g_editor.curFile.rows.size()) {
       const FileRow &row = g_editor.curFile.rows[filerow];
-      for(Ix<Codepoint> i(0); i < row.ncodepoints(); ++i) {
-        ab.appendCodepoint(row.getCodepoint(i));
+      const Size<Codepoint> NCOLS = 
+        clampu<Size<Codepoint>>(row.ncodepoints(), g_editor.screencols - LINE_NUMBER_NUM_CHARS - 1);
+      assert(g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT);
+
+      if (filerow == g_editor.curFile.cursor.row) {
+        for(Ix<Codepoint> i(0); i < NCOLS; ++i) {
+          drawColWithCursor(&ab, row, i, g_editor.curFile.cursor.col, textAreaMode);
+        }
       }
-    } else {
+    } else if (filerow == g_editor.curFile.rows.size() && g_editor.curFile.cursor.row == filerow) {
+        abufAppendCodepointWithCursor(&ab, textAreaMode, " ");
+    } 
+    else {
         ab.appendstr("~");
     }
 
@@ -954,6 +1016,8 @@ void editorDrawNormalInsertMode() {
   abuf ab;
 
 
+  ab.appendstr("\x1b[?25l"); // hide cursor
+
   // VT100 escapes.
   // \x1b: escape.
   // J: erase in display.
@@ -969,15 +1033,6 @@ void editorDrawNormalInsertMode() {
   ab.appendstr("\x1b[1;1H");
 
   editorDrawRows(ab);
-  // editorDrawStatusBar(ab);
-  // editorDrawMessageBar(ab);
-
-  char buf[32];
-  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
-  sprintf(buf, "\x1b[%d;%dH", g_editor.curFile.cursor.row - g_editor.curFile.scroll_row_offset + 1,
-      g_editor.curFile.cursor_render_col - g_editor.curFile.scroll_col_offset + 1 + LINE_NUMBER_NUM_CHARS);
-  ab.appendstr(buf);
-
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
@@ -1146,19 +1201,6 @@ void editorDrawInfoViewTacticsTab() {
   // to make space for status bar.
   ab.appendstr("\r\n");
 
-
-  // move cursor to correct row;col.
-  char buf[32];
-  // H: cursor position
-  // [<row>;<col>H   (args separated by ;).
-  // Default arguments for H is 1, so it's as if we had sent [1;1H
-  sprintf(buf, "\x1b[%d;%dH", 1, 1);
-  ab.appendstr(buf);
-
-  // show hidden cursor
-  ab.appendstr("\x1b[?25h");
-
-
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
@@ -1174,12 +1216,6 @@ void editorDrawInfoViewMessagesTab() {
 
 
 
-  // move cursor to correct row;col.
-  char buf[32];
-  // H: cursor position [<row>;<col>H   (args separated by ;).
-  sprintf(buf, "\x1b[%d;%dH", 1, 1);
-  ab.appendstr(buf);
-  ab.appendstr("\x1b[?25h");  // show hidden cursor
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 
 }
@@ -1231,15 +1267,6 @@ void editorDrawInfoViewHoverTab() {
     } // end else 'result != nullptr.
   } while(0);
 
-
-
-
-  // move cursor to correct row;col.
-  char buf[32];
-  // H: cursor position [<row>;<col>H   (args separated by ;).
-  sprintf(buf, "\x1b[%d;%dH", 1, 1);
-  ab.appendstr(buf);
-  ab.appendstr("\x1b[?25h");  // show hidden cursor
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 
 }
@@ -2119,27 +2146,7 @@ void ctrlpDraw(const CtrlPView *view, abuf *ab) {
   }
   // ab->appendstr(ESCAPE_CODE_UNSET);
   for(auto i = lp; i <= rp; ++i) {
-
-    if (i == view->textCol) {
-      if (view->textAreaMode == TAM_Normal) {
-        ab->appendstr(ESCAPE_CODE_CURSOR_NORMAL);
-      } else {
-        assert(view->textAreaMode == TAM_Insert);
-        ab->appendstr(ESCAPE_CODE_CURSOR_INSERT);
-      }
-    }
-
-    if (i < view->textArea.ncodepoints()) {
-      ab->appendCodepoint(view->textArea.getCodepoint(i.toIx()));
-    } else {
-      assert(i == view->textArea.ncodepoints());
-      if (i == view->textCol) {
-        ab->appendstr(" "); // draw the cursor.
-      }
-    }
-    if (i == view->textCol) {
-      ab->appendstr(ESCAPE_CODE_UNSET);
-    }
+    drawColWithCursor(ab, &view->textArea, i, view->textCol, view->textAreaMode);
   }
   // ab->appendstr(ESCAPE_CODE_DULL);
   for(auto i = rp+1; i < rm; ++i) {
