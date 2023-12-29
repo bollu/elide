@@ -298,39 +298,3 @@ static json_object *lspCreateTextDocumentDeclarationRequest(Uri uri, const Posit
   return o;
 };
 
-
-
-// (* diagnostics struct parsing *)
-// [Trace - 02:39:26 AM] Received notification 'textDocument/publishDiagnostics'.
-// Params: {
-//   "version": 53,
-//   "uri": "file:///home/bollu/software/edtr/build/test/lake-testdir/Main.lean",
-//   "diagnostics": [
-//     {
-//       "source": "Lean 4",
-//       "severity": 1,
-//       "range": {
-//         "start": {
-//           "line": 2,
-//           "character": 7
-//         },
-//         "end": {
-//           "line": 2,
-//           "character": 16
-//         }
-//       },
-//       "message": "unknown identifier 'Stringxxx'",
-//       "fullRange": {
-//         "start": {
-//           "line": 2,
-//           "character": 7
-//         },
-//         "end": {
-//           "line": 2,
-//           "character": 16
-//         }
-//       }
-//     }
-//   ]
-// }
-

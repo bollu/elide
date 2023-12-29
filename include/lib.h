@@ -589,6 +589,17 @@ private:
 };
 
 
+enum InfoViewTab {
+  IVT_Tactic, // show the current tactic state in the info view.
+  IVT_Messages, // show messages form the LSP server in the info view.
+  IVT_NumTabs
+};
+
+static InfoViewTab infoViewTabCycleNext(InfoViewTab t) {
+  return InfoViewTab(((int)t + 1) % (int)IVT_NumTabs);
+}
+
+
 // NOTE: 
 // TextDocument for LSP does not need to be cached, as its value monotonically increases,
 // even during undo/redo.
@@ -602,6 +613,12 @@ struct FileConfigUndoState {
   json_object *leanInfoViewPlainGoal = nullptr;
   json_object *leanInfoViewPlainTermGoal = nullptr;
   json_object *leanHoverViewHover = nullptr;
+  // TODO: implement definition
+  InfoViewTab infoViewTab = IVT_Tactic;
+  json_object *leanGotoViewDefinition = nullptr;
+  json_object *leanGotoViewDeclaration = nullptr;
+  // TODO: implement completion.
+  json_object *leanCompletionViewCompletion = nullptr;
 
   // TODO: should we use a different fn rather than `==`?
   bool operator == (const FileConfigUndoState &other) const {

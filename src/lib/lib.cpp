@@ -1020,7 +1020,7 @@ void editorDrawInfoViewGoal(abuf *ab, const char *str) {
   }
 
 }
-void editorDrawInfoView() {
+void editorDrawInfoViewTacticsTab() {
   abuf ab;
 
   // It’s possible that the cursor might be displayed in the middle of the
@@ -1175,6 +1175,71 @@ void editorDrawInfoView() {
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
+void editorDrawInfoViewMessagesTab() {
+  abuf ab;
+
+  // It’s possible that the cursor might be displayed in the middle of the
+  // screen somewhere for a split second while the terminal is drawing to the
+  // screen. To make sure that doesn’t happen, let’s hide the cursor before
+  // refreshing the screen, and show it again immediately after the refresh
+  // finishes.
+  ab.appendstr("\x1b[?25l"); // hide cursor
+
+  // EDIT: no need to refresh screen, screen is cleared
+  // line by line @ editorDrawRows.
+  //
+  // EDIT: I am not sure if this extra complexity is worth it!
+  //
+  // VT100 escapes.
+  // \x1b: escape.
+  // J: erase in display.
+  // [2J: clear entire screen
+  // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
+  // cursor to bottom
+  //          0 is default arg, so [J: clear screen from cursor to bottom
+  ab.appendstr("\x1b[2J");
+
+  // H: cursor position
+  // [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  ab.appendstr("\x1b[1;1H");
+
+  // always append a space, since we decrement a row from screen rows
+  // to make space for status bar.
+  ab.appendstr("@@@ LEAN MESSAGES @@@ \r\n");
+  // The K command (Erase In Line) erases part of the current line.
+  // by default, arg is 0, which erases everything to the right of the
+  // cursor.
+  ab.appendstr("\x1b[K");
+
+  // always append a space, since we decrement a row from screen rows
+  // to make space for status bar.
+  ab.appendstr("\r\n");
+
+
+  // move cursor to correct row;col.
+  char buf[32];
+  // H: cursor position
+  // [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  sprintf(buf, "\x1b[%d;%dH", 1, 1);
+  ab.appendstr(buf);
+
+  // show hidden cursor
+  ab.appendstr("\x1b[?25h");
+
+
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+
+}
+
+void editorDrawInfoView() {
+  if(g_editor.curFile.infoViewTab == IVT_Tactic) {
+    editorDrawInfoViewTacticsTab();
+  } else if (g_editor.curFile.infoViewTab == IVT_Messages) {
+    editorDrawInfoViewMessagesTab();
+  }
+}
 
 void editorDraw() {
   if (g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT) {
@@ -1501,6 +1566,11 @@ void editorProcessKeypress() {
     case 'q': {
       fileConfigSave(&g_editor.curFile);
       die("bye!");
+      return;
+    }
+    case '\t': {
+      // TODO: this is not per file info? or is it?
+      g_editor.curFile.infoViewTab = infoViewTabCycleNext(g_editor.curFile.infoViewTab);
       return;
     }
     case 'g':
