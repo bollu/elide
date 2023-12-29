@@ -30,7 +30,7 @@ This is my Christmas 2023 effort to fill this unfilled niche in the market.
 #### Building
 
 ```cpp
-cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -GNinja ../
+$ mkdir build && cd build && cmake ../ && make -j4
 ```
 
 #### References
