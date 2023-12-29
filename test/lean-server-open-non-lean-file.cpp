@@ -20,7 +20,7 @@ int main() {
   nread = state._read_stderr_str_from_child_blocking();
   fprintf(stderr, " response: '%s'.\n",
     state.child_stderr_buffer.to_string_len(nread));
-  state.child_stderr_buffer.drop_prefix(nread); 
+  state.child_stderr_buffer.dropNBytes(nread); 
       
   // initialize/
   req = lspCreateInitializeRequest();

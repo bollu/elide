@@ -100,8 +100,14 @@ struct abuf {
   }
 
   // TODO: rename API
-  Size<Byte> getCodepoint_bufAt(Ix<Codepoint> i) const {
+  Size<Byte> getCodepointBytesAt(Ix<Codepoint> i) const {
     return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
+  }
+
+  char getByteAt(Ix<Byte> i) const {
+    assert(Ix<Byte>(0) <= i);
+    assert(i < this->len());
+    return this->_buf[i.ix];
   }
 
 
@@ -113,7 +119,7 @@ struct abuf {
     // TODO: refactor by changing type to `abuf`.
     Size<Byte> n_bufUptoAt = Size<Byte>(0);
     for(Ix<Codepoint> i(0); i < at; i++)  {
-      n_bufUptoAt += this->getCodepoint_bufAt(i);
+      n_bufUptoAt += this->getCodepointBytesAt(i);
     }
 
     const Size<Byte> nNew_buf(utf8_next_code_point_len(codepoint));
@@ -137,10 +143,10 @@ struct abuf {
     // TODO: refactor by changing type to `abuf`.
     Size<Byte> startIx = Size<Byte>(0);
     for(Ix<Codepoint> i(0); i < at; i++)  {
-      startIx += this->getCodepoint_bufAt(i);
+      startIx += this->getCodepointBytesAt(i);
     }
 
-    const Size<Byte> ntoskip = this->getCodepoint_bufAt(at);
+    const Size<Byte> ntoskip = this->getCodepointBytesAt(at);
     
     for(int i = startIx.size; i < this->_len - ntoskip.size; i++) {
       this->_buf[i] = this->_buf[i + ntoskip.size];
@@ -246,7 +252,7 @@ struct abuf {
 
   // drop a prefix of the buffer. If `drop_len = 0`, then this operation is a
   // no-op.
-  void drop_prefix(int drop_len) {
+  void dropNBytes(int drop_len) {
     char *bnew = (char *)malloc(sizeof(char) * (_len - drop_len));
     memcpy(bnew, this->_buf + drop_len, this->_len - drop_len);
     free(this->_buf);
@@ -333,7 +339,7 @@ struct abuf {
   Size<Byte> getBytesTill(Size<Codepoint> n) const {
     Size<Byte> out(0);
     for(Ix<Codepoint> i(0); i < n; ++i)  {
-      out += getCodepoint_bufAt(i);
+      out += getCodepointBytesAt(i);
     }
     return out;
   }
@@ -363,7 +369,7 @@ struct abuf {
       } else {
         rx += 1; // just 1.
       }
-      p += this->getCodepoint_bufAt(j).size;
+      p += this->getCodepointBytesAt(j).size;
     }
     return rx;
   }
@@ -377,7 +383,7 @@ struct abuf {
 
     Size<Byte> byte_at(0);
     for(Ix<Codepoint> i(0); i < at; ++i) {
-      byte_at += this->getCodepoint_bufAt(i);
+      byte_at += this->getCodepointBytesAt(i);
     }
 
     for(int i = this->_len; i >= byte_at.size+1; i--) {
@@ -401,13 +407,25 @@ struct abuf {
     this->_is_dirty = true;
 
   }
-  
+
+  abuf takeNBytes(Size<Byte> bytes) const {
+    assert(bytes.size >= 0);
+    assert(bytes.size <= this->_len);
+    abuf buf;
+    buf._len = bytes.size;
+    buf._buf = (char*)calloc(sizeof(char), buf._len);
+    for(int i = 0; i < buf._len; ++i) {
+      buf._buf[i] = this->_buf[i];
+    }
+    return buf;
+  };
+
   // truncate to `ncodepoints_new` codepoints.
   void truncateNCodepoints(Size<Codepoint> ncodepoints_new) {
     assert(ncodepoints_new <= this->ncodepoints());
     Size<Byte> nbytes(0);
     for(Ix<Codepoint> i(0); i < ncodepoints_new; i++)  {
-      nbytes += this->getCodepoint_bufAt(i);
+      nbytes += this->getCodepointBytesAt(i);
     }
     this->_buf = (char*)realloc(this->_buf, nbytes.size);
     this->_len = nbytes.size;
@@ -663,25 +681,31 @@ static InfoViewTab infoViewTabCycleNext(InfoViewTab t);
 
 // a struct to encapsulate a child proces that is line buffered,
 // which is a closure plus a childpid. 
-template<typename T>
-struct ChildProcessLineBuffered {
+struct RgProcess {
+  // whether process has been initialized.
+  bool initialized = false;
   // stdout buffer of the child that is stored here before being processed.
   abuf child_stdout_buffer;
+  int child_stdout_to_parent_buffer[2]; // pipe.
+
   // PID of the child process that is running.
-  int childpid;
-  // data that is written to by the processor that processes lines.
-  T data;
-  // process a line. **This is assumed to be fast.**
-  std::function<void(const char *str, int ix, int len, T&data)> processor;
-  bool initialized = false;
+  pid_t childpid;
+  // lines streamed from `rg` stdout.
+  std::vector<abuf> lines;
 
-  static void nopFn(T& data) {};
-
-  // (re)start the process, and run it asynchronously.
-  void execpAsync(const char *working_dir, const char *pname, std::vector<std::string> args,
-    std::function<void(T&data)> initData=ChildProcessLineBuffered::nopFn);
+  // start the process, and run it asynchronously.
+  void execpAsync(const char *working_dir, std::vector<std::string> args);
   // kills the process synchronously.
-  void killSync(std::function<void(T&data)> cleanupData=ChildProcessLineBuffered::nopFn);
+  void killSync();
+
+  // attempt to read a line of input from `rg`.
+  void readLineNonBlocking();
+
+private:
+  // read from child in a nonblocking fashion.
+  int _read_stdout_str_from_child_nonblocking();
+
+
 };
 
 // // enapsulates the logic of having a single line of text area.
@@ -773,7 +797,7 @@ struct CompletionView {
 //   abuf searchViewString; // string that is being searched.
 //   bool dirty = false;
 
-//   ChildProcessLineBuffered search;
+//   RgProcess search;
 //   std::vector<json_object *> SearchViewRgMatches;
 //   bool drawEnabled; // whether this is enabled or not. 
 //   RgServerState rgState; // ripgrep state for text search.
@@ -835,7 +859,7 @@ struct CtrlPView {
 
   abuf textArea;
   Size<Codepoint> textCol;
-  ChildProcessLineBuffered<std::vector<Item>> rgProcess;
+  RgProcess rgProcess;
   bool quitPressed = false;
 
 

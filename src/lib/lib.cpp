@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <dirent.h>
 #include <assert.h>
 #include <ctype.h>
@@ -345,7 +346,7 @@ json_object *LeanServerState::_read_next_json_record_from_buffer_nonblocking() {
   json_tokener_free(tok);
 
   // drop the response from the buffer, now that we have correctly consumes the json request.
-  child_stdout_buffer.drop_prefix(header_line_end_ix + content_length);
+  child_stdout_buffer.dropNBytes(header_line_end_ix + content_length);
 
   return o;
 }
@@ -2154,14 +2155,12 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
 
   if (view->textArea.whenDirty()) {
     // nuke previous rg process, and clear all data it used to own.
-    view->rgProcess.killSync([](std::vector<CtrlPView::Item> &data) {
-      data.clear();
-    });
+    view->rgProcess.killSync();
 
     // invoke the new rg process.
     CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea);
     if (!args.isRunnable()) { return; } // nothing to run.
-    view->rgProcess.execpAsync(cwd, "rg", CtrlPView::rgArgsToCommandLineArgs(args));
+    view->rgProcess.execpAsync(cwd, CtrlPView::rgArgsToCommandLineArgs(args));
   }
 }
 
@@ -2217,4 +2216,87 @@ void ctrlpDraw(const CtrlPView *view, abuf *ab) {
   // Default arguments for H is 1, so it's as if we had sent [1;1H
   ab->appendstr("\x1b[1;1H");
 
+}
+
+
+// (re)start the process, and run it asynchronously.
+void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> args) {
+  assert(!this->initialized);
+
+  this->childpid = fork();
+  CHECK_POSIX_CALL_0(pipe2(this->child_stdout_to_parent_buffer, O_NONBLOCK));
+
+  if(childpid == -1) {
+    perror("ERROR: fork failed.");
+    exit(1);
+  };
+
+  if(childpid == 0) {
+
+    // child->parent, child will only write to this pipe, so close read end.
+    close(this->child_stdout_to_parent_buffer[PIPE_READ_IX]);
+
+    if (chdir(working_dir) != 0) {
+      die("ERROR: unable to run `rg, cannot switch to working directory '%s'", working_dir);
+    }; 
+    const char * process_name = "rg";
+    char **argv = (char **) calloc(sizeof(char*), args.size() + 1);
+    for(int i = 0; i < args.size(); ++i) {
+      argv[i] = strdup(args[i].c_str()); 
+    }
+    argv[args.size()] = NULL;
+    if (execvp(process_name, argv) == -1) {
+      perror("failed to launch ripgrep");
+      abort();
+    }
+  } else {
+
+    // parent<-child, parent will only read from this pipe, so close write end.
+    close(this->child_stdout_to_parent_buffer[PIPE_WRITE_IX]);
+
+    // parent.
+    assert(this->childpid != 0);
+    this->initialized = true;
+  }
+};
+
+// kills the process synchronously.
+void RgProcess::killSync() {
+  this->lines.clear();
+  kill(this->childpid, SIGKILL);
+  this->initialized = false;
+}
+
+
+
+int RgProcess::_read_stdout_str_from_child_nonblocking() {
+  const int BUFSIZE = 4096;
+  char buf[BUFSIZE];
+  int nread = read(this->child_stdout_to_parent_buffer[PIPE_READ_IX], buf, BUFSIZE);
+  if (nread == -1) {
+    if (errno == EAGAIN) {
+      // EAGAIN = non-blocking I/O, there was no data ro read.
+      return 0;
+    }
+    die("unable to read from stdout of child lean server");
+  }
+  this->child_stdout_buffer.appendbuf(buf, nread);
+  return nread;
+};
+
+void RgProcess::readLineNonBlocking() {
+  _read_stdout_str_from_child_nonblocking();
+  int newline_ix = 0;
+  for(; newline_ix < this->child_stdout_buffer.len(); newline_ix++) {
+    if (this->child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n') {
+      break;
+    }
+  }
+  if (newline_ix < this->child_stdout_buffer.len()) {
+    return; // found no newline thingie.
+  }
+  assert(child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n');
+  // if we find '\n', we want to take the empty string. if we find
+  this->lines.push_back(this->child_stdout_buffer.takeNBytes(newline_ix));
+  child_stdout_buffer.dropNBytes(newline_ix);
 }
