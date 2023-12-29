@@ -4,4 +4,8 @@ structure Bar where
   a : Int
   b : Int
 
-def f (bar : Bar) : Int := bar.b
+def f (bar : Bar) : Int := 
+  by 
+  . cases bar  
+   
+  

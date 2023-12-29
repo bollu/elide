@@ -743,6 +743,18 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   request_id = file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
   file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
+  // textDocument/hover
+  if (file_config->leanHoverViewHover) {
+    // TODO: decrease refcount.
+    file_config->leanHoverViewHover = nullptr;
+  }
+
+  assert(file_config->leanHoverViewHover == nullptr);
+  req = lspCreateTextDocumentHoverRequest(file_config->text_document_item.uri, 
+    Position(file_config->cursor.row, cursorColBytes.size));
+  request_id = file_config->lean_server_state.write_request_to_child_blocking("textDocument/hover", req);
+  file_config->leanHoverViewHover = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
+
 }
 
 
@@ -1046,12 +1058,58 @@ void editorDrawInfoView() {
   //   json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
   // ab.appendfmtstr(120, "trmgl: %s \x1b[K \r\n", 
   //   json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainTermGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
+  do {
+    // Result: {
+    //   "range": {
+    //     "start": { "line": 2,"character": 4 },
+    //     "end": { "line": 2, "character": 7 }
+    //   },
+    //   "contents": {
+    //     "value": "```lean\nfoo (y : String) : String\n```",
+    //     "kind": "markdown"
+    //   }
+    // }
+    json_object  *result = nullptr;
+    json_object_object_get_ex(g_editor.curFile.leanHoverViewHover, "result", &result);
+    if (result == nullptr) {
+      ab.appendstr("▶ Hover: --- \x1b[K \r\n");
+    } else {
+      json_object *result_contents = nullptr;
+      json_object_object_get_ex(result, "contents", &result_contents);
+      assert(result_contents != nullptr);
+
+      json_object *result_contents_value = nullptr;
+      json_object_object_get_ex(result_contents, "value", &result_contents_value);
+      assert (result_contents_value != nullptr);
+      assert(json_object_get_type(result_contents_value) == json_type_string);
+      const char *s = json_object_get_string(result_contents_value); 
+      ab.appendstr("▼ Hover: \x1b[K \r\n");
+      std::vector<std::string> lines; lines.push_back(std::string());
+      for(int i = 0; i < strlen(s); ++i) {
+        std::string &line = lines[lines.size() - 1];
+        if (s[i] == '\n') {
+          lines.push_back(std::string());
+        } else if (line.size() > 100) {
+          line += "–"; // line break
+          lines.push_back(std::string());
+        } else {
+          line += s[i];
+        }
+      } // end while.
+
+      for(std::string &line : lines) {
+        ab.appendstr(line.c_str());
+        ab.appendstr("\x1b[K \r\n");
+      }
+    } // end else 'result != nullptr.
+  } while(0);
+
 
   do {
     json_object  *result = nullptr;
     json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainTermGoal, "result", &result);
     if (result == nullptr) {
-      ab.appendstr("## Expected Type: --- \x1b[K \r\n");
+      ab.appendstr("▶ Expected Type: --- \x1b[K \r\n");
     } else {
       assert(json_object_get_type(result) == json_type_object);
       json_object *result_goal = nullptr;
@@ -1059,7 +1117,7 @@ void editorDrawInfoView() {
       assert(result_goal != nullptr);
       assert(json_object_get_type(result_goal) == json_type_string);
 
-      ab.appendstr("## Expected Type: \x1b[K \r\n");
+      ab.appendstr("▼ Expected Type: \x1b[K \r\n");
       editorDrawInfoViewGoal(&ab, json_object_get_string(result_goal));
 
     }
@@ -1069,7 +1127,7 @@ void editorDrawInfoView() {
     json_object  *result = nullptr;
     json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainGoal, "result", &result);
     if (result == nullptr) {
-      ab.appendstr("## Tactic State: --- \x1b[K \r\n");
+      ab.appendstr("▶ Tactic State: --- \x1b[K \r\n");
     } else {
       json_object *result_goals = nullptr;
       json_object_object_get_ex(result, "goals", &result_goals);
@@ -1077,7 +1135,7 @@ void editorDrawInfoView() {
 
       assert(json_object_get_type(result_goals) == json_type_array);
       if (json_object_array_length(result_goals) == 0) {
-        ab.appendstr("## Tactic State: In tactic mode with no open tactic goal. \x1b[K \r\n");
+        ab.appendstr("▼ Tactic State: In tactic mode with no open tactic goal. \x1b[K \r\n");
         break;
       }
       assert(json_object_array_length(result_goals) > 0); 
