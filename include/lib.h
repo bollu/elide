@@ -19,10 +19,9 @@
 #include <stack>
 #include <unordered_map>
 #include "lean_lsp.h"
+#include "mathutil.h"
 
 static int utf8_next_code_point_len(const char *str);
-int clamp(int lo, int val, int hi);
-
 
 struct abuf {
   abuf() = default;
@@ -71,7 +70,8 @@ struct abuf {
   // take the substring of [start,start+len) and convert it to a string.
   // pointer returned must be free.
   char *to_string_start_len(int start, int slen) {
-    slen = std::max<int>(0, std::min<int>(slen, this->_len - start));
+    slen = clamp0u(slen, this->len() - start); 
+      // std::max<int>(0, std::min<int>(slen, this->_len - start));
     assert(slen >= 0);
     char *out = (char *)calloc(slen + 1, sizeof(char));
     if (this->_buf != NULL) {
@@ -157,11 +157,30 @@ struct abuf {
   const char *buf() const {
     return this->_buf;
   }
+
+  Size<Codepoint> ncodepoints() const {
+    int count = 0;
+    int ix = 0;
+    while(ix < this->_len) {
+      ix += utf8_next_code_point_len(this->_buf + ix);
+      count++;
+    }
+    assert(ix == this->_len);
+    return Size<Codepoint>(count);
+  }
+
+  const char *getCodepoint(Ix<Codepoint> ix) const {
+    assert(ix < this->ncodepoints());
+    int delta = 0;
+    for(Ix<Codepoint> i(0); i < ix; i++) {
+      delta += utf8_next_code_point_len(this->_buf + delta);
+    }
+    return this->_buf + delta;
+  }
+
 private:
   char *_buf = nullptr;
   int _len = 0;
-  
-
 
 };
 
@@ -247,206 +266,11 @@ enum VimMode {
   VM_NORMAL, // mode where code is only viewed and locked for editing.
   VM_INSERT, // mode where code is edited.
   VM_INFOVIEW_DISPLAY_GOAL, // mode where infoview is shown.
+  VM_COMPLETION, // mode where code completion results show up.
+  VM_CTRLP, // mode where control-p search anything results show up.
 };
 
 struct FileRow;
-
-
-
-struct Byte{}; // Ix<Byte>.
-struct Codepoint{}; // Ix<Grapheme>.
-
-template<typename T>
-struct Size;
-
-template<typename T>
-struct Ix;
-
-template<typename T>
-struct Ix {
-  int ix = 0;
-  explicit Ix() = default;
-  explicit Ix(int ix) { this->ix = ix; };
-  Ix &operator = (const Ix<T> &other) {
-    this->ix = other.ix;
-    return *this;
-  }
-
-  Ix(const Ix<T> &other) {
-    *this = other;
-  }
-
-  Ix<T> operator++(int) {
-    // postfix
-    Ix<T> copy(*this);
-    this->ix += 1;
-    return copy;
-  }
-
-  Ix<T> &operator++() {
-    // prefix
-    this->ix += 1;
-    return *this;
-  }
-
-  Ix<T> operator--(int) const {
-    // postfix
-    return Ix<T>(this->ix - 1);
-  }
-
-  bool operator <(const Ix<T> &other) const {
-    return this->ix < other.ix;
-  }
-
-  bool operator <=(const Ix<T> &other) const {
-    return this->ix <= other.ix;
-  }
-
-  bool operator <(const Size<T> &other) const;
-
-  bool operator == (const Ix<T> &other) {
-    return this->ix ==  other.ix;
-  }
-
-  bool operator > (const Ix<T> &other) {
-    return this->ix > other.ix;
-  }
-
-  bool is_inbounds(Size<T> size) const;
-  bool is_inbounds_or_end(Size<T> size) const;
-};
-
-template<typename T>
-struct Size {
-  int size = 0;
-  explicit Size() = default;
-  explicit Size(int size) : size(size) {};
-  Size &operator = (const Size<T> &other) {
-    this->size = other.size;
-    return *this;
-  }
-  Size(const Size<T> &other) {
-    *this = other;
-  }
-
-  Size<T> next() const { // return next size.
-    return Size<T>(this->size + 1);
-  }
-
-  Size<T> prev() const { // return next size.
-    assert(this->size - 1 >= 0);
-    return Size<T>(this->size - 1);
-  }
-  
-  Ix<T> toIx() const {
-    return Ix<T>(this->size);
-  }
-
-  // return largest index that can index
-  // an array of size 'this'.
-  Ix<T> largestIx() const {
-    assert(this->size > 0);
-    return Ix<T>(this->size - 1);
-  }
-
-
-  // convert from size T to size S.
-  // Can covert from e.g. Codepoints to Bytes if one is dealing with ASCII,
-  // since every ASCII object takes 1 codepoint.
-  template<typename S>
-  Size<S> unsafe_cast() const {
-    return Size<S>(this->size);
-  }
-
-  void operator += (const Size<T> &other) {
-    this->size += other.size;
-  }
-
-  Size<T> operator + (const Size<T> &other) const {
-    return Size<T>(this->size + other.size);
-  }
-
-  Size<T> operator - (const Size<T> &other) const {
-    int out = (this->size - other.size);
-    assert(out >= 0);
-    return out;
-  }
-
-  bool operator < (const Size<T> &other) const {
-    return this->size < other.size;
-  }
-
-  bool operator <= (const Size<T> &other) const {
-    return this->size <= other.size;
-  }
-
-  bool operator > (const Size<T> &other) const {
-    return this->size > other.size;
-  }
-
-  bool operator >= (const Size<T> &other) const {
-    return this->size >= other.size;
-  }
-
-
-
-  bool operator == (const Size<T> &other) {
-    return this->size ==  other.size;
-  }
-
-  Size<T> operator++(int) {
-    // postfix
-    Size<T> copy(*this);
-    this->size += 1;
-    return copy;
-  }
-
-  Size<T> &operator++() {
-    // prefix
-    this->size += 1;
-    return *this;
-  }
-
-  Size<T> operator--(int) {
-    // postfix
-    Size<T> copy(*this);
-    this->size -= 1;
-    return copy;
-  }
-
-};
-
-template<typename T>
-bool Ix<T>::operator <(const Size<T> &other) const {
-  return ix < other.size;
-}
-
-// Bounded int, with bounds `[0, MAX]`.
-template<typename T> // tagged with Size/Ix<Codepoint/Byte>
-struct bint {
-  int lo;
-  int hi;
-  int val;
-  
-  static bint combine(bint x, bint y, std::function<int(int, int)> f) {
-    return bint(std::max<int>(x.lo, y.lo), 
-    	f(x.val, y.val),
-	std::min<int>(x.hi, y.hi)); 
-  }
-
-  bint(int val, int hi) : lo(0), val(val), hi(hi) {
-    val = std::min<int>(std::max<int>(lo, val), hi);
-  }
-
-  bint(int lo, int val, int hi) : lo(lo), val(val), hi(hi) {
-    val = std::min<int>(std::max<int>(lo, val), hi);
-  }
-
-  operator int() const {
-    return val;
-  }
-};
-
 
 struct FileRow;
 
@@ -598,6 +422,114 @@ enum InfoViewTab {
 
 static InfoViewTab infoViewTabCycleNext(InfoViewTab t);
 
+// a struct to encapsulate a child proces that is line buffered,
+// which is a closure plus a childpid. 
+struct ChildProcessLineBuffered {
+  int childpid;
+  // process a line. **This is assumed to be fast.**
+  std::function<void(const char *str, int ix, int len)> processor;
+  ChildProcessLineBuffered(const char *path, const char *command, char **args);
+
+  void killSync(); // kills the process synchronously.
+};
+
+// enapsulates the logic of having a single line of text area.
+struct SingleLineTextAreaState {
+  abuf buf;
+  bool _dirty = false;
+
+  void draw(abuf *out, int screenrows, int screencols) {
+    const char *ELLIPSIS = "...";
+    const int NUM_ELLIPSIS = strlen(ELLIPSIS);
+    // TODO: this should be done based on codepoints.
+    // TODO: create an abstraction for intervals and pushing the bounds left and right
+    const int ndraw = std::min<int>(screencols - NUM_ELLIPSIS, buf.ncodepoints().size);
+    if (ndraw < buf.ncodepoints().size)  {
+      out->appendstr(ELLIPSIS);
+    };
+    for(int i = 0; i < ndraw; ++i) {
+      out->appendCodepoint(buf.getCodepoint(Ix<Codepoint>(buf.ncodepoints().size - 1 - i)));
+    }
+  }
+};
+
+// A single line text area.
+struct SingleLineTextArea : Undoer<SingleLineTextAreaState> {
+  bool whenQuit() { const bool out = this->_quit; this->_quit = false; return out; }
+  // converts level trigger of dirty into edge trigger.
+  bool whenDirty() { bool out = _dirty; _dirty = false; return out; };
+
+  void show() { _quit = false; }
+  void handleKeypress(int c);
+  abuf getText() { return buf; };  
+private:
+  bool _quit = false;
+};
+
+
+// autocomplete view.
+struct CompletionView {
+/*
+  void handleKeypress(int c, FileConfig *f);  {
+    textArea->handleKeypress(c);
+    if (textArea->whenDirty()) {
+      json_object *req = 
+        lspCreateTextDocumentCompletionRequest(f->text_document_item.uri, 
+          Position(f->cursor.row, cursorColBytes.size),
+          CompletionTriggerKind::Invoked);
+      request_id = f->lean_server_state.write_request_to_child_blocking("textDocument/completion", req);
+      json_object_put(req);
+
+      json_object *response = f->lean_server_state.read_json_response_from_child_blocking(request_id);
+      json_object_put(response);
+    }
+
+    if (textArea->whenQuit()) {
+      this->_quit = true;
+      this->completion = textArea->getText();
+    }
+  };
+ */
+
+  // bool whenQuit() {
+  //   const bool old = this->_quit;
+  //   this->_quit = false;
+  //   return old;
+  // }
+
+  // void draw(abuf *buf, const int screenrows, const int screencols) const {
+  //   this->textArea.draw(buf, screenrows, screencols);
+  // }
+
+  // // return the set of completions.
+  // const std::vector<std::string>& getCompletions() const {
+  //   return completions;
+  // }
+
+// private:
+//   std::vector<std::string> completions;
+//   SingleLineTextArea textArea;
+//   std::string completion;
+//   bool isQuit = false;
+};
+
+
+// TODO: have notion of project path?
+// base it off of `lakefile.lean`, or `.git`, or keep in the current path.
+// rg TEXT_STRING PROJECT_PATH -g FILE_PATH_GLOB
+// find ../ -name "*.cpp" 
+// struct SearchView {
+//   Cursor cursor; // cursor in the search view.
+
+//   abuf searchViewString; // string that is being searched.
+//   bool dirty = false;
+
+//   ChildProcessLineBuffered search;
+//   std::vector<json_object *> SearchViewRgMatches;
+//   bool drawEnabled; // whether this is enabled or not. 
+//   RgServerState rgState; // ripgrep state for text search.
+
+// };
 
 // NOTE: 
 // TextDocument for LSP does not need to be cached, as its value monotonically increases,
@@ -627,6 +559,12 @@ struct FileConfigUndoState {
 };
 
 
+// data associated to the per-file `CtrlP` view.
+struct CtrlPView {
+  VimMode previous_state;
+};
+
+
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
 // Do I want a *global* undo/redo? Probably not, no?
 // TODO: think about just copying the sublime text API :)
@@ -647,6 +585,9 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
 
   // TextDocument for LSP
   TextDocumentItem text_document_item;
+
+  CtrlPView ctrlp;
+  CompletionView completion;
 
   void makeDirty() {
     leanInfoViewPlainGoal = nullptr;

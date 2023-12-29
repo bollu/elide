@@ -349,10 +349,6 @@ void editorSetStatusMessage(const char *fmt, ...);
 // #define CTRL_KEY(k) ((k) & ((1 << 6) - 1))
 #define CTRL_KEY(k) ((k)&0x1f)
 
-int clamp(int lo, int val, int hi) {
-  return std::min<int>(std::max<int>(lo, val), hi);
-}
-
 /*** data ***/
 EditorConfig g_editor;
 
@@ -667,6 +663,7 @@ void fileConfigLaunchLeanServer(FileConfig *file_config) {
 
   json_object *req = lspCreateInitializeRequest();
   LspRequestId request_id = file_config->lean_server_state.write_request_to_child_blocking("initialize", req);
+  json_object_put(req);
 
   json_object *response = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
@@ -711,7 +708,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // $/lean/plainGoal
   if (file_config->leanInfoViewPlainGoal) {
-    // TODO: decrease refcount.
+    json_object_put(file_config->leanInfoViewPlainTermGoal);
     file_config->leanInfoViewPlainGoal = nullptr;
   }
 
@@ -733,7 +730,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // $/lean/plainTermGoal
   if (file_config->leanInfoViewPlainTermGoal) {
-    // TODO: decrease refcount.
+    json_object_put(file_config->leanInfoViewPlainTermGoal);
     file_config->leanInfoViewPlainTermGoal = nullptr;
   }
 
@@ -745,7 +742,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // textDocument/hover
   if (file_config->leanHoverViewHover) {
-    // TODO: decrease refcount.
+    json_object_put(file_config->leanInfoViewPlainTermGoal);
     file_config->leanHoverViewHover = nullptr;
   }
 
@@ -1530,14 +1527,14 @@ void editorMoveCursor(int key) {
     }
     break;
   case CTRL_KEY('d'):
-    g_editor.curFile.cursor.row = std::min<int>(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.rows.size());
+    g_editor.curFile.cursor.row = clampu(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.rows.size());
     if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
       g_editor.curFile.cursor.col = 
         std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     }
     break;
   case CTRL_KEY('u'):
-    g_editor.curFile.cursor.row = std::max<int>(g_editor.curFile.cursor.row - g_editor.screenrows / 4, 0);
+    g_editor.curFile.cursor.row = clamp0(g_editor.curFile.cursor.row - g_editor.screenrows / 4);
     g_editor.curFile.cursor.col = 
       std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
     break;
@@ -1620,7 +1617,34 @@ void editorProcessKeypress() {
   int nread;
   int c = editorReadRawEscapeSequence();
 
-  if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
+  if (g_editor.vim_mode == VM_COMPLETION) {
+
+    if (c == CTRL_KEY('\\') ||  c == CTRL_KEY('c')) {
+      g_editor.vim_mode = VM_INSERT; return;
+    }
+    else if (c == '\r') {
+      // TODO: make the completer accept the autocomplete.
+      return;
+    }
+    else if (isprint(c)){
+      // completionInsertChar(c);
+      return;
+    }
+  }
+  else if (g_editor.vim_mode == VM_CTRLP) {
+    if (c == CTRL_KEY('p') || c == CTRL_KEY('c')) {
+      g_editor.vim_mode = g_editor.curFile.ctrlp.previous_state; return;
+    }
+    else if (c == '\r') {
+      // TODO: make the completer accept the autocomplete.
+      return;
+    } else if (isprint(c)) {
+      // ctrlpInsertChar(c);
+      return;
+    }
+  }
+
+  else if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
     switch(c) {
     case 'q': {
       fileConfigSave(&g_editor.curFile);
@@ -1632,6 +1656,7 @@ void editorProcessKeypress() {
       g_editor.curFile.infoViewTab = infoViewTabCycleNext(g_editor.curFile.infoViewTab);
       return;
     }
+    case CTRL_KEY('c'):
     case 'g':
     case '?': {
       g_editor.vim_mode = VM_NORMAL; return;
@@ -1644,6 +1669,11 @@ void editorProcessKeypress() {
 
   if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in normal mode
     switch (c) {
+    case CTRL_KEY('p'): {
+      g_editor.curFile.ctrlp.previous_state = VM_NORMAL;
+      g_editor.vim_mode = VM_CTRLP;
+      return;
+    }
     case 'D': {
       g_editor.curFile.mkUndoMemento();
       fileConfigDeleteTillEndOfRow(&g_editor.curFile);
@@ -1733,6 +1763,16 @@ void editorProcessKeypress() {
     g_editor.curFile.mkUndoMementoRecent();
 
     switch (c) { // behaviors only in edit mode.
+    case CTRL_KEY('\\'): {
+      g_editor.curFile.ctrlp.previous_state = VM_COMPLETION;
+      g_editor.vim_mode = VM_COMPLETION;
+      return;
+    }
+    case CTRL_KEY('p'): {
+      g_editor.curFile.ctrlp.previous_state = VM_INSERT;
+      g_editor.vim_mode = VM_CTRLP;
+      return;
+    }
     case '\r':
       fileConfigInsertEnterKey(&g_editor.curFile);
       return;
