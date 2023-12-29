@@ -533,7 +533,8 @@ void fileConfigInsertRowBefore(FileConfig *f, int at, const char *s, size_t len)
   for(int i = f->rows.size() - 1; i >= at + 1; i--)  {
     f->rows[i] = f->rows[i - 1];   
   }
-  f->rows[at].setBytes(s, len, g_editor.curFile);
+  f->rows[at].setBytes(s, len);
+  g_editor.curFile.makeDirty();
 }
 
 // delete the current row.
@@ -614,7 +615,8 @@ void fileConfigInsertEnterKey(FileConfig *f) {
     // pointer invalidated, get pointer to current row again,
     row = &f->rows[f->cursor.row];
     // chop off at row[...:f->cursor.col]
-    row->truncateNCodepoints(Size<Codepoint>(f->cursor.col), g_editor.curFile);
+    row->truncateNCodepoints(Size<Codepoint>(f->cursor.col));
+    g_editor.curFile.makeDirty();
     // place cursor at next row (f->cursor.row + 1), column of the indent.
     f->cursor.row++;
     f->cursor.col = num_indent;
@@ -645,17 +647,17 @@ void fileConfigInsertCharBeforeCursor(FileConfig *f, int c) {
       // the full string, plus the backslash.
       for(int i = 0; i < info.matchlen + 1; ++i) {
         assert((g_editor.abbrevDict.unabbrevs[info.matchix][i] & (1 << 7)) == 0); // ASCII;
-        row->delCodepointAt(Ix<Codepoint>(f->cursor.col.largestIx()), g_editor.curFile);
+        row->delCodepointAt(Ix<Codepoint>(f->cursor.col.largestIx()));
         f->cursor.col--;
       }
 
       // TODO: check if we have `toInserts` that are more than 1 codepoint.
       const char *toInsert = g_editor.abbrevDict.abbrevs[info.matchix];
-        row->insertCodepointBefore(f->cursor.col, toInsert, g_editor.curFile);
+        row->insertCodepointBefore(f->cursor.col, toInsert);
       f->cursor.col++;
     }
   }
-  row->insertByte(f->cursor.col, c, g_editor.curFile);  
+  row->insertByte(f->cursor.col, c);
   f->cursor.col++; // move cursor.
 }
 
@@ -670,7 +672,8 @@ void fileConfigXCommand(FileConfig *f) {
   // nothing under cursor.
   if (f->cursor.col == row->ncodepoints()) { return; }
   // delete under the cursor.
-  row->delCodepointAt(f->cursor.col.toIx(), g_editor.curFile);
+  row->delCodepointAt(f->cursor.col.toIx());
+  f->makeDirty();
 }
 
 // TODO: study this and make a better abstraction for the cursor location.
@@ -679,22 +682,24 @@ void fileConfigBackspace(FileConfig *f) {
   if (f->cursor.row == f->rows.size()) {
     return;
   }
-  if (f->cursor.col == Size<Codepoint>(0) && f->cursor.row == 0)
+  if (f->cursor.col == Size<Codepoint>(0) && f->cursor.row == 0) {
     return;
+  }
 
+  f->makeDirty();
   FileRow *row = &f->rows[f->cursor.row];
 
   // if col > 0, then delete at cursor. Otherwise, join lines toegether.
   if (f->cursor.col > Size<Codepoint>(0)) {
     // delete at the cursor.
-    row->delCodepointAt(f->cursor.col.largestIx(), g_editor.curFile);
+    row->delCodepointAt(f->cursor.col.largestIx());
     f->cursor.col--;
   } else {
     // place cursor at last column of prev row.
     f->cursor.col = f->rows[f->cursor.row - 1].ncodepoints();
     // append string.
     for(Ix<Codepoint> i(0); i < row->ncodepoints(); ++i) {
-      f->rows[f->cursor.row - 1].appendCodepoint(row->getCodepoint(i), g_editor.curFile);
+      f->rows[f->cursor.row - 1].appendCodepoint(row->getCodepoint(i));
     }
     // delete current row
     fileConfigDelRow(f, f->cursor.row);
@@ -727,7 +732,8 @@ void fileConfigLaunchLeanServer(FileConfig *file_config) {
 void fileConfigSyncLeanState(FileConfig *file_config) {
   json_object *req = nullptr;
   assert(file_config->is_initialized);
-  if (file_config->text_document_item.is_initialized && !file_config->is_dirty) {
+  if (file_config->text_document_item.is_initialized && 
+      !file_config->whenDirtyInfoView()) {
     return; // no point syncing state if it isn't dirty, and the state has been initalized before.
   }
 
@@ -739,9 +745,7 @@ void fileConfigSyncLeanState(FileConfig *file_config) {
     free(file_config->text_document_item.text);
     abuf buf;
     fileConfigRowsToBuf(file_config, &buf);
-    assert(buf.len() > 0);
-    assert(buf.buf()[buf.len() - 1] == 0); // must be null-termianted.
-    file_config->text_document_item.text = strdup(buf.buf());
+    file_config->text_document_item.text = buf.to_string();
   }
   assert(file_config->text_document_item.is_initialized);
   // textDocument/didOpen
@@ -864,9 +868,8 @@ void fileConfigDebugPrint(FileConfig *file, abuf *buf) {
 
 
 void fileConfigSave(FileConfig *f) {
-  if (f->absolute_filepath == NULL || !f->is_dirty) {
-    return;
-  }
+  if (!f->whenDirtySave()) { return; }
+
   abuf buf;
   fileConfigRowsToBuf(&g_editor.curFile, &buf);
   // | open for read and write
@@ -883,7 +886,6 @@ void fileConfigSave(FileConfig *f) {
   int nwritten = write(fd, buf.buf(), buf.len());
   assert(nwritten == buf.len() && "wasn't able to write enough bytes");
   editorSetStatusMessage("Saved file");
-  f->is_dirty = false;
   close(fd);
 }
 
@@ -1541,8 +1543,9 @@ void fileConfigDeleteTillEndOfRow(FileConfig *f) {
   if (f->cursor.row < f->rows.size()) {
     FileRow *row = &f->rows[f->cursor.row]; 
     while(row->ncodepoints() > f->cursor.col) {
-        row->delCodepointAt(row->ncodepoints().largestIx(), *f);
+      row->delCodepointAt(row->ncodepoints().largestIx());
     }
+    f->makeDirty();
   }
 }
 

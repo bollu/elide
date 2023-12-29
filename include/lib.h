@@ -29,6 +29,10 @@
 
 static int utf8_next_code_point_len(const char *str);
 
+static const int NSPACES_PER_TAB = 2;
+static const char *VERSION = "0.0.1";
+
+
 struct abuf {
   abuf() = default;
   ~abuf() { free(_buf); }
@@ -39,6 +43,7 @@ struct abuf {
     if (_len > 0) {
       memcpy(_buf, other._buf, _len);
     }
+    this->_is_dirty = other._is_dirty;
     return *this;
   }
   abuf(const abuf &other) {
@@ -90,6 +95,8 @@ struct abuf {
       this->_buf[n_bufUptoAt.size + i] = codepoint[i];
     }
     this->_len += nNew_buf.size;
+    this->_is_dirty = true;
+
   }
 
   void delCodepointAt(Ix<Codepoint> at) {
@@ -107,6 +114,7 @@ struct abuf {
     this->_len -= ntoskip.size;
     // resize to eliminate leftover.
     this->_buf = (char *)realloc(this->_buf, this->_len);
+    this->_is_dirty = true;
   }
 
 
@@ -117,15 +125,17 @@ struct abuf {
       delta += utf8_next_code_point_len(codepoint);
       this->appendCodepoint(codepoint + delta);
     }
+    this->_is_dirty = true;
   }
 
   void appendChar(char c) {
     this->appendbuf(&c, 1);
+    this->_is_dirty = true;
   }
 
   // take the substring of [start,start+len) and convert it to a string.
   // pointer returned must be free.
-  char *to_string_start_len(int start, int slen) {
+  char *to_string_start_len(int start, int slen) const {
     slen = clamp0u<int>(slen, this->len() - start); 
       // std::max<int>(0, std::min<int>(slen, this->_len - start));
     assert(slen >= 0);
@@ -137,23 +147,23 @@ struct abuf {
   }
 
   // take substring [start, buflen).
-  char *to_string_from_start_ix(int startix) {
+  char *to_string_from_start_ix(int startix) const {
     return to_string_start_len(startix, this->_len);
   }
 
   // take substring [0, slen)
-  char *to_string_len(int slen) {
+  char *to_string_len(int slen) const {
     return to_string_start_len(0, slen);
   }
 
   // convert buffer to string.
-  char *to_string() {
+  char *to_string() const {
     return to_string_start_len(0, this->_len);
   }
 
   // Return first index `i >= begin_ix` such that `buf[i:i+len] = s[0:len]`.
   // Return `-1` otherwise.
-  int find_sub_buf(const char *findbuf, int findbuf_len, int begin_ix) {
+  int find_sub_buf(const char *findbuf, int findbuf_len, int begin_ix) const {
     for (int i = begin_ix; i < this->_len; ++i) {
       int match_len = 0;
       while (i + match_len < this->_len && match_len < findbuf_len) {
@@ -172,17 +182,20 @@ struct abuf {
 
   // Return first index `i >= begin_ix` such that `buf[i:i+len] = s[0:len]`.
   // Return `-1` otherwise.
-  int find_substr(const char *findstr, int begin_ix) {
+  int find_substr(const char *findstr, int begin_ix) const {
     return find_sub_buf(findstr, strlen(findstr), begin_ix);
   }
 
   // Return first index `i >= begin_ix` such that `buf[i] = c`.
   // Return `-1` otherwise.
-  int find_char(char c, int begin_ix) { return find_sub_buf(&c, 1, begin_ix); }
+  int find_char(char c, int begin_ix) const { return find_sub_buf(&c, 1, begin_ix); }
 
 
   // append a string onto this string.
-  void appendstr(const char *s) { appendbuf(s, strlen(s)); }
+  void appendstr(const char *s) { 
+    appendbuf(s, strlen(s));
+    this->_is_dirty = true;
+  }
 
   // append a format string onto this string. Truncate to length 'len'.
   void appendfmtstr(int len, const char *fmt, ...) {
@@ -193,6 +206,7 @@ struct abuf {
     va_end(args);
     appendstr(buf);
     free(buf); 
+    this->_is_dirty = true;
   }
 
 
@@ -204,6 +218,8 @@ struct abuf {
     free(this->_buf);
     this->_buf = bnew;
     this->_len -= drop_len;
+    this->_is_dirty = true;
+
   }
 
   int len() const {
@@ -213,6 +229,32 @@ struct abuf {
   const char *buf() const {
     return this->_buf;
   }
+
+  // if dirty, return `true` and reset the dirty state of `abuf`.
+  bool whenDirty() {
+    bool out = this->_is_dirty;
+    this->_is_dirty = false;
+    return out;
+  }
+
+
+  const char *getCodepointFromRight(Ix<Codepoint> ix) const {
+    assert(ix < this->ncodepoints());
+    this->getCodepoint(this->ncodepoints().mirrorIx(ix));
+  }
+
+  bool operator == (const abuf &other) const {
+    if (this->_len != other._len) { return false; }
+    for(int i = 0; i < this->_len; ++i) {
+      if (this->_buf[i] != other._buf[i]) { return false; }
+    } 
+    return true;
+  }
+  
+  Size<Byte> nbytes() const {
+    return Size<Byte>(this->_len);
+  }
+
 
   Size<Codepoint> ncodepoints() const {
     int count = 0;
@@ -225,6 +267,15 @@ struct abuf {
     return Size<Codepoint>(count);
   }
 
+  const char *debugToString() const {
+    char *str = (char*)malloc(this->nbytes().size + 1);
+    for(int i = 0; i < this->nbytes().size; ++i) {
+      str[i] = this->_buf[i];
+    }
+    str[this->nbytes().size] = '\0';
+    return str;
+  }
+
   const char *getCodepoint(Ix<Codepoint> ix) const {
     assert(ix < this->ncodepoints());
     int delta = 0;
@@ -234,15 +285,106 @@ struct abuf {
     return this->_buf + delta;
   }
 
-
-  const char *getCodepointFromRight(Ix<Codepoint> ix) const {
-    assert(ix < this->ncodepoints());
-    this->getCodepoint(this->ncodepoints().mirrorIx(ix));
+  // get the raw _buf. While functionally equivalent to
+  // getCodepoint, this gives one more license to do things like `memcpy`
+  // and not have it look funny.
+  const char *getRawBytesPtrUnsafe() const {
+    return this->_buf;
   }
+
+  // // TODO: rename API
+  // Size<Byte> getCodepointBytesAt(Ix<Codepoint> i) const {
+  //   return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
+  // }
+  Size<Byte> getBytesTill(Size<Codepoint> n) const {
+    Size<Byte> out(0);
+    for(Ix<Codepoint> i(0); i < n; ++i)  {
+      out += getCodepoint_bufAt(i);
+    }
+    return out;
+  }
+
+
+  int rxToCx(int rx) const {
+    int cur_rx = 0;
+    for (int cx = 0; cx < this->_len; cx++) {
+      if (_buf[cx] == '\t') {
+        cur_rx += (NSPACES_PER_TAB - 1) - (cur_rx % NSPACES_PER_TAB);
+      }
+      cur_rx++;
+      if (cur_rx > rx) {
+        return cx;
+      }
+    }
+    assert(false && "rx value that is out of range!");
+  }
+
+  int cxToRx(Size<Codepoint> cx) const {
+    assert(cx <= this->ncodepoints());
+    int rx = 0;
+    char *p = this->_buf;
+    for (Ix<Codepoint> j(0); j < cx; ++j) {
+      if (*p == '\t') {
+        rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
+      } else {
+        rx += 1; // just 1.
+      }
+      p += this->getCodepoint_bufAt(j).size;
+    }
+    return rx;
+  }
+
+  // it is size, since we can ask to place the data at the *end* of the string, past the
+  // final.
+  void insertByte(Size<Codepoint> at, int c) {
+    assert(at.size >= 0);
+    assert(at.size <= this->_len);
+    _buf = (char *)realloc(_buf, this->_len + 1);
+
+    Size<Byte> byte_at(0);
+    for(Ix<Codepoint> i(0); i < at; ++i) {
+      byte_at += this->getCodepoint_bufAt(i);
+    }
+
+    for(int i = this->_len; i >= byte_at.size+1; i--) {
+      this->_buf[i] = this->_buf[i - 1];
+    }    
+    _buf[byte_at.size] = c;
+    this->_len += 1;
+    this->_is_dirty = true;
+  }
+
+
+  // set the data.
+  // TODO: think if we should expose _buf API.
+  // TODO: force copy codepoint by codepoint.
+  void setBytes(const char *buf, int len) {
+    this->_len = len;
+    _buf = (char *)realloc(_buf, sizeof(char) * this->_len);
+    for(int i = 0; i < len; ++i) {
+      _buf[i] = buf[i];
+    }
+    this->_is_dirty = true;
+
+  }
+  
+  // truncate to `ncodepoints_new` codepoints.
+  void truncateNCodepoints(Size<Codepoint> ncodepoints_new) {
+    assert(ncodepoints_new <= this->ncodepoints());
+    Size<Byte> nbytes(0);
+    for(Ix<Codepoint> i(0); i < ncodepoints_new; i++)  {
+      nbytes += this->getCodepoint_bufAt(i);
+    }
+    this->_buf = (char*)realloc(this->_buf, nbytes.size);
+    this->_len = nbytes.size;
+    this->_is_dirty = true;
+  }
+
 
 protected:
   char *_buf = nullptr;
   int _len = 0;
+  bool _is_dirty = false;
 
 };
 
@@ -320,9 +462,6 @@ struct LeanServerState {
 
 private:
 };
-
-static const int NSPACES_PER_TAB = 2;
-static const char *VERSION = "0.0.1";
 
 enum VimMode {
   VM_NORMAL, // mode where code is only viewed and locked for editing.
@@ -676,7 +815,6 @@ void ctrlpDraw(const CtrlPView *view, abuf *buf);
 // Do I want a *global* undo/redo? Probably not, no?
 // TODO: think about just copying the sublime text API :)
 struct FileConfig : public Undoer<FileConfigUndoState> {
-  bool is_dirty = true; // have not synchronized state with Lean server.
   bool is_initialized = false;
 
   // offset for scrolling.
@@ -696,10 +834,23 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
   CtrlPView ctrlp;
   CompletionView completion;
 
+  // if 'b' is true, then mark the state as dirty.
+  // if 'b' is false, then leave the dirty state as-is.
   void makeDirty() {
-    leanInfoViewPlainGoal = nullptr;
-    is_dirty = true;
+    this->_is_dirty_save = true;
+    this->_is_dirty_info_view = true;
   }
+
+  bool whenDirtySave() { 
+    bool out = _is_dirty_save; _is_dirty_save = false; return out;
+  }
+  
+  bool whenDirtyInfoView() { 
+    bool out = _is_dirty_info_view; _is_dirty_info_view = false; return out;
+  }
+private:
+  bool _is_dirty_save = false;
+  bool _is_dirty_info_view = false;
 };
 
 // unabbrevs[i] ASCII string maps to abbrevs[i] UTF-8 string.
@@ -732,223 +883,8 @@ extern EditorConfig g_editor; // global editor handle.
 
 
 struct FileRow : public abuf {
-  bool operator == (const FileRow &other) const {
-    if (this->_len != other._len) { return false; }
-    for(int i = 0; i < this->_len; ++i) {
-      if (this->_buf[i] != other._buf[i]) { return false; }
-    } 
-    return true;
-  }
-  
-  Size<Byte> nbytes() const {
-    return Size<Byte>(this->_len);
-  }
-
-  char getByte(Ix<Byte> ix) const {
-    assert(ix < this->nbytes());
-    return this->_buf[ix.ix];
-  }
-
-  Size<Codepoint> ncodepoints() const {
-    int count = 0;
-    int ix = 0;
-    while(ix < this->_len) {
-      ix += utf8_next_code_point_len(this->_buf + ix);
-      count++;
-    }
-    assert(ix == this->_len);
-    return Size<Codepoint>(count);
-  }
-
-  const char *debugToString() const {
-    char *str = (char*)malloc(this->nbytes().size + 1);
-    for(int i = 0; i < this->nbytes().size; ++i) {
-      str[i] = this->_buf[i];
-    }
-    str[this->nbytes().size] = '\0';
-    return str;
-  }
-
-  const char *getCodepoint(Ix<Codepoint> ix) const {
-    assert(ix < this->ncodepoints());
-    int delta = 0;
-    for(Ix<Codepoint> i(0); i < ix; i++) {
-      delta += utf8_next_code_point_len(this->_buf + delta);
-    }
-    return this->_buf + delta;
-  }
-
-  // get the raw _buf. While functionally equivalent to
-  // getCodepoint, this gives one more license to do things like `memcpy`
-  // and not have it look funny.
-  const char *getRawBytesPtrUnsafe() const {
-    return this->_buf;
-  }
-
-  // TODO: rename API
-  Size<Byte> getCodepoint_bufAt(Ix<Codepoint> i) const {
-    return Size<Byte>(utf8_next_code_point_len(getCodepoint(i)));
-  }
-
-  Size<Byte> getBytesTill(Size<Codepoint> n) const {
-    Size<Byte> out(0);
-    for(Ix<Codepoint> i(0); i < n; ++i)  {
-      out += getCodepoint_bufAt(i);
-    }
-    return out;
-  }
-
-
-  int rxToCx(int rx) const {
-    int cur_rx = 0;
-    for (int cx = 0; cx < this->_len; cx++) {
-      if (_buf[cx] == '\t') {
-        cur_rx += (NSPACES_PER_TAB - 1) - (cur_rx % NSPACES_PER_TAB);
-      }
-      cur_rx++;
-      if (cur_rx > rx) {
-        return cx;
-      }
-    }
-    assert(false && "rx value that is out of range!");
-  }
-
-  int cxToRx(Size<Codepoint> cx) const {
-    assert(cx <= this->ncodepoints());
-    int rx = 0;
-    char *p = this->_buf;
-    for (Ix<Codepoint> j(0); j < cx; ++j) {
-      if (*p == '\t') {
-        rx += NSPACES_PER_TAB - (rx % NSPACES_PER_TAB);
-      } else {
-        rx += 1; // just 1.
-      }
-      p += this->getCodepoint_bufAt(j).size;
-    }
-    return rx;
-  }
-
-  // it is size, since we can ask to place the data at the *end* of the string, past the
-  // final.
-  void insertByte(Size<Codepoint> at, int c, FileConfig &E) {
-    assert(at.size >= 0);
-    assert(at.size <= this->_len);
-    _buf = (char *)realloc(_buf, this->_len + 1);
-
-    Size<Byte> byte_at(0);
-    for(Ix<Codepoint> i(0); i < at; ++i) {
-      byte_at += this->getCodepoint_bufAt(i);
-    }
-
-    for(int i = this->_len; i >= byte_at.size+1; i--) {
-      this->_buf[i] = this->_buf[i - 1];
-    }    
-    _buf[byte_at.size] = c;
-    this->_len += 1;
-    this->rebuild_render_cache(E);
-
-    // TODO: add an assert to check that the string is well-formed code points.
-    E.is_dirty = true;
-  }
-
-
-  // set the data.
-  // TODO: think if we should expose _buf API.
-  // TODO: force copy codepoint by codepoint.
-  void setBytes(const char *buf, int len, FileConfig &E) {
-    this->_len = len;
-    _buf = (char *)realloc(_buf, sizeof(char) * this->_len);
-    for(int i = 0; i < len; ++i) {
-      _buf[i] = buf[i];
-    }
-    this->rebuild_render_cache(E);
-    E.is_dirty = true;
-
-  }
-  
-  void delCodepointAt(Ix<Codepoint> at, FileConfig &E) {
-    assert(at.ix >= 0);
-    assert(at.ix < this->_len);
-
-    // TODO: refactor by changing type to `abuf`.
-    Size<Byte> startIx = Size<Byte>(0);
-    for(Ix<Codepoint> i(0); i < at; i++)  {
-      startIx += this->getCodepoint_bufAt(i);
-    }
-
-    const Size<Byte> ntoskip = this->getCodepoint_bufAt(at);
-    
-    for(int i = startIx.size; i < this->_len - ntoskip.size; i++) {
-      this->_buf[i] = this->_buf[i + ntoskip.size];
-    }    
-    this->_len -= ntoskip.size;
-    // resize to eliminate leftover.
-    this->_buf = (char *)realloc(this->_buf, this->_len);
-    this->rebuild_render_cache(g_editor.curFile);
-    E.makeDirty();
-
-  }
-
-  // insert a single codepoint.
-  void insertCodepointBefore(Size<Codepoint> at, const char *codepoint, FileConfig &E) {
-    assert(at.size >= 0);
-    assert(at.size <= this->_len);
-
-    // TODO: refactor by changing type to `abuf`.
-    Size<Byte> nBytesUpto = Size<Byte>(0);
-    for(Ix<Codepoint> i(0); i < at; i++)  {
-      nBytesUpto += this->getCodepoint_bufAt(i);
-    }
-
-    const Size<Byte> nNew_buf(utf8_next_code_point_len(codepoint));
-    this->_buf = (char*)realloc(this->_buf, this->_len + nNew_buf.size);
-      
-    for(int oldix = this->_len - 1; oldix >= nBytesUpto.size; oldix--) {
-      // push _buf from `i` into `i + nNew_buf`.
-      this->_buf[oldix + nNew_buf.size] = this->_buf[oldix];
-    }    
-
-    // copy new _buf into into location.
-    for(int i = 0; i < nNew_buf.size; ++i)  {
-      this->_buf[nBytesUpto.size + i] = codepoint[i];
-    }
-    this->_len += nNew_buf.size;
-    E.makeDirty();
-  }
-
-  // truncate to `ncodepoints_new` codepoints.
-  void truncateNCodepoints(Size<Codepoint> ncodepoints_new, FileConfig &E) {
-    assert(ncodepoints_new <= this->ncodepoints());
-    Size<Byte> nbytes(0);
-    for(Ix<Codepoint> i(0); i < ncodepoints_new; i++)  {
-      nbytes += this->getCodepoint_bufAt(i);
-    }
-    this->_buf = (char*)realloc(this->_buf, nbytes.size);
-    this->_len = nbytes.size;
-    this->rebuild_render_cache(E);
-    E.is_dirty = true;
-
-  }
-
-  // append a codepoint.
-  void appendCodepoint(const char *codepoint, FileConfig &E) {
-    Size<Byte> nbytes(utf8_next_code_point_len(codepoint));
-    _buf = (char *)realloc(_buf, _len + nbytes.size);
-    memcpy(_buf + this->_len, codepoint, nbytes.size);
-    this->_len += nbytes.size; // TODO: change _len to be Size<Byte>.
-    this->rebuild_render_cache(E);
-    E.is_dirty = true;
-
-  }
 private:
   
-  // should be private? since it updates info cache.
-  void rebuild_render_cache(FileConfig &E) {
-    _checkIsWellFormedUtf8();
-    E.makeDirty();
-    E.is_dirty = true;
-  }
-
   void _checkIsWellFormedUtf8() const {
     int ix = 0;
     while(ix < this->_len) {

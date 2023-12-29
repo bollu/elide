@@ -55,7 +55,7 @@ void fileConfigSetTestString(FileConfig &f, const char *s) {
 
   for(const std::string &s : lines) {
      FileRow row;
-     row.setBytes(s.c_str(), s.size(), f);
+     row.setBytes(s.c_str(), s.size());
      f.rows.push_back(row);
   }
 };
