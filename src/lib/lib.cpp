@@ -97,7 +97,7 @@ void drawColWithCursor(abuf *dst, const abuf *row,
 // we search the directory tree of 'file_path'. If we find a `lakefile.lean`, then we call `lake --serve`
 // at that cwd. Otherwise, we call `lean --server` at the file working directory.
 // NOTE: the pointer `lakefile_dirpath` is consumed.
-void _exec_lean_server_on_child(char *lakefile_dirpath) {
+void _exec_lean_server_on_child(const char *lakefile_dirpath) {
   int process_error = 0;
   // no lakefile.
   if (lakefile_dirpath == NULL) {
@@ -109,7 +109,6 @@ void _exec_lean_server_on_child(char *lakefile_dirpath) {
     if (chdir(lakefile_dirpath) != 0) {
       die("ERROR: unable to switch to 'lakefile.lean' directory");
     }; 
-    free(lakefile_dirpath);
     const char * process_name = "lake";
     char * const argv[] = { strdup(process_name), strdup("serve"), NULL };
     process_error = execvp(process_name, argv);
@@ -189,9 +188,8 @@ LeanServerState LeanServerState::init(const char *file_path) {
   fputs("\n===\n", state.child_stderr_log_file);
 
   if (file_path) {
-    char *lakefile_dirpath = get_lakefile_dirpath(file_path);
-    fprintf(stderr, "lakefile_dirpath: '%s'\n", lakefile_dirpath);
-    free(lakefile_dirpath);
+    state.lakefile_dirpath = get_lakefile_dirpath(file_path);
+    fprintf(stderr, "lakefile_dirpath: '%s'\n", state.lakefile_dirpath);
   }
 
   pid_t childpid = fork();
@@ -215,14 +213,8 @@ LeanServerState LeanServerState::init(const char *file_path) {
     dup2(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
     // it is only legal to call `read()` on stdin. So we tie the `PIPE_READ_IX` to `STDIN`
     dup2(state.parent_buffer_to_child_stdin[PIPE_READ_IX], STDIN_FILENO);
-    if (file_path) {
-      // we have a file that we want to find the lakefile for.
-      char *lakefile_dirpath = get_lakefile_dirpath(file_path);
-      _exec_lean_server_on_child(lakefile_dirpath);
-    } else {
-      _exec_lean_server_on_child(NULL);
-    }
-
+    // execute lakefile. 
+    _exec_lean_server_on_child(state.lakefile_dirpath);
   } else {
     // parent will only write into this pipe, so close the read end.
     close(state.parent_buffer_to_child_stdin[PIPE_READ_IX]);
@@ -1697,7 +1689,15 @@ void editorProcessKeypress() {
     }
   }
   else if (g_editor.vim_mode == VM_CTRLP) {
-    ctrlpHandleInput(&g_editor.curFile.ctrlp, c);
+    // if lakefile is available, use it as the path.
+    // if not, use the file path as the base path.
+    // TODO: search for `.git` and use it as the base path.
+    const char *default_basepath = 
+      g_editor.curFile.lean_server_state.lakefile_dirpath ?
+      g_editor.curFile.lean_server_state.lakefile_dirpath :
+      dirname(g_editor.curFile.absolute_filepath);
+    ctrlpHandleInput(&g_editor.curFile.ctrlp, 
+        default_basepath, c);
     if (ctrlpWhenQuit(&g_editor.curFile.ctrlp)) {
       g_editor.vim_mode = g_editor.curFile.ctrlp.previous_state;
       return;
@@ -2064,7 +2064,29 @@ bool ctrlpWhenQuit(CtrlPView *view) {
   return out;
 }
 
-void ctrlpHandleInput(CtrlPView *view, int c) {
+CtrlPView::RgArgs CtrlPView::parseUserCommand(abuf buf) {
+  CtrlPView::RgArgs args;
+  args.filePattern = std::string(buf.buf());
+  return args;
+};
+
+// rg TEXT_STRING PROJECT_PATH -g FILE_PATH_GLOB # find all files w/contents matching pattern.
+// rg PROJECT_PATH --files -g FILE_PATH_GLOB # find all files w/ filename matching pattern.
+std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs args) {
+  assert(args.dirPatterns.size() == 0);
+  assert(args.searchPatterns.size() == 0);
+  assert(args.isRunnable());
+
+  std::vector<std::string> out;
+  out.push_back("--files");
+  out.push_back("-g");
+  out.push_back(args.filePattern);
+  return out;
+
+};
+
+
+void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
   assert(view->textCol <= view->textArea.ncodepoints());
   if (view->textAreaMode == TAM_Normal) {
     if (c == 'h' || c == KEYEVENT_ARROW_LEFT) {
@@ -2129,6 +2151,18 @@ void ctrlpHandleInput(CtrlPView *view, int c) {
       view->textCol += 1;
     }
   } 
+
+  if (view->textArea.whenDirty()) {
+    // nuke previous rg process, and clear all data it used to own.
+    view->rgProcess.killSync([](std::vector<CtrlPView::Item> &data) {
+      data.clear();
+    });
+
+    // invoke the new rg process.
+    CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea);
+    if (!args.isRunnable()) { return; } // nothing to run.
+    view->rgProcess.execpAsync(cwd, "rg", CtrlPView::rgArgsToCommandLineArgs(args));
+  }
 }
 
 void ctrlpDraw(const CtrlPView *view, abuf *ab) {

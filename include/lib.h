@@ -443,6 +443,8 @@ struct LspRequestId {
 // https://tldp.org/LDP/lpg/node11.html
 struct LeanServerState {
   bool initialized = false; // whether this lean server has been initalized.
+  // path to the lakefile associated to this lean server, if it uses one.
+  const char *lakefile_dirpath = nullptr;
   int parent_buffer_to_child_stdin[2];  // pipe.
   int child_stdout_to_parent_buffer[2]; // pipe.
   int child_stderr_to_parent_buffer[2]; // pipe.
@@ -673,15 +675,13 @@ struct ChildProcessLineBuffered {
   std::function<void(const char *str, int ix, int len, T&data)> processor;
   bool initialized = false;
 
-  static void nopInitAndCleanup(T& data) {};
+  static void nopFn(T& data) {};
 
-  // (re)start the process synchronously.
-  // data is initialized with `initData`, and old data is deleted with cleanupData.
-  void restartSync(const char *path, const char *command, char **args,
-    std::function<void(T&data)> initData=ChildProcessLineBuffered<T>::nopInitAndCleanup(),
-    std::function<void(T&data)> cleanupData=ChildProcessLineBuffered<T>::nopInitAndCleanup()); 
+  // (re)start the process, and run it asynchronously.
+  void execpAsync(const char *working_dir, const char *pname, std::vector<std::string> args,
+    std::function<void(T&data)> initData=ChildProcessLineBuffered::nopFn);
   // kills the process synchronously.
-  void killSync();
+  void killSync(std::function<void(T&data)> cleanupData=ChildProcessLineBuffered::nopFn);
 };
 
 // // enapsulates the logic of having a single line of text area.
@@ -767,8 +767,6 @@ struct CompletionView {
 
 // TODO: have notion of project path?
 // base it off of `lakefile.lean`, or `.git`, or keep in the current path.
-// rg TEXT_STRING PROJECT_PATH -g FILE_PATH_GLOB # find all files w/contents matching pattern.
-// rg  --files -g FILE_PATH_GLOB # find all files w/ filename matching pattern.
 // struct SearchView {
 //   Cursor cursor; // cursor in the search view.
 
@@ -826,9 +824,8 @@ static const char *textAreaModeToString(TextAreaMode mode) {
 struct CtrlPView {
   VimMode previous_state;
   TextAreaMode textAreaMode;
-
   // if searching for files, the fields row, colstart, colend, text are to be ignored.
-  struct SearchInfo {
+  struct Item {
     abuf filepath;
     abuf text;
     int row = 0;
@@ -838,13 +835,33 @@ struct CtrlPView {
 
   abuf textArea;
   Size<Codepoint> textCol;
-  ChildProcessLineBuffered<std::vector<SearchInfo>> rgProcess;
+  ChildProcessLineBuffered<std::vector<Item>> rgProcess;
   bool quitPressed = false;
+
+
+
+  struct RgArgs {
+    std::vector<std::string> dirPatterns;
+    std::string filePattern;
+    std::vector<std::string> searchPatterns;
+
+    bool isRunnable() const {
+      // only run if there is something to be searched for.
+      return filePattern.size() > 0 || searchPatterns.size() > 0;
+    }
+  };
+  // top := FILEGLOB? ARG*
+  // ARG := "@" SEARCHDIR | "/"" SEARCHSTR
+  static RgArgs parseUserCommand(abuf buf);
+
+  // rg TEXT_STRING PROJECT_PATH -g FILE_PATH_GLOB # find all files w/contents matching pattern.
+  // rg PROJECT_PATH --files -g FILE_PATH_GLOB # find all files w/ filename matching pattern.
+  static std::vector<std::string> rgArgsToCommandLineArgs(RgArgs invoke);
 };
 
 // convert level 'quitPressed' into edge trigger.
 bool ctrlpWhenQuit(CtrlPView *view);
-void ctrlpHandleInput(CtrlPView *view, int c);
+void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c);
 void ctrlpDraw(const CtrlPView *view, abuf *buf);
 
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
