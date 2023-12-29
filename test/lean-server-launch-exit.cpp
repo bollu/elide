@@ -26,7 +26,7 @@ int main() {
     nread = state._read_stderr_str_from_child_blocking();
     fprintf(stderr, "   child response [stderr]: '%s'.\n",
       state.child_stderr_buffer.to_string_len(nread));
-    state.child_stderr_buffer.dropNBytes(nread); 
+    state.child_stderr_buffer.dropNBytesMut(nread); 
 
     fprintf(stderr, "### request [initialize]\n");
     json_object *req = lspCreateInitializeRequest();

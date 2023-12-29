@@ -1,3 +1,5 @@
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <dirent.h>
 #include <assert.h>
@@ -208,9 +210,9 @@ LeanServerState LeanServerState::init(const char *file_path) {
     // parent->child, child will only read from this end, so close write end.
     close(state.parent_buffer_to_child_stdin[PIPE_WRITE_IX]);
 
-    // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDIN`
+    // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDOUT`
     dup2(state.child_stderr_to_parent_buffer[PIPE_WRITE_IX], STDERR_FILENO);
-    // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDIN`
+    // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDOUT`
     dup2(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
     // it is only legal to call `read()` on stdin. So we tie the `PIPE_READ_IX` to `STDIN`
     dup2(state.parent_buffer_to_child_stdin[PIPE_READ_IX], STDIN_FILENO);
@@ -346,7 +348,7 @@ json_object *LeanServerState::_read_next_json_record_from_buffer_nonblocking() {
   json_tokener_free(tok);
 
   // drop the response from the buffer, now that we have correctly consumes the json request.
-  child_stdout_buffer.dropNBytes(header_line_end_ix + content_length);
+  child_stdout_buffer.dropNBytesMut(header_line_end_ix + content_length);
 
   return o;
 }
@@ -2218,14 +2220,29 @@ void ctrlpDraw(const CtrlPView *view, abuf *ab) {
 
 }
 
+bool RgProcess::isRunningNonBlocking() {
+  if (!this->running) { return false; }
+  int status;
+  int ret = waitpid(this->childpid, &status, WNOHANG);
+  if (ret == 0) {
+    // status has not changed.
+    return true; // process is still running.
+  } else if (ret == -1) {
+    perror("waitpid threw error in monitoring `rg` process.");
+    die("waitpid threw error in monitoring `rg`!");
+  } else {
+    assert(ret > 0);
+    this->running = false;
+  }
+  return this->running;
+}
 
 // (re)start the process, and run it asynchronously.
 void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> args) {
-  assert(!this->initialized);
-
-  this->childpid = fork();
+  assert(!this->running);
   CHECK_POSIX_CALL_0(pipe2(this->child_stdout_to_parent_buffer, O_NONBLOCK));
 
+  this->childpid = fork();
   if(childpid == -1) {
     perror("ERROR: fork failed.");
     exit(1);
@@ -2236,15 +2253,20 @@ void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> arg
     // child->parent, child will only write to this pipe, so close read end.
     close(this->child_stdout_to_parent_buffer[PIPE_READ_IX]);
 
+    // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDOUT`
+    dup2(this->child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
+
     if (chdir(working_dir) != 0) {
       die("ERROR: unable to run `rg, cannot switch to working directory '%s'", working_dir);
     }; 
     const char * process_name = "rg";
-    char **argv = (char **) calloc(sizeof(char*), args.size() + 1);
+    // process_name, arg1, ..., argN, NULL
+    char **argv = (char **) calloc(sizeof(char*), args.size() + 2);
+    argv[0] = strdup(process_name);
     for(int i = 0; i < args.size(); ++i) {
-      argv[i] = strdup(args[i].c_str()); 
+      argv[1 + i] = strdup(args[i].c_str()); 
     }
-    argv[args.size()] = NULL;
+    argv[1+args.size()] = NULL;
     if (execvp(process_name, argv) == -1) {
       perror("failed to launch ripgrep");
       abort();
@@ -2256,7 +2278,7 @@ void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> arg
 
     // parent.
     assert(this->childpid != 0);
-    this->initialized = true;
+    this->running = true;
   }
 };
 
@@ -2264,9 +2286,8 @@ void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> arg
 void RgProcess::killSync() {
   this->lines.clear();
   kill(this->childpid, SIGKILL);
-  this->initialized = false;
+  this->running = false;
 }
-
 
 
 int RgProcess::_read_stdout_str_from_child_nonblocking() {
@@ -2284,19 +2305,27 @@ int RgProcess::_read_stdout_str_from_child_nonblocking() {
   return nread;
 };
 
-void RgProcess::readLineNonBlocking() {
+int RgProcess::readLinesNonBlocking() {
   _read_stdout_str_from_child_nonblocking();
+  int nlines = 0;
   int newline_ix = 0;
   for(; newline_ix < this->child_stdout_buffer.len(); newline_ix++) {
-    if (this->child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n') {
-      break;
+    for(; newline_ix < this->child_stdout_buffer.len(); newline_ix++) {
+      if (this->child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n') {
+        break;
+      }
     }
+    if (newline_ix >= this->child_stdout_buffer.len()) {
+      return nlines; // found no newline thingie.
+    }
+    assert (newline_ix < this->child_stdout_buffer.len());
+    assert(child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n');
+    nlines++;
+    // if we find 'a\nbc' (newline_ix=1) we want to:
+    //   . take the string 'a' (1).
+    //   . drop the string 'a\n' (2).
+    this->lines.push_back(this->child_stdout_buffer.takeNBytes(newline_ix));
+    child_stdout_buffer.dropNBytesMut(newline_ix+1);
   }
-  if (newline_ix < this->child_stdout_buffer.len()) {
-    return; // found no newline thingie.
-  }
-  assert(child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n');
-  // if we find '\n', we want to take the empty string. if we find
-  this->lines.push_back(this->child_stdout_buffer.takeNBytes(newline_ix));
-  child_stdout_buffer.dropNBytes(newline_ix);
+  return nlines;
 }

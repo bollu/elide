@@ -38,6 +38,13 @@ add_executable(edit edit.cpp)
 target_link_libraries(edit PRIVATE libedtr)
 add_test(NAME edit COMMAND $<TARGET_FILE:edit>)
 
+
+add_executable(rg rg.cpp)
+target_link_libraries(rg PRIVATE libedtr)
+add_test(NAME rg COMMAND $<TARGET_FILE:edit>)
+file(COPY rg.txt DESTINATION .) # used to test rg.
+file(COPY rg2.txt DESTINATION .) # used to test rg.
+
 add_executable(uv uv.cpp)
 target_link_libraries(uv PRIVATE libedtr)
 add_test(NAME uv COMMAND $<TARGET_FILE:uv>)

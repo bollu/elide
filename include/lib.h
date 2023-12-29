@@ -252,7 +252,7 @@ struct abuf {
 
   // drop a prefix of the buffer. If `drop_len = 0`, then this operation is a
   // no-op.
-  void dropNBytes(int drop_len) {
+  void dropNBytesMut(int drop_len) {
     char *bnew = (char *)malloc(sizeof(char) * (_len - drop_len));
     memcpy(bnew, this->_buf + drop_len, this->_len - drop_len);
     free(this->_buf);
@@ -683,7 +683,7 @@ static InfoViewTab infoViewTabCycleNext(InfoViewTab t);
 // which is a closure plus a childpid. 
 struct RgProcess {
   // whether process has been initialized.
-  bool initialized = false;
+  bool running = false;
   // stdout buffer of the child that is stored here before being processed.
   abuf child_stdout_buffer;
   int child_stdout_to_parent_buffer[2]; // pipe.
@@ -698,14 +698,17 @@ struct RgProcess {
   // kills the process synchronously.
   void killSync();
 
-  // attempt to read a line of input from `rg`.
-  void readLineNonBlocking();
-
+  // attempt to lines of input from `rg`, and prints the number of lines
+  // that were successfully added to `this->lines`.
+  int readLinesNonBlocking();
+  
+  // TODO: implement this so we can be a little bit smarter,
+  // and show an indication that we have finished.  
+  // // returns whether the process is running.
+  bool isRunningNonBlocking();
 private:
   // read from child in a nonblocking fashion.
   int _read_stdout_str_from_child_nonblocking();
-
-
 };
 
 // // enapsulates the logic of having a single line of text area.

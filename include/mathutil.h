@@ -78,6 +78,10 @@ struct Ix {
     return this->ix <= other.ix;
   }
 
+  bool operator > (const Ix<T> &other) const {
+    return this->ix > other.ix;
+  }
+
   bool operator <(const Size<T> &other) const;
 
   bool operator == (const Ix<T> &other) {
