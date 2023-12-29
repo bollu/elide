@@ -2065,10 +2065,12 @@ void ctrlpHandleInput(CtrlPView *view, int c) {
     } else if (c == 'l' || c == KEYEVENT_ARROW_RIGHT) {
       view->textCol = 
         clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
-    } else if (c == '$') {
+    } else if (c == '$' || c == CTRL_KEY('e')) {
       view->textCol = view->textArea.ncodepoints();
-    } else if (c == '0') {
+    } else if (c == '0' || c == CTRL_KEY('a')) {
       view->textCol = 0;
+    } else if (c == 'd' || c == CTRL_KEY('k')) {
+      view->textArea.truncateNCodepoints(view->textCol);
     } else if (c == 'w') {
         // TODO: move word.
       view->textCol = 
@@ -2105,10 +2107,16 @@ void ctrlpHandleInput(CtrlPView *view, int c) {
     } else if (c == CTRL_KEY('p')) {
       view->quitPressed = true;
     } else if (c == KEYEVENT_BACKSPACE) {
-      if (view->textArea.ncodepoints() > 0) {
+      if (view->textCol > 0) {
         view->textArea.delCodepointAt(view->textCol.largestIx());
         view->textCol = view->textCol.sub0(1);
-      }
+      } 
+    } else if (c == CTRL_KEY('e')) { // readline
+      view->textCol = view->textArea.ncodepoints();
+    } else if (c == CTRL_KEY('a')) {
+      view->textCol = 0;
+    } else if (c == CTRL_KEY('k')) {
+      view->textArea.truncateNCodepoints(view->textCol);
     } else if (isprint(c)) {
       view->textArea.insertCodepointBefore(view->textCol, (const char *)&c);
       view->textCol += 1;
