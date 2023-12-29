@@ -988,6 +988,10 @@ void editorDrawRows(abuf &ab) {
         for(Size<Codepoint> i(0); i <= NCOLS; ++i) {
           drawColWithCursor(&ab, &row, i, g_editor.curFile.cursor.col, textAreaMode);
         }
+      } else {
+        for(Ix<Codepoint> i(0); i < NCOLS; ++i) {
+          ab.appendCodepoint(row.getCodepoint(i));
+        }
       }
     } else if (filerow == g_editor.curFile.rows.size() && g_editor.curFile.cursor.row == filerow) {
         abufAppendCodepointWithCursor(&ab, textAreaMode, " ");

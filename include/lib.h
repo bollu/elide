@@ -240,7 +240,7 @@ struct abuf {
     this->getCodepoint(this->ncodepoints().mirrorIx(ix));
   }
 
-private:
+protected:
   char *_buf = nullptr;
   int _len = 0;
 
@@ -740,27 +740,6 @@ struct FileRow : public abuf {
     return true;
   }
   
-  FileRow(const FileRow &other) {
-    *this = other;
-  }
-
-  ~FileRow() {
-    free(this->_buf);
-  }
-
-  FileRow() = default;
-
-  FileRow &operator =(const FileRow &other) {
-    this->_len = other._len;
-    this->_buf = (char*)realloc(this->_buf, sizeof(char) * this->_len);
-    // memcpy is legal only if _len > 0
-    if (other._len > 0) {
-      memcpy(_buf, other._buf, this->_len);
-    }
-
-    return *this;
-  }
-
   Size<Byte> nbytes() const {
     return Size<Byte>(this->_len);
   }
@@ -961,12 +940,7 @@ struct FileRow : public abuf {
     E.is_dirty = true;
 
   }
-
-
-
 private:
-  int _len = 0;
-  char *_buf = nullptr; // BUFFER (nonn null terminated.)
   
   // should be private? since it updates info cache.
   void rebuild_render_cache(FileConfig &E) {
