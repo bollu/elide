@@ -529,7 +529,7 @@ void fileConfigInsertRowBefore(FileConfig *f, int at, const char *s, size_t len)
     return;
   }
 
-  f->rows.push_back(FileRow()); 
+  f->rows.push_back(abuf()); 
   for(int i = f->rows.size() - 1; i >= at + 1; i--)  {
     f->rows[i] = f->rows[i - 1];   
   }
@@ -585,7 +585,7 @@ void fileConfigInsertEnterKey(FileConfig *f) {
     f->cursor.col = Size<Codepoint>(0);
   } else {
     // at column other than first, so chop row and insert new row.
-    FileRow *row = &f->rows[f->cursor.row];
+    abuf *row = &f->rows[f->cursor.row];
     // TODO: simplify code by using `abuf`.
     // legal previous row, copy the indentation.
     // note that the checks 'num_indent < row.size' and 'num_indent < f->cursor.col' are *not* redundant.
@@ -631,7 +631,7 @@ void fileConfigInsertCharBeforeCursor(FileConfig *f, int c) {
     fileConfigInsertRowBefore(f, f->rows.size(), "", 0);
   }
 
-  FileRow *row = &f->rows[f->cursor.row];
+  abuf *row = &f->rows[f->cursor.row];
 
   // if `c` is one of the delinators of unabbrevs.
   if (row->ncodepoints() > Size<Codepoint>(0) && 
@@ -667,7 +667,7 @@ void fileConfigXCommand(FileConfig *f) {
   f->makeDirty();
   if (f->cursor.row == f->rows.size()) { return; }
 
-  FileRow *row = &f->rows[f->cursor.row];
+  abuf *row = &f->rows[f->cursor.row];
 
   // nothing under cursor.
   if (f->cursor.col == row->ncodepoints()) { return; }
@@ -687,7 +687,7 @@ void fileConfigBackspace(FileConfig *f) {
   }
 
   f->makeDirty();
-  FileRow *row = &f->rows[f->cursor.row];
+  abuf *row = &f->rows[f->cursor.row];
 
   // if col > 0, then delete at cursor. Otherwise, join lines toegether.
   if (f->cursor.col > Size<Codepoint>(0)) {
@@ -745,6 +745,8 @@ void fileConfigSyncLeanState(FileConfig *file_config) {
     free(file_config->text_document_item.text);
     abuf buf;
     fileConfigRowsToBuf(file_config, &buf);
+    // assert(buf.len() > 0);
+    // assert(buf.buf()[buf.len() - 1] == 0); // must be null-termianted.
     file_config->text_document_item.text = buf.to_string();
   }
   assert(file_config->text_document_item.is_initialized);
@@ -981,7 +983,7 @@ void editorDrawRows(abuf &ab) {
       g_editor.vim_mode == VM_NORMAL ? TextAreaMode::TAM_Normal : TAM_Insert;
 
     if (filerow < g_editor.curFile.rows.size()) {
-      const FileRow &row = g_editor.curFile.rows[filerow];
+      const abuf &row = g_editor.curFile.rows[filerow];
       const Size<Codepoint> NCOLS = 
         clampu<Size<Codepoint>>(row.ncodepoints(), g_editor.screencols - LINE_NUMBER_NUM_CHARS - 1);
       assert(g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT);
@@ -1377,7 +1379,7 @@ void editorSetStatusMessage(const char *fmt, ...) {
 
 // row can be `NULL` if one wants to indicate the last, sentinel row.
 /*
-RowMotionRequest fileRowMoveCursorIntraRow(Cursor *cursor, FileRow *row, LRDirection dir) {
+RowMotionRequest fileRowMoveCursorIntraRow(Cursor *cursor, abuf *row, LRDirection dir) {
   if (dir == LRDirection::None) { return RowMotionRequest::None; }
 
   Cursor cursorNew = cursor;
@@ -1423,7 +1425,7 @@ void fileConfigCursorMoveWordNext(FileConfig *f) {
   // stop at end of line.
   if (f->cursor.row == f->rows.size()) { return; }
   assert (f->cursor.row < f->rows.size());
-  FileRow *row = &f->rows[f->cursor.row];
+  abuf *row = &f->rows[f->cursor.row];
 
   if (f->cursor.col == row->ncodepoints()) {
     f->cursor.row++;
@@ -1467,7 +1469,7 @@ void fileConfigCursorMoveWordPrev(FileConfig *f) {
     return;
   }
   assert(f->cursor.row < f->rows.size());
-  FileRow *row = &f->rows[f->cursor.row];
+  abuf *row = &f->rows[f->cursor.row];
 
   assert(f->cursor.col > Size<Codepoint>(0));
   f->cursor.col = f->cursor.col.prev(); // advance.
@@ -1541,7 +1543,7 @@ void fileConfigCursorMoveCharRightNoWraparound(FileConfig *f) {
 // delete till the end of the row.
 void fileConfigDeleteTillEndOfRow(FileConfig *f) {
   if (f->cursor.row < f->rows.size()) {
-    FileRow *row = &f->rows[f->cursor.row]; 
+    abuf *row = &f->rows[f->cursor.row]; 
     while(row->ncodepoints() > f->cursor.col) {
       row->delCodepointAt(row->ncodepoints().largestIx());
     }

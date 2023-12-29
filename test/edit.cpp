@@ -54,7 +54,7 @@ void fileConfigSetTestString(FileConfig &f, const char *s) {
   f.cursor.col = Size<Codepoint>(cursor_col);
 
   for(const std::string &s : lines) {
-     FileRow row;
+     abuf row;
      row.setBytes(s.c_str(), s.size());
      f.rows.push_back(row);
   }

@@ -57,12 +57,19 @@ struct abuf {
     assert(this->_buf && "unable to append string");
     memcpy(this->_buf + this->_len, s, slen);
     this->_len += slen;
+    this->_is_dirty = true;
+  }
+
+  void appendbuf(const abuf *other) {
+    appendbuf(other->_buf, other->_len);
+    this->_is_dirty = true;
   }
 
   // append a UTF-8 codepoint.
   void appendCodepoint(const char *codepoint) {
     const int len = utf8_next_code_point_len(codepoint);
     this->appendbuf(codepoint, len);
+    this->_is_dirty = true;
   }
 
   // TODO: rename API
@@ -471,15 +478,10 @@ enum VimMode {
   VM_CTRLP, // mode where control-p search anything results show up.
 };
 
-struct FileRow;
-
-struct FileRow;
-
 struct Cursor {
 // private:
   Size<Codepoint> col = Size<Codepoint>(0); // number of graphemes to move past from the start of the row to get to the current one.
   int row = 0; // index of row. Must be within [0, file->nrows].
-  // friend class FileRow; // TODO: only allow FileRow to modify cursor contents;
 };
 
 
@@ -750,7 +752,7 @@ struct CompletionView {
 // TextDocument for LSP does not need to be cached, as its value monotonically increases,
 // even during undo/redo.
 struct FileConfigUndoState {
-  std::vector<FileRow> rows; 
+  std::vector<abuf> rows; 
   Cursor cursor; 
   int cursor_render_col = 0;
   int scroll_row_offset = 0;
@@ -881,21 +883,6 @@ struct EditorConfig {
 
 extern EditorConfig g_editor; // global editor handle.
 
-
-struct FileRow : public abuf {
-private:
-  
-  void _checkIsWellFormedUtf8() const {
-    int ix = 0;
-    while(ix < this->_len) {
-      ix += utf8_next_code_point_len(this->_buf + ix);
-    };
-    assert(ix == this->_len);
-
-  }
-
-
-};
 
 void enableRawMode();
 void disableRawMode();
