@@ -1021,9 +1021,26 @@ void editorDrawInfoViewGoal(abuf *ab, const char *str) {
 
 }
 
+bool isInfoViewTacticsHoverTabEnabled() {
+  json_object  *result = nullptr;
+  json_object_object_get_ex(g_editor.curFile.leanHoverViewHover, "result", &result);
+  return result != nullptr; 
+}
+
+bool isInfoViewTacticsTacticsTabEnabled() {
+  json_object  *result = nullptr;
+  json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainTermGoal, "result", &result);
+  if (result != nullptr) { return true; }; 
+  
+  json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainGoal, "result", &result);
+  if (result != nullptr) { return true; }; 
+  return false;
+}
+
 void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
     assert(tab >= 0 && tab < IVT_NumTabs);
-    const char *str[IVT_NumTabs] = {"Tactics", "Messages"};    
+    const char *str[IVT_NumTabs] = {"Tactics", "Hover","Messages"};    
+    bool enabled[IVT_NumTabs] = {isInfoViewTacticsTacticsTabEnabled(), isInfoViewTacticsHoverTabEnabled(), true};
     // TODO: add a concept of a tab being enabled.
 
     for(int i = 0; i < IVT_NumTabs; ++i) {
@@ -1035,9 +1052,10 @@ void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
       buf->appendstr("┎");
       if (i == (int) tab) {
         buf->appendstr("■ ");
+      } else if (!enabled[i]) {
+        buf->appendstr("♯ "); // disabled.
       } else {
         buf->appendstr("□ ");
-        // buf->appendstr("♯ "); // disabled.
       }
       
       buf->appendstr(str[i]);
@@ -1052,22 +1070,9 @@ void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
 void editorDrawInfoViewTacticsTab() {
   abuf ab;
 
-  // It’s possible that the cursor might be displayed in the middle of the
-  // screen somewhere for a split second while the terminal is drawing to the
-  // screen. To make sure that doesn’t happen, let’s hide the cursor before
-  // refreshing the screen, and show it again immediately after the refresh
-  // finishes.
   ab.appendstr("\x1b[?25l"); // hide cursor
-
-  // EDIT: no need to refresh screen, screen is cleared
-  // line by line @ editorDrawRows.
-  //
-  // EDIT: I am not sure if this extra complexity is worth it!
-  //
   // VT100 escapes.
-  // \x1b: escape.
-  // J: erase in display.
-  // [2J: clear entire screen
+  // \x1b: escape; J: erase in display.;[2J: clear entire screen
   // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
   // cursor to bottom
   //          0 is default arg, so [J: clear screen from cursor to bottom
@@ -1088,52 +1093,6 @@ void editorDrawInfoViewTacticsTab() {
   //   json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
   // ab.appendfmtstr(120, "trmgl: %s \x1b[K \r\n", 
   //   json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainTermGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
-  do {
-    // Result: {
-    //   "range": {
-    //     "start": { "line": 2,"character": 4 },
-    //     "end": { "line": 2, "character": 7 }
-    //   },
-    //   "contents": {
-    //     "value": "```lean\nfoo (y : String) : String\n```",
-    //     "kind": "markdown"
-    //   }
-    // }
-    json_object  *result = nullptr;
-    json_object_object_get_ex(g_editor.curFile.leanHoverViewHover, "result", &result);
-    if (result == nullptr) {
-      ab.appendstr("▶ Hover: --- \x1b[K \r\n");
-    } else {
-      json_object *result_contents = nullptr;
-      json_object_object_get_ex(result, "contents", &result_contents);
-      assert(result_contents != nullptr);
-
-      json_object *result_contents_value = nullptr;
-      json_object_object_get_ex(result_contents, "value", &result_contents_value);
-      assert (result_contents_value != nullptr);
-      assert(json_object_get_type(result_contents_value) == json_type_string);
-      const char *s = json_object_get_string(result_contents_value); 
-      ab.appendstr("▼ Hover: \x1b[K \r\n");
-      std::vector<std::string> lines; lines.push_back(std::string());
-      for(int i = 0; i < strlen(s); ++i) {
-        std::string &line = lines[lines.size() - 1];
-        if (s[i] == '\n') {
-          lines.push_back(std::string());
-        } else if (line.size() > 100) {
-          line += "–"; // line break
-          lines.push_back(std::string());
-        } else {
-          line += s[i];
-        }
-      } // end while.
-
-      for(std::string &line : lines) {
-        ab.appendstr(line.c_str());
-        ab.appendstr("\x1b[K \r\n");
-      }
-    } // end else 'result != nullptr.
-  } while(0);
-
 
   do {
     json_object  *result = nullptr;
@@ -1208,67 +1167,137 @@ void editorDrawInfoViewTacticsTab() {
 void editorDrawInfoViewMessagesTab() {
   abuf ab;
 
-  // It’s possible that the cursor might be displayed in the middle of the
-  // screen somewhere for a split second while the terminal is drawing to the
-  // screen. To make sure that doesn’t happen, let’s hide the cursor before
-  // refreshing the screen, and show it again immediately after the refresh
-  // finishes.
   ab.appendstr("\x1b[?25l"); // hide cursor
-
-  // EDIT: no need to refresh screen, screen is cleared
-  // line by line @ editorDrawRows.
-  //
-  // EDIT: I am not sure if this extra complexity is worth it!
-  //
-  // VT100 escapes.
-  // \x1b: escape.
-  // J: erase in display.
-  // [2J: clear entire screen
-  // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
-  // cursor to bottom
-  //          0 is default arg, so [J: clear screen from cursor to bottom
-  ab.appendstr("\x1b[2J");
-
-  // H: cursor position
-  // [<row>;<col>H   (args separated by ;).
-  // Default arguments for H is 1, so it's as if we had sent [1;1H
-  ab.appendstr("\x1b[1;1H");
-
-  // always append a space, since we decrement a row from screen rows
-  // to make space for status bar.
+  ab.appendstr("\x1b[2J");   // J: erase in display.
+  ab.appendstr("\x1b[1;1H");  // H: cursor position
   editorDrawInfoViewTacticsTabbar(IVT_Messages, &ab);
-  // The K command (Erase In Line) erases part of the current line.
-  // by default, arg is 0, which erases everything to the right of the
-  // cursor.
-  ab.appendstr("\x1b[K");
+  ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
+  ab.appendstr("\r\n");  // always append a space
 
-  // always append a space, since we decrement a row from screen rows
-  // to make space for status bar.
-  ab.appendstr("\r\n");
 
 
   // move cursor to correct row;col.
   char buf[32];
-  // H: cursor position
-  // [<row>;<col>H   (args separated by ;).
-  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  // H: cursor position [<row>;<col>H   (args separated by ;).
   sprintf(buf, "\x1b[%d;%dH", 1, 1);
   ab.appendstr(buf);
-
-  // show hidden cursor
-  ab.appendstr("\x1b[?25h");
-
-
+  ab.appendstr("\x1b[?25h");  // show hidden cursor
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 
 }
 
-void editorDrawInfoView() {
-  if(g_editor.curFile.infoViewTab == IVT_Tactic) {
-    editorDrawInfoViewTacticsTab();
-  } else if (g_editor.curFile.infoViewTab == IVT_Messages) {
-    editorDrawInfoViewMessagesTab();
+
+void editorDrawInfoViewHoverTab() {
+  abuf ab;
+
+  ab.appendstr("\x1b[?25l"); // hide cursor
+  ab.appendstr("\x1b[2J");   // J: erase in display.
+  ab.appendstr("\x1b[1;1H");  // H: cursor position
+  editorDrawInfoViewTacticsTabbar(IVT_Hover, &ab);
+  ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
+  ab.appendstr("\r\n");  // always append a space
+
+  do {
+    json_object  *result = nullptr;
+    json_object_object_get_ex(g_editor.curFile.leanHoverViewHover, "result", &result);
+    if (result == nullptr) {
+      ab.appendstr("▶ Hover: --- \x1b[K \r\n");
+    } else {
+      json_object *result_contents = nullptr;
+      json_object_object_get_ex(result, "contents", &result_contents);
+      assert(result_contents != nullptr);
+
+      json_object *result_contents_value = nullptr;
+      json_object_object_get_ex(result_contents, "value", &result_contents_value);
+      assert (result_contents_value != nullptr);
+      assert(json_object_get_type(result_contents_value) == json_type_string);
+      const char *s = json_object_get_string(result_contents_value); 
+      ab.appendstr("▼ Hover: \x1b[K \r\n");
+      std::vector<std::string> lines; lines.push_back(std::string());
+      for(int i = 0; i < strlen(s); ++i) {
+        std::string &line = lines[lines.size() - 1];
+        if (s[i] == '\n') {
+          lines.push_back(std::string());
+        } else if (line.size() > 100) {
+          line += "–"; // line break
+          lines.push_back(std::string());
+        } else {
+          line += s[i];
+        }
+      } // end while.
+
+      for(std::string &line : lines) {
+        ab.appendstr(line.c_str());
+        ab.appendstr("\x1b[K \r\n");
+      }
+    } // end else 'result != nullptr.
+  } while(0);
+
+
+
+
+  // move cursor to correct row;col.
+  char buf[32];
+  // H: cursor position [<row>;<col>H   (args separated by ;).
+  sprintf(buf, "\x1b[%d;%dH", 1, 1);
+  ab.appendstr(buf);
+  ab.appendstr("\x1b[?25h");  // show hidden cursor
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+
+}
+
+
+InfoViewTab infoViewTabCycleNext(InfoViewTab t) {
+  bool enabled[IVT_NumTabs] = {isInfoViewTacticsTacticsTabEnabled(), isInfoViewTacticsHoverTabEnabled(), true};
+  bool foundEnabled = false;
+  t = InfoViewTab(((int) t + 1)  % IVT_NumTabs);
+  for(int i = 0; i < IVT_NumTabs; ++i) {
+    if (enabled[t]) {
+      foundEnabled = true;
+      break;
+    } else {
+      t = InfoViewTab(((int) t + 1) % IVT_NumTabs);
+    }
   }
+  assert(foundEnabled && "unable to find any enabled tab on the info view.");
+  return t;
+}
+
+
+
+void editorDrawInfoView() {
+  bool enabled[IVT_NumTabs] = {isInfoViewTacticsTacticsTabEnabled(), isInfoViewTacticsHoverTabEnabled(), true};
+  bool foundEnabled = false;
+  for(int i = 0; i < IVT_NumTabs; ++i) {
+    if (enabled[g_editor.curFile.infoViewTab]) {
+      foundEnabled = true;
+      break;
+    } else {
+      g_editor.curFile.infoViewTab = InfoViewTab((int(g_editor.curFile.infoViewTab) + 1) % IVT_NumTabs);
+    }
+  }
+  assert(foundEnabled && "unable to find any enabled tab on the info view.");
+
+  if(g_editor.curFile.infoViewTab <= IVT_Tactic && 
+        isInfoViewTacticsTacticsTabEnabled()) {
+      editorDrawInfoViewTacticsTab();
+    return;
+  }
+
+  if(g_editor.curFile.infoViewTab <= IVT_Hover &&
+        isInfoViewTacticsHoverTabEnabled()) {
+      editorDrawInfoViewHoverTab();
+      return;
+  }
+
+  if (g_editor.curFile.infoViewTab <= IVT_Messages) {
+    editorDrawInfoViewMessagesTab();
+    return;
+  }
+
+  assert(false && "unreachable, should not reach here in drawInfoView.");
+
+
 }
 
 void editorDraw() {

@@ -7,5 +7,7 @@ structure Bar where
 def f (bar : Bar) : Int := 
   by 
   . cases bar  
+    case foo =>
+      
    
   
