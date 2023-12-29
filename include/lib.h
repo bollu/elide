@@ -496,7 +496,11 @@ struct LeanServerState {
                                LeanServerCursorInfo cinfo);
 
   static LeanServerState init(const char *file_path);
-
+  ~LeanServerState() {
+    for(json_object *o : this->unhandled_server_requests) {
+      json_object_put(o);
+    }
+  }
 private:
 };
 
@@ -969,6 +973,7 @@ void fileConfigLaunchLeanServer(FileConfig *file_config);
 
 
 // Load the abbreviation dictionary from the filesystem.
+// NOTE: this steals the pointer to `o`.
 void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o);
 
 // Load the abbreviation dictionary from the filesystem.

@@ -1706,8 +1706,7 @@ void editorProcessKeypress() {
   else if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
     switch(c) {
     case 'q': {
-      fileConfigSave(&g_editor.curFile);
-      exit(0);
+      g_editor.vim_mode = VM_NORMAL;
       return;
     }
     case '\t': {
@@ -2043,6 +2042,7 @@ void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o) {
     i++;
   }
   dict->is_initialized = true;
+  json_object_put(o);
 };
 
 // Load the abbreviation dictionary from the filesystem.
