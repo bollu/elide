@@ -283,7 +283,6 @@ int LeanServerState::_read_stderr_str_from_child_blocking() {
 
 LspRequestId LeanServerState::write_request_to_child_blocking(const char * method, json_object *params) {
   const int id = this->next_request_id++;
-
   json_object *o = json_object_new_object();
   json_object_object_add(o, "jsonrpc", json_object_new_string("2.0"));
   json_object_object_add(o, "id", json_object_new_int(id));
@@ -300,6 +299,7 @@ LspRequestId LeanServerState::write_request_to_child_blocking(const char * metho
   const int req_len = sprintf(request_str, "Content-Length: %d\r\n\r\n%s", obj_strlen, obj_str);
   this->_write_str_to_child(request_str, req_len);
   free(request_str);
+  json_object_put(o);
   return LspRequestId(id);
 }
 
@@ -318,6 +318,7 @@ void LeanServerState::write_notification_to_child_blocking(const char * method, 
   char *request_str = (char*)calloc(sizeof(char), obj_strlen + 128);
   const int req_len = sprintf(request_str, "Content-Length: %d\r\n\r\n%s", obj_strlen, obj_str);
   this->_write_str_to_child(request_str, req_len);
+  json_object_put(o);
   free(request_str);
 }
 
@@ -718,8 +719,8 @@ void fileConfigLaunchLeanServer(FileConfig *file_config) {
   // file_config->lean_server_state = LeanServerState::init(NULL); // start lean --server.  
 
   json_object *req = lspCreateInitializeRequest();
-  LspRequestId request_id = file_config->lean_server_state.write_request_to_child_blocking("initialize", req);
-  json_object_put(req);
+  LspRequestId request_id = 
+    file_config->lean_server_state.write_request_to_child_blocking("initialize", req);
 
   json_object *response = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
@@ -782,7 +783,8 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   }
   req = lspCreateLeanPlainGoalRequest(file_config->text_document_item.uri, 
     Position(file_config->cursor.row, cursorColBytes.size));
-  request_id = file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
+  request_id = 
+    file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
   file_config->leanInfoViewPlainGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // $/lean/plainTermGoal
@@ -794,7 +796,8 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   assert(file_config->leanInfoViewPlainTermGoal == nullptr);
   req = lspCreateLeanPlainTermGoalRequest(file_config->text_document_item.uri, 
     Position(file_config->cursor.row, cursorColBytes.size));
-  request_id = file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
+  request_id = 
+    file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
   file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // textDocument/hover
@@ -1860,9 +1863,10 @@ void initEditor() {
     die("getWindowSize");
   };
   static const int BOTTOM_INFO_PANE_HEIGHT = 2; g_editor.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
-  const char *abbrev_path = get_abbreviations_dict_path();
+  char *abbrev_path = get_abbreviations_dict_path();
   printf("[loading abbreviations.json from '%s']\n", abbrev_path);
   load_abbreviation_dict_from_file(&g_editor.abbrevDict, abbrev_path);
+  free(abbrev_path);
   assert(g_editor.abbrevDict.is_initialized);
 }
 
@@ -2007,7 +2011,10 @@ char *get_abbreviations_dict_path() {
   char *exe_folder = dirname(get_executable_path());
   const int BUFSIZE = 2048;
   char *buf = (char*)calloc(BUFSIZE, sizeof(char));
-  snprintf(buf, BUFSIZE, "%s/%s", exe_folder, "abbreviations.json");  
+  
+  snprintf(buf, BUFSIZE, "%s/%s", exe_folder, "abbreviations.json"); 
+  free(exe_folder);
+
   return buf;
 }
 

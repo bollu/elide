@@ -37,6 +37,33 @@ struct abuf {
   abuf() = default;
   ~abuf() { free(_buf); }
 
+  static abuf from_steal_str(char *str) {
+    abuf out;
+    out._buf = str;
+    out._len = strlen(str);
+    return out;
+  }
+
+  static abuf from_copy_str(const char *str) {
+    abuf out;
+    out._buf = strdup(str);
+    out._len = strlen(str);
+    return out;
+  }
+
+  static abuf from_steal_buf(char *buf, int len) {
+    abuf out;
+    out._buf = buf;
+    out._len = len;
+    return out;
+  }
+
+  static abuf from_copy_buf(const char *buf, int len) {
+    abuf out;
+    out.appendbuf(buf, len);
+    return out;
+  }
+
   abuf &operator = (const abuf &other) {
     _len = other._len;
     _buf = (char*)realloc(_buf, sizeof(char) * _len);
@@ -452,7 +479,10 @@ struct LeanServerState {
 
   // high level APIs to write strutured requests and read responses.
   // write a request, and return the request sequence number.
+  // this CONSUMES params.
   LspRequestId write_request_to_child_blocking(const char *method, json_object *params);
+  // high level APIs to write a notification.
+  // this CONSUMES params.
   void write_notification_to_child_blocking(const char *method,
                                             json_object *params);
   json_object *read_json_response_from_child_blocking(LspRequestId request_id);
