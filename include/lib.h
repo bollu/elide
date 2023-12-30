@@ -259,7 +259,6 @@ struct abuf {
     this->_buf = bnew;
     this->_len -= drop_len;
     this->_is_dirty = true;
-
   }
 
   int len() const {
@@ -272,7 +271,7 @@ struct abuf {
 
   // if dirty, return `true` and reset the dirty state of `abuf`.
   bool whenDirty() {
-    bool out = this->_is_dirty;
+    const bool out = this->_is_dirty;
     this->_is_dirty = false;
     return out;
   }
@@ -414,6 +413,7 @@ struct abuf {
     abuf buf;
     buf._len = bytes.size;
     buf._buf = (char*)calloc(sizeof(char), buf._len);
+    buf._is_dirty  = true;
     for(int i = 0; i < buf._len; ++i) {
       buf._buf[i] = this->_buf[i];
     }
@@ -436,7 +436,7 @@ struct abuf {
 protected:
   char *_buf = nullptr;
   int _len = 0;
-  bool _is_dirty = false;
+  bool _is_dirty = true;
 
 };
 
@@ -705,7 +705,7 @@ struct RgProcess {
   // TODO: implement this so we can be a little bit smarter,
   // and show an indication that we have finished.  
   // // returns whether the process is running.
-  bool isRunningNonBlocking();
+  // bool isRunningNonBlocking();
 private:
   // read from child in a nonblocking fashion.
   int _read_stdout_str_from_child_nonblocking();

@@ -2156,31 +2156,25 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
       view->textCol += 1;
     }
   } 
-
-  if (view->textArea.whenDirty()) {
-    // nuke previous rg process, and clear all data it used to own.
-    view->rgProcess.killSync();
-
-    std::vector<std::string> dbgargs;
-    dbgargs.push_back("--files");
-    dbgargs.push_back("-g");
-    dbgargs.push_back("*");
-
-    // invoke the new rg process.
-    CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea);
-    view->rgProcess.execpAsync("/home/bollu/software/edtr/build", 
-    dbgargs);
-      // CtrlPView::rgArgsToCommandLineArgs(args));
-  }
-
-
 }
 
 void ctrlpDraw(CtrlPView *view, abuf *ab) {
-  // we need a function that is called each time x(.
-  if (view->rgProcess.isRunningNonBlocking()) {
-    view->rgProcess.readLinesNonBlocking();
+  if (view->textArea.whenDirty()) {
+    // nuke previous rg process, and clear all data it used to own.
+    view->rgProcess.killSync();
+    view->rgProcess = RgProcess ();
+    // invoke the new rg process.
+    CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea);
+    view->rgProcess.execpAsync(".", 
+      CtrlPView::rgArgsToCommandLineArgs(args));
   }
+
+
+
+  // we need a function that is called each time x(.
+  // if (view->rgProcess.isRunningNonBlocking()) {
+  view->rgProcess.readLinesNonBlocking();
+  // }
 
   ab->appendstr("\x1b[?25l"); // hide cursor
   ab->appendstr("\x1b[2J");   // J: erase in display.
@@ -2225,12 +2219,12 @@ void ctrlpDraw(CtrlPView *view, abuf *ab) {
   ab->appendstr("\x1b[K\r\n");
   ab->appendstr("━━━━━\x1b[K\r\n");
 
-  static const int NROWS = 5;
+  static const int NROWS = g_editor.screenrows - 5;
   for(int i = 0; i < view->rgProcess.lines.size() && i < NROWS; ++i) {
     const abuf &line = view->rgProcess.lines[i];
     const char *ELLIPSIS = "...";
     const int NELLIPSIS = strlen(ELLIPSIS );
-    const int NCOLS = 40;
+    const int NCOLS = g_editor.screencols - 20;
     const int NCODEPOINTS = NCOLS - NELLIPSIS;
 
     Ix<Codepoint> n(0);
@@ -2250,6 +2244,8 @@ void ctrlpDraw(CtrlPView *view, abuf *ab) {
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab->buf(), ab->len()));
 }
 
+/*
+// TODO: figure out how to implement this right!
 bool RgProcess::isRunningNonBlocking() {
   if (!this->running) { return false; }
   int status;
@@ -2266,9 +2262,12 @@ bool RgProcess::isRunningNonBlocking() {
   }
   return this->running;
 }
+*/
 
 // (re)start the process, and run it asynchronously.
 void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> args) {
+  this->lines = {};
+
   assert(!this->running);
   CHECK_POSIX_CALL_0(pipe2(this->child_stdout_to_parent_buffer, O_NONBLOCK));
 
@@ -2279,10 +2278,10 @@ void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> arg
   };
 
   if(childpid == 0) {
-    fclose(stderr);
+    close(STDIN_FILENO);
+    close(STDERR_FILENO);
     // child->parent, child will only write to this pipe, so close read end.
     close(this->child_stdout_to_parent_buffer[PIPE_READ_IX]);
-
     // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDOUT`
     dup2(this->child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
 
@@ -2315,8 +2314,6 @@ void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> arg
 // kills the process synchronously.
 void RgProcess::killSync() {
   if (!this->running) { return; }
-
-  this->lines.clear();
   kill(this->childpid, SIGKILL);
   this->running = false;
 }
@@ -2359,5 +2356,5 @@ int RgProcess::readLinesNonBlocking() {
     this->lines.push_back(this->child_stdout_buffer.takeNBytes(newline_ix));
     child_stdout_buffer.dropNBytesMut(newline_ix+1);
   }
-  return nlines;
+  assert(false && "unreachable");
 }

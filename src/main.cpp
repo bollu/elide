@@ -47,7 +47,7 @@ int main(int argc, char **argv){
     editorDraw();
     editorProcessKeypress();
     const long MICRO_TO_MILLI = 1000;
-    usleep(5 * MICRO_TO_MILLI);
+    usleep(MICRO_TO_MILLI);
 
     // printf("processing keypress..\n");
   };

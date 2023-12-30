@@ -8,6 +8,6 @@ def f (bar : Bar) : Int :=
   by 
   . cases bar  
     case mk =>
-      exact 42
+      exact b
 
 #eval f  
