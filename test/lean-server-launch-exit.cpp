@@ -20,7 +20,7 @@ int main() {
     json_object *response = NULL;
 
     enableRawMode();
-    LeanServerState state = LeanServerState::init(NULL);
+    LeanServerState state = LeanServerState::init({});
 
     fprintf(stderr, "### reading child [stderr], expecting 'starting lean --server'...\n");
     nread = state._read_stderr_str_from_child_blocking();

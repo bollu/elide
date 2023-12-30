@@ -32,10 +32,9 @@ json_object *lspCreateInitializeRequest() {
 
 
 
-void TextDocumentItem::init_from_file_path(const char *file_path) {
-
+void TextDocumentItem::init_from_file_path(fs::path file_path) {
   FILE *fp = NULL;
-  if ((fp = fopen(file_path, "r")) == NULL) {
+  if ((fp = fopen(file_path.c_str(), "r")) == NULL) {
       die("unable to create file from path '%s'.", file_path);
   }
 

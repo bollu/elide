@@ -133,11 +133,12 @@ void test9(AbbreviationDict *dict) {
 
 int main() {
   printf("### testing [exe path]\n");
-  printf("  %s\n", get_executable_path());
+  fs::path exe_path = get_executable_path();
+  printf("  %s\n", exe_path.c_str());
 
-  const char *abbrev_path = get_abbreviations_dict_path();
+  fs::path abbrev_path = get_abbreviations_dict_path();
   printf("testing [abbreviations.json path]\n");
-  printf("  %s\n", abbrev_path);
+  printf("  %s\n", abbrev_path.c_str());
 
   AbbreviationDict dict;
   printf("testing [loading abbreviations.json path]\n");

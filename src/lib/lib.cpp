@@ -101,16 +101,18 @@ void drawColWithCursor(abuf *dst, const abuf *row,
 // we search the directory tree of 'file_path'. If we find a `lakefile.lean`, then we call `lake --serve`
 // at that cwd. Otherwise, we call `lean --server` at the file working directory.
 // NOTE: the pointer `lakefile_dirpath` is consumed.
-void _exec_lean_server_on_child(const char *lakefile_dirpath) {
+void _exec_lean_server_on_child(std::optional<fs::path> lakefile_dirpath) {
   int process_error = 0;
   // no lakefile.
-  if (lakefile_dirpath == NULL) {
+  if (!lakefile_dirpath) {
     fprintf(stderr, "starting 'lean --server'...\n");
     const char *process_name = "lean";
     char * const argv[] = { strdup(process_name), strdup("--server"), NULL };
     process_error = execvp(process_name, argv);
   } else {
-    if (chdir(lakefile_dirpath) != 0) {
+    std::error_code ec;
+    fs::current_path(*lakefile_dirpath, ec);
+    if (ec) {
       die("ERROR: unable to switch to 'lakefile.lean' directory");
     }; 
     const char * process_name = "lake";
@@ -126,11 +128,10 @@ void _exec_lean_server_on_child(const char *lakefile_dirpath) {
 
 // tries to find the lake for `file_path`,
 // and returns NULL if file_path is NULL.
-char *get_lakefile_dirpath(const char *file_path) {
-  assert(file_path);
+std::optional<fs::path> get_lakefile_dirpath(fs::path file_path_cpp) {
   // walk up directory tree of 'file_path' in a loop, printing parents,
   // until we hit the root directory, then stop.
-  char *dirpath = strdup(file_path);
+  char *dirpath = strdup(file_path_cpp.c_str());
   dirpath = strdup(dirname(dirpath));
   
   int prev_inode = -1; // inode of child. if it equals inode of parent, then we have hit /. 
@@ -155,7 +156,7 @@ char *get_lakefile_dirpath(const char *file_path) {
       if (strcmp(file_name, "lakefile.lean") == 0) {
         char *realpath_dirpath = realpath(dirpath, NULL);
         free(dirpath);
-        return realpath_dirpath;
+        return std::optional<fs::path>(realpath_dirpath);
       }
     } // end readdir() while loop.
     closedir(dir);
@@ -169,13 +170,13 @@ char *get_lakefile_dirpath(const char *file_path) {
     dirpath = parent_path;
   } // end for loop over directory parents.
   
-  return NULL;
+  return {};
 }
 
 
 // create a new lean server.
 // if file_path == NULL, then create `lean --server`.
-LeanServerState LeanServerState::init(const char *file_path) {
+LeanServerState LeanServerState::init(std::optional<fs::path> file_path) {
   LeanServerState state;
 
   CHECK_POSIX_CALL_0(pipe(state.parent_buffer_to_child_stdin));
@@ -192,8 +193,8 @@ LeanServerState LeanServerState::init(const char *file_path) {
   fputs("\n===\n", state.child_stderr_log_file);
 
   if (file_path) {
-    state.lakefile_dirpath = get_lakefile_dirpath(file_path);
-    fprintf(stderr, "lakefile_dirpath: '%s'\n", state.lakefile_dirpath);
+    state.lakefile_dirpath = get_lakefile_dirpath(*file_path);
+    std::cerr << "lakefile_dirpath: " << (state.lakefile_dirpath ? state.lakefile_dirpath->string() : "NO LAKEFILE") << "\n";
   }
 
   pid_t childpid = fork();
@@ -707,9 +708,6 @@ void fileConfigBackspace(FileConfig *f) {
 
 
 void fileConfigLaunchLeanServer(FileConfig *file_config) {
-
-
-  assert(file_config->absolute_filepath != NULL);
   assert(file_config->lean_server_state.initialized == false);
   file_config->lean_server_state = LeanServerState::init(file_config->absolute_filepath); // start lean --server.  
   // file_config->lean_server_state = LeanServerState::init(NULL); // start lean --server.  
@@ -795,10 +793,10 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
 
 /*** file i/o ***/
-FileConfig::FileConfig(const char *filename) {
-  this->absolute_filepath = strdup(filename);
+FileConfig::FileConfig(fs::path absolute_filepath) {
+  this->absolute_filepath = absolute_filepath;
 
-  FILE *fp = fopen(filename, "a+");
+  FILE *fp = fopen(absolute_filepath.c_str(), "a+");
   if (!fp) {
     die("fopen");
   }
@@ -860,7 +858,7 @@ void fileConfigSave(FileConfig *f) {
   // | open for read and write
   // | create if does not exist
   // 0644: +r, +w
-  int fd = open(f->absolute_filepath, O_RDWR | O_CREAT, 0644);
+  int fd = open(f->absolute_filepath.c_str(), O_RDWR | O_CREAT, 0644);
   if (fd != -1) {
     editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
   }
@@ -1724,11 +1722,15 @@ void editorProcessKeypress() {
   else if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in normal mode
     FileConfig *f = g_editor.curFile();
     if (f == nullptr) {
-      ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
-      return;      
+      if (c ==  CTRL_KEY('p')) {
+        ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
+      } else if (c == 'q') {
+        exit(0);
+      }
+      return;
     }
-    assert(f != nullptr);
 
+    assert(f != nullptr);
     switch (c) {
     case CTRL_KEY('p'): {
       ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
@@ -1741,7 +1743,7 @@ void editorProcessKeypress() {
     }
     case 'q': {
       fileConfigSave(f);
-      die("bye!");
+      exit(0);
       return;
     }
     case 'u': {
@@ -1821,11 +1823,14 @@ void editorProcessKeypress() {
     assert (g_editor.vim_mode == VM_INSERT); 
     FileConfig *f = g_editor.curFile();
     if (f == nullptr) {
-      ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
-      return;      
+      if (c ==  CTRL_KEY('p')) {
+        ctrlpOpen(&g_editor.ctrlp, VM_INSERT, g_editor.original_cwd);
+      } else if (c == 'q') {
+        exit(0);
+      }
+      return;
     }
     assert(f != nullptr);
-
     // make an undo memento every second.
     f->mkUndoMementoRecent();
 
@@ -1868,10 +1873,9 @@ void initEditor() {
     die("getWindowSize");
   };
   static const int BOTTOM_INFO_PANE_HEIGHT = 2; g_editor.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
-  char *abbrev_path = get_abbreviations_dict_path();
-  printf("[loading abbreviations.json from '%s']\n", abbrev_path);
+  fs::path abbrev_path = get_abbreviations_dict_path();
+  printf("[loading abbreviations.json from '%s']\n", abbrev_path.c_str());
   load_abbreviation_dict_from_file(&g_editor.abbrevDict, abbrev_path);
-  free(abbrev_path);
   assert(g_editor.abbrevDict.is_initialized);
 }
 
@@ -1999,7 +2003,7 @@ SuffixUnabbrevInfo abbrev_dict_get_unabbrev(AbbreviationDict *dict, const char *
 };
 
 // get the path to the executable, so we can build the path to resources.
-char *get_executable_path() {
+fs::path get_executable_path() {
   const int BUFSIZE = 2048;
   char *buf = (char*)calloc(BUFSIZE, sizeof(char));
   const char *exe_path = "/proc/self/exe";
@@ -2008,19 +2012,17 @@ char *get_executable_path() {
   if (sz == -1) {
     die("unable to get path of executable, failed to read '%s'.", exe_path);
   }
-  return buf;
+  fs::path out(buf);
+  free(buf);
+  return out;
 }
 
 // get the path to `/path/to/exe/abbreviations.json`.
-char *get_abbreviations_dict_path() {
-  char *exe_folder = dirname(get_executable_path());
-  const int BUFSIZE = 2048;
-  char *buf = (char*)calloc(BUFSIZE, sizeof(char));
-  
-  snprintf(buf, BUFSIZE, "%s/%s", exe_folder, "abbreviations.json"); 
-  free(exe_folder);
-
-  return buf;
+fs::path get_abbreviations_dict_path() {
+  fs::path exe_path = get_executable_path();
+  fs::path exe_folder = exe_path.parent_path();
+  // char *exe_folder = dirname(strdup(exe_path.c_str()));
+  return exe_folder / "abbreviations.json";
 }
 
 
@@ -2052,8 +2054,8 @@ void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o) {
 };
 
 // Load the abbreviation dictionary from the filesystem.
-void load_abbreviation_dict_from_file(AbbreviationDict *dict, const char *abbrev_path) {
-  json_object *o = json_object_from_file(abbrev_path);
+void load_abbreviation_dict_from_file(AbbreviationDict *dict, fs::path abbrev_path) {
+  json_object *o = json_object_from_file(abbrev_path.c_str());
   if (o == NULL) {
     die("unable to load abbreviations from file '%s'.\n", abbrev_path);
   }
@@ -2173,7 +2175,7 @@ std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs ar
 };
 
 
-void ctrlpOpen(CtrlPView *view, VimMode previous_state, abuf cwd) {
+void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd) {
   view->cwd = cwd;
   view->textAreaMode = TAM_Insert;
   view->previous_state = previous_state;

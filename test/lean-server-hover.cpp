@@ -13,7 +13,7 @@ int main() {
   json_object *req = NULL, *response = NULL;
   LspRequestId request_id(-1);
 
-  LeanServerState state = LeanServerState::init(NULL);
+  LeanServerState state = LeanServerState::init({});
 
   fprintf(stderr, "### reading child (stderr), expecting 'starting lean --server'...\n");
   nread = state._read_stderr_str_from_child_blocking();

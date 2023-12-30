@@ -17,9 +17,6 @@
 #include <unistd.h>
 #include <errno.h>
 #include "lib.h"
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 int main(int argc, char **argv){
   // make stdin non blocking.
@@ -30,14 +27,10 @@ int main(int argc, char **argv){
 
   disableRawMode();
 
-  char *path = NULL;
-  if (argc >= 2) {
-    path = argv[1];
-  }
+  const char *path = NULL;
+  if (argc >= 2) { path = argv[1]; }
 
-  std::string path_str(fs::path(path).parent_path());
-  g_editor.original_cwd = abuf::from_copy_str(path_str.c_str());  
-
+  g_editor.original_cwd = fs::current_path().parent_path();  
   if (path && fs::is_regular_file(path)) {
     g_editor.openNewFile(path);
   }
@@ -51,12 +44,23 @@ int main(int argc, char **argv){
 
   enableRawMode();
   while (1) {
+    timespec tbegin;
+    Debouncer::get_time(&tbegin);
+
     editorDraw();
     editorProcessKeypress();
-    const long MICRO_TO_MILLI = 1000;
-    usleep(MICRO_TO_MILLI);
 
-    // printf("processing keypress..\n");
+
+    timespec tend;
+    Debouncer::get_time(&tend);
+
+    const long elapsed_nanosec = tend.tv_nsec - tbegin.tv_nsec;
+    const long elapsed_sec = tend.tv_sec - tbegin.tv_sec;
+    if (elapsed_sec > 0) { continue; }
+
+    const long elapsed_microsec = elapsed_nanosec / 1000;
+    const long total_microsec = 1000000 / 60; // 30 FPS = 1s / 30 frames = 1000000 microsec / 30 frames 
+    usleep(clamp0(total_microsec - elapsed_microsec));
   };
   disableRawMode();
   return 0;

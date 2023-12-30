@@ -20,6 +20,9 @@
 #include <unordered_map>
 #include "lean_lsp.h"
 #include "mathutil.h"
+#include <filesystem>
+#include <optional>
+namespace fs = std::filesystem;
 
 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR
 // control key: maps to 1...26,
@@ -485,7 +488,7 @@ protected:
 };
 
 struct LeanServerCursorInfo {
-  const char *file_path;
+  fs::path file_path;
   int row;
   int col;
 };
@@ -506,7 +509,7 @@ struct LspRequestId {
 struct LeanServerState {
   bool initialized = false; // whether this lean server has been initalized.
   // path to the lakefile associated to this lean server, if it uses one.
-  const char *lakefile_dirpath = nullptr;
+  std::optional<fs::path> lakefile_dirpath;
   int parent_buffer_to_child_stdin[2];  // pipe.
   int child_stdout_to_parent_buffer[2]; // pipe.
   int child_stderr_to_parent_buffer[2]; // pipe.
@@ -559,7 +562,7 @@ struct LeanServerState {
   void get_completion_at_point(LeanServerState state,
                                LeanServerCursorInfo cinfo);
 
-  static LeanServerState init(const char *file_path);
+  static LeanServerState init(std::optional<fs::path> file_path);
 private:
 };
 
@@ -606,13 +609,15 @@ struct Debouncer {
     debounce_sec(sec), debounce_nanosec(nanosec) {
        last_acted_time.tv_sec = last_acted_time.tv_nsec = 0;
    };
-private:
+
   static void get_time(timespec *ts) {
     if (clock_gettime(CLOCK_REALTIME, ts) == -1) {
       perror("unable to get time from clock.");
       exit(1);
     }
   }
+
+private:
   const int debounce_sec; // debounce duration, seconds.
   const int debounce_nanosec; // debounce duration, nanoseconds.
   timespec last_acted_time;
@@ -896,16 +901,7 @@ static const char *textAreaModeToString(TextAreaMode mode) {
 struct CtrlPView {
   VimMode previous_state;
   TextAreaMode textAreaMode;
-  // if searching for files, the fields row, colstart, colend, text are to be ignored.
-  struct Item {
-    abuf filepath;
-    abuf text;
-    int row = 0;
-    int colstart = 0;
-    int colend = 0;
-  };
-
-  abuf cwd; // default working directory for the search.
+  fs::path cwd; // default working directory for the search.
   abuf textArea;
   Size<Codepoint> textCol;
   RgProcess rgProcess;
@@ -952,7 +948,7 @@ struct CtrlPView {
 // convert level 'quitPressed' into edge trigger.
 bool ctrlpWhenQuit(CtrlPView *view);
 bool ctrlpWhenSelected(CtrlPView *view);
-void ctrlpOpen(CtrlPView *view, VimMode previous_state, abuf cwd);
+void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd);
 void ctrlpHandleInput(CtrlPView *view, int c);
 void ctrlpDraw(CtrlPView *view);
 
@@ -960,7 +956,7 @@ void ctrlpDraw(CtrlPView *view);
 // Do I want a *global* undo/redo? Probably not, no?
 // TODO: think about just copying the sublime text API :)
 struct FileConfig : public Undoer<FileConfigUndoState> {
-  FileConfig(const char *absolute_filepath) ;
+  FileConfig(fs::path absolute_filepath) ;
 
   bool is_initialized = false;
 
@@ -970,7 +966,7 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
   // TODO: this should count in codepoints?
   int scroll_col_offset = 0;
   
-  char *absolute_filepath = nullptr;
+  fs::path absolute_filepath;
 
   // lean server for file.
   LeanServerState lean_server_state;
@@ -1026,13 +1022,13 @@ struct EditorConfig {
     }
   };
 
-  void openNewFile(char *absolute_path) {
+  void openNewFile(fs::path absolute_path) {
     FileConfig f(absolute_path);
     this->files.push_back(f);
     fileIx = this->files.size() - 1;
   }
 
-  abuf original_cwd; // cwd that the process starts in.
+  fs::path original_cwd; // cwd that the process starts in.
   CtrlPView ctrlp;
   AbbreviationDict abbrevDict;
   EditorConfig() { statusmsg[0] = '\0'; }
@@ -1104,7 +1100,7 @@ void fileConfigLaunchLeanServer(FileConfig *file_config);
 void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o);
 
 // Load the abbreviation dictionary from the filesystem.
-void load_abbreviation_dict_from_file(AbbreviationDict *dict, const char *abbrev_path);
+void load_abbreviation_dict_from_file(AbbreviationDict *dict, fs::path abbrev_path);
 
 // returns true if str ends in \<prefix of potential_abbrev>
 enum AbbrevMatchKind {
@@ -1146,9 +1142,9 @@ struct SuffixUnabbrevInfo {
 SuffixUnabbrevInfo abbrev_dict_get_unabbrev(AbbreviationDict *dict, const char *buf, int finalix);
 
 // get the path to the executable, so we can build the path to resources.
-char *get_executable_path();
+fs::path get_executable_path();
 // get the path to `/path/to/exe/abbreviations.json`.
-char *get_abbreviations_dict_path();
+fs::path get_abbreviations_dict_path();
 
 
 // return the length (in _buf) of the next code point.

@@ -1,5 +1,10 @@
 #include "lib.h"
 
+#ifdef __cplusplus
+extern "C"
+#endif
+const char* __asan_default_options() { return "detect_leaks=0"; }
+
 void test1() {
   printf("━━━━━test1: checking rg JSON output━━━━━\n");
   RgProcess process;

@@ -18,7 +18,10 @@
 #include <vector>
 #include <unordered_map>
 #include "uri_encode.h"
+#include <filesystem>
+#include <optional>
 
+namespace fs = std::filesystem;
 
 
 // == toplevel capabilities ==
@@ -94,9 +97,10 @@ struct Uri {
 
   ~Uri() { free(uri); }
 
-  void init_from_file_path(const char *file_path) {
+  void init_from_file_path(fs::path file_path_cpp) {
     const char *file_segment_uri = "file://";
 
+    const char *file_path = file_path_cpp.c_str();
     const int file_uri_unencoded_len = strlen(file_segment_uri) + strlen(file_path) + 1;
     char *file_uri_unencoded = (char *)calloc(sizeof(char), file_uri_unencoded_len);
     sprintf(file_uri_unencoded, "%s%s", file_segment_uri, file_path);
@@ -133,7 +137,7 @@ struct TextDocumentItem {
 	languageId(strdup(other.languageId)),
 	version(other.version),
   	text(strdup(other.text)), is_initialized(true) {}
-  void init_from_file_path(const char *file_path);
+  void init_from_file_path(fs::path file_path);
 
   ~TextDocumentItem() {
     free(text);

@@ -14,7 +14,7 @@ int main() {
   LspRequestId request_id(-1);
   
   // enableRawMode();
-  LeanServerState state = LeanServerState::init(NULL);
+  LeanServerState state = LeanServerState::init({});
 
   fprintf(stderr, "### reading child (stderr), expecting 'starting lean --server'...\n");
   nread = state._read_stderr_str_from_child_blocking();
