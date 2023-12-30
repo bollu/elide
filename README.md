@@ -39,6 +39,7 @@ $ mkdir build && cd build && cmake ../ && make -j4
 - [vis editor](https://github.com/martanne/vis).
 - [Language server protocol](https://microsoft.github.io/language-server-protocol/) reference.
 - [Atom's new buffer implementation](https://web.archive.org/web/20221129082104/http://blog.atom.io/2017/10/12/atoms-new-buffer-implementation.html)
+- [Notcurses](https://notcurses.com/)
 
 
 #### Developer Diary
