@@ -33,6 +33,50 @@ static const int NSPACES_PER_TAB = 2;
 static const char *VERSION = "0.0.1";
 
 
+struct json_object_ptr
+{
+  json_object_ptr(json_object *obj=nullptr): m_obj {obj} {
+  }
+
+  json_object_ptr &operator =(json_object_ptr const &other) {
+    if(m_obj) {
+      json_object_put(m_obj);
+      m_obj = nullptr;
+    }
+    m_obj = other.m_obj;
+    json_object_get(m_obj);
+    return *this;
+  }
+  json_object_ptr(json_object_ptr const &other): m_obj {nullptr} {
+    *this = other;
+  }
+
+  json_object_ptr &operator =(json_object_ptr &&other) {
+    if(m_obj) {
+      json_object_put(m_obj);
+      m_obj = nullptr;
+    }
+    m_obj = other.m_obj;
+    other.m_obj = nullptr;
+    return *this;
+  }
+  json_object_ptr(json_object_ptr &&other): m_obj {nullptr} {
+    *this = std::move(other);
+  }
+
+  ~json_object_ptr() {
+    json_object_put(m_obj);
+    m_obj = nullptr;
+  }
+
+  operator json_object * () {
+    return m_obj;
+  }
+
+private:
+  json_object *m_obj;
+};
+
 struct abuf {
   abuf() = default;
   ~abuf() { free(_buf); }
@@ -481,7 +525,7 @@ struct LeanServerState {
 
   // server-requests that were recieved when trying to wait for a 
   // server-response to a client-request
-  std::vector<json_object *> unhandled_server_requests;
+  std::vector<json_object_ptr> unhandled_server_requests;
 
   // low-level API to write strings directly.
   int _write_str_to_child(const char *buf, int len) const;
@@ -491,11 +535,11 @@ struct LeanServerState {
   int _read_stderr_str_from_child_blocking();
   // tries to read the next JSON record from the buffer, in a nonblocking fashion.
   // If insufficied data is in the buffer, then return NULL.
-  json_object *_read_next_json_record_from_buffer_nonblocking();
+  json_object_ptr _read_next_json_record_from_buffer_nonblocking();
   // read the next json record from the buffer, and if the buffer is not full,
   // then read in more data until successful read. Will either hang indefinitely
   // or return a `json_object*`. Will never return NULL.
-  json_object *_read_next_json_record_from_buffer_blocking();
+  json_object_ptr _read_next_json_record_from_buffer_blocking();
 
   // high level APIs to write strutured requests and read responses.
   // write a request, and return the request sequence number.
@@ -505,7 +549,7 @@ struct LeanServerState {
   // this CONSUMES params.
   void write_notification_to_child_blocking(const char *method,
                                             json_object *params);
-  json_object *read_json_response_from_child_blocking(LspRequestId request_id);
+  json_object_ptr read_json_response_from_child_blocking(LspRequestId request_id);
 
   // high level APIs
   void get_tactic_mode_goal_state(LeanServerState state,
@@ -516,11 +560,6 @@ struct LeanServerState {
                                LeanServerCursorInfo cinfo);
 
   static LeanServerState init(const char *file_path);
-  ~LeanServerState() {
-    for(json_object *o : this->unhandled_server_requests) {
-      json_object_put(o);
-    }
-  }
 private:
 };
 
@@ -817,15 +856,15 @@ struct FileConfigUndoState {
   int scroll_row_offset = 0;
   int scroll_col_offset = 0;
 
-  json_object *leanInfoViewPlainGoal = nullptr;
-  json_object *leanInfoViewPlainTermGoal = nullptr;
-  json_object *leanHoverViewHover = nullptr;
+  json_object_ptr leanInfoViewPlainGoal;
+  json_object_ptr leanInfoViewPlainTermGoal;
+  json_object_ptr leanHoverViewHover;
   // TODO: implement definition
   InfoViewTab infoViewTab = IVT_Tactic;
-  json_object *leanGotoViewDefinition = nullptr;
-  json_object *leanGotoViewDeclaration = nullptr;
+  json_object_ptr leanGotoViewDefinition;
+  json_object_ptr leanGotoViewDeclaration;
   // TODO: implement completion.
-  json_object *leanCompletionViewCompletion = nullptr;
+  json_object_ptr leanCompletionViewCompletion;
 
   // TODO: should we use a different fn rather than `==`?
   bool operator == (const FileConfigUndoState &other) const {

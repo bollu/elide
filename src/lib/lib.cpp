@@ -319,7 +319,7 @@ void LeanServerState::write_notification_to_child_blocking(const char * method, 
 }
 
 // tries to read the next JSON record from the buffer, in a nonblocking fashion.
-json_object *LeanServerState::_read_next_json_record_from_buffer_nonblocking() {
+json_object_ptr LeanServerState::_read_next_json_record_from_buffer_nonblocking() {
 
   const char *CONTENT_LENGTH_STR = "Content-Length:";
   const char *DOUBLE_NEWLINE_STR = "\r\n\r\n";
@@ -356,21 +356,21 @@ json_object *LeanServerState::_read_next_json_record_from_buffer_nonblocking() {
 
 // tries to read the next JSON record from the buffer, in a blocking fashion.
 // It busy waits on the nonblocking version.
-json_object *LeanServerState::_read_next_json_record_from_buffer_blocking() {
+json_object_ptr LeanServerState::_read_next_json_record_from_buffer_blocking() {
   while(1) {
-    json_object *o = _read_next_json_record_from_buffer_nonblocking(); 
+    json_object_ptr o = _read_next_json_record_from_buffer_nonblocking();
     if (o) { return o; }
     _read_stdout_str_from_child_nonblocking(); // consume input to read.
   }
 }
 
-json_object *LeanServerState::read_json_response_from_child_blocking(LspRequestId request_id) {
+json_object_ptr LeanServerState::read_json_response_from_child_blocking(LspRequestId request_id) {
   assert(request_id.id < this->next_request_id); // check that it is a valid request ID.
 
   // TODO: the request needs to be looked for in the vector of unprocessed requests.
   while(1) {
     assert(this->nresponses_read < this->next_request_id);
-    json_object *o = _read_next_json_record_from_buffer_blocking();
+    json_object_ptr o = _read_next_json_record_from_buffer_blocking();
     // only records with a key called "id" are responses.
     // other records are status messages which we silently discard
     // TODO: do not silently discard!
@@ -761,13 +761,6 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   LspRequestId  request_id;
 
   // $/lean/plainGoal
-  if (file_config->leanInfoViewPlainGoal) {
-    json_object_put(file_config->leanInfoViewPlainGoal);
-    file_config->leanInfoViewPlainGoal = nullptr;
-  }
-
-  assert(file_config->leanInfoViewPlainGoal == nullptr);
-
 
   // TODO: need to convert col to 'bytes'
   Size<Byte> cursorColBytes;
@@ -784,12 +777,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   file_config->leanInfoViewPlainGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // $/lean/plainTermGoal
-  if (file_config->leanInfoViewPlainTermGoal) {
-    json_object_put(file_config->leanInfoViewPlainTermGoal);
-    file_config->leanInfoViewPlainTermGoal = nullptr;
-  }
 
-  assert(file_config->leanInfoViewPlainTermGoal == nullptr);
   req = lspCreateLeanPlainTermGoalRequest(file_config->text_document_item.uri, 
     Position(file_config->cursor.row, cursorColBytes.size));
   request_id = 
@@ -797,12 +785,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // textDocument/hover
-  if (file_config->leanHoverViewHover) {
-    json_object_put(file_config->leanHoverViewHover);
-    file_config->leanHoverViewHover = nullptr;
-  }
 
-  assert(file_config->leanHoverViewHover == nullptr);
   req = lspCreateTextDocumentHoverRequest(file_config->text_document_item.uri, 
     Position(file_config->cursor.row, cursorColBytes.size));
   request_id = file_config->lean_server_state.write_request_to_child_blocking("textDocument/hover", req);
