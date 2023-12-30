@@ -1719,6 +1719,7 @@ void editorProcessKeypress() {
     switch (c) {
     case CTRL_KEY('p'): {
       g_editor.curFile.ctrlp.previous_state = VM_NORMAL;
+      g_editor.curFile.ctrlp.textAreaMode = TAM_Insert;
       g_editor.vim_mode = VM_CTRLP;
       return;
     }
@@ -2062,15 +2063,20 @@ const char SIGIL_GLOB_PATTERN_SEPARATOR = ',';
 const char SIGIL_FILE_DIRECTORY = '@'; // <email>@<provider.com> (where)
 const char SIGIL_CONTENT_PATTERN = '#';
 
-std::string parseStringText(const abuf *buf, Ix<Byte> *i) {
-  assert(*i < buf->nbytes());
-  const Ix<Byte> begin = *i;
-  for(; *i < buf->nbytes() && 
-  	buf->getByteAt(*i) != ',' && 
-  	buf->getByteAt(*i) != '#' && 
-	buf->getByteAt(*i) != '@'; ++*i) {  }
+void CtrlPAssertNoWhitespace(const abuf &buf) {
+  for(Ix<Byte> i(0); i < buf.nbytes(); ++i) {
+    assert(buf.getByteAt(i) != ' ');
+  } 
+}
+
+std::string CtrlPParseStringText(const abuf &buf, Ix<Byte> &i) {
+  const Ix<Byte> begin = i;
+  for(; i < buf.nbytes() && 
+  	buf.getByteAt(i) != ',' && 
+  	buf.getByteAt(i) != '#' && 
+	  buf.getByteAt(i) != '@'; ++i) {  }
   // [begin, i)
-  return std::string(buf->buf() + begin.ix, i->distance(begin));
+  return std::string(buf.buf() + begin.ix, i.distance(begin));
 }
 
 // sepBy(GLOBPAT,",")("@"FILEPAT|"#"TEXTPAT|","GLOBPAT)*
@@ -2081,11 +2087,11 @@ enum RgPatKind {
 };
 CtrlPView::RgArgs CtrlPView::parseUserCommand(abuf buf) {
   CtrlPView::RgArgs args;
-  Ix<Byte> i(0);
   RgPatKind k = RgPatKind::RPK_GLOB;
-  for(; i < buf.nbytes(); i++) {
+  CtrlPAssertNoWhitespace(buf);
+  for(Ix<Byte> i(0); i < buf.nbytes(); i++) {
     // grab fragment.
-    std::string fragment = parseStringText(&buf, &i);
+    std::string fragment = CtrlPParseStringText(buf, i);
     // add fragment.
     if (fragment != "") {
       if (k == RPK_GLOB) { 
@@ -2110,7 +2116,9 @@ CtrlPView::RgArgs CtrlPView::parseUserCommand(abuf buf) {
       if (sep == ',') { k = RPK_GLOB; }
       else if (sep == '@') { k = RPK_DIR; }
       else if (sep == '#') { k = RPK_TEXT; }
-      else { die("unknown ripgrep glob pattern separator '%c'", sep); }
+      else { 
+        // someone wrote some malformed ripgrep. Ideally, this should never be allowed to be typed.
+      }
     }
   }
   return args;
@@ -2137,8 +2145,8 @@ std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs ar
     out.push_back(s);
   }
 
-  // smart case
-  out.push_back("-S");
+  out.push_back("-S"); // smart case
+  out.push_back("-n"); // line number.
   return out;
 
 };
@@ -2147,7 +2155,13 @@ std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs ar
 void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
   assert(view->textCol <= view->textArea.ncodepoints());
   if (view->textAreaMode == TAM_Normal) {
-    if (c == 'h' || c == KEYEVENT_ARROW_LEFT) {
+    if (c == 'j' || c == CTRL_KEY('n')) {
+      view->rgProcess.selectedLine = 
+      clamp0u<int>(view->rgProcess.selectedLine+1, view->rgProcess.lines.size()-1);
+    } else if (c == 'k' || c == CTRL_KEY('p')) {
+      view->rgProcess.selectedLine = 
+          clamp0(view->rgProcess.selectedLine-1);
+    } else if (c == 'h' || c == KEYEVENT_ARROW_LEFT) {
       view->textCol = view->textCol.sub0(1);
     } else if (c == 'l' || c == KEYEVENT_ARROW_RIGHT) {
       view->textCol = 
@@ -2176,14 +2190,14 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
       view->textCol = 
         clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
       view->textAreaMode = TAM_Insert;
-    } else if (c == CTRL_KEY('c') || c == CTRL_KEY('p') || c == 'q') {
+    } else if (c == CTRL_KEY('c') || c == 'q') {
       // quit and go back to previous state.
       view->quitPressed = true;
     }
  
   } else {
     assert(view->textAreaMode == TAM_Insert);
-    if (c == CTRL_KEY('c') || c == CTRL_KEY('p')) {
+    if (c == CTRL_KEY('c')) {
       view->textAreaMode = TAM_Normal;
       // quit and go back to previous state.
     } else if (c == KEYEVENT_ARROW_LEFT) {
@@ -2191,8 +2205,6 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
     } else if (c == KEYEVENT_ARROW_RIGHT) {
       view->textCol = 
         clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
-    } else if (c == CTRL_KEY('p')) {
-      view->quitPressed = true;
     } else if (c == KEYEVENT_BACKSPACE) {
       if (view->textCol > 0) {
         view->textArea.delCodepointAt(view->textCol.largestIx());
@@ -2204,7 +2216,13 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
       view->textCol = 0;
     } else if (c == CTRL_KEY('k')) {
       view->textArea.truncateNCodepoints(view->textCol);
-    } else if (isprint(c)) {
+    } else if (c == CTRL_KEY('j') || c == CTRL_KEY('n')) {
+      view->rgProcess.selectedLine = 
+      clamp0u<int>(view->rgProcess.selectedLine+1, view->rgProcess.lines.size()-1);
+    } else if (c == CTRL_KEY('k') || c == CTRL_KEY('p')) {
+      view->rgProcess.selectedLine = 
+          clamp0(view->rgProcess.selectedLine-1);
+    } else if (isprint(c) && c != ' ' && c != '\t') {
       view->textArea.insertCodepointBefore(view->textCol, (const char *)&c);
       view->textCol += 1;
     }
@@ -2272,8 +2290,13 @@ void ctrlpDraw(CtrlPView *view, abuf *ab) {
   ab->appendstr("\x1b[K\r\n");
   ab->appendstr("━━━━━\x1b[K\r\n");
 
+  if (!(view->rgProcess.lines.size() == 0) || view->rgProcess.selectedLine != -1);
   static const int NROWS = g_editor.screenrows - 5;
   for(int i = 0; i < view->rgProcess.lines.size() && i < NROWS; ++i) {
+    if (i == view->rgProcess.selectedLine) {
+      ab->appendstr(ESCAPE_CODE_CURSOR_SELECT);
+    }
+
     const abuf &line = view->rgProcess.lines[i];
     const char *ELLIPSIS = "...";
     const int NELLIPSIS = strlen(ELLIPSIS );
@@ -2292,6 +2315,11 @@ void ctrlpDraw(CtrlPView *view, abuf *ab) {
       // we had to truncate.
       ab->appendstr(ELLIPSIS);
     } 
+
+    if (i == view->rgProcess.selectedLine) {
+      ab->appendstr(ESCAPE_CODE_UNSET);
+    }
+
     ab->appendstr("\x1b[K \r\n");
   }
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab->buf(), ab->len()));
@@ -2320,6 +2348,7 @@ bool RgProcess::isRunningNonBlocking() {
 // (re)start the process, and run it asynchronously.
 void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> args) {
   this->lines = {};
+  this->selectedLine = -1;
 
   assert(!this->running);
   CHECK_POSIX_CALL_0(pipe2(this->child_stdout_to_parent_buffer, O_NONBLOCK));
@@ -2387,27 +2416,33 @@ int RgProcess::_read_stdout_str_from_child_nonblocking() {
   return nread;
 };
 
+// return true if line was read.
+bool RgProcess::readLineNonBlocking() {
+  int newline_ix = 0;
+  for(; newline_ix < this->child_stdout_buffer.len(); newline_ix++) {
+    if (this->child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n') {
+      break;
+    }
+  }
+  if (newline_ix >= this->child_stdout_buffer.len()) {
+    return false;
+  }
+  assert (newline_ix < this->child_stdout_buffer.len());
+  assert(child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n');
+  // if we find 'a\nbc' (newline_ix=1) we want to:
+  //   . take the string 'a' (1).
+  //   . drop the string 'a\n' (2).
+  this->lines.push_back(this->child_stdout_buffer.takeNBytes(newline_ix));
+  if (this->selectedLine == -1) { this->selectedLine = 0; }
+  child_stdout_buffer.dropNBytesMut(newline_ix+1);
+  return true;
+}
+
 int RgProcess::readLinesNonBlocking() {
   _read_stdout_str_from_child_nonblocking();
   int nlines = 0;
-  while(1) {
-    int newline_ix = 0;
-    for(; newline_ix < this->child_stdout_buffer.len(); newline_ix++) {
-      if (this->child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n') {
-        break;
-      }
-    }
-    if (newline_ix >= this->child_stdout_buffer.len()) {
-      return nlines; // found no newline thingie.
-    }
-    assert (newline_ix < this->child_stdout_buffer.len());
-    assert(child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n');
+  while(this->readLineNonBlocking()) {
     nlines++;
-    // if we find 'a\nbc' (newline_ix=1) we want to:
-    //   . take the string 'a' (1).
-    //   . drop the string 'a\n' (2).
-    this->lines.push_back(this->child_stdout_buffer.takeNBytes(newline_ix));
-    child_stdout_buffer.dropNBytesMut(newline_ix+1);
   }
-  assert(false && "unreachable");
+  return nlines;
 }

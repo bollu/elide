@@ -731,11 +731,16 @@ struct RgProcess {
   pid_t childpid;
   // lines streamed from `rg` stdout.
   std::vector<abuf> lines;
+  int selectedLine; // currently selected line. Bounds are `[0, lines.size())`
 
   // start the process, and run it asynchronously.
   void execpAsync(const char *working_dir, std::vector<std::string> args);
   // kills the process synchronously.
   void killSync();
+
+  // attempt to read a single line of input from `rg`.
+  // return if line was succesfully read.
+  bool readLineNonBlocking();
 
   // attempt to lines of input from `rg`, and prints the number of lines
   // that were successfully added to `this->lines`.
@@ -903,7 +908,6 @@ struct CtrlPView {
   Size<Codepoint> textCol;
   RgProcess rgProcess;
   bool quitPressed = false;
-
 
 
   struct RgArgs {

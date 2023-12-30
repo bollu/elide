@@ -85,26 +85,8 @@ std::string concatWithSpaces(std::vector<std::string> &ss) {
 }
 
 void test3() {
-  printf("━━━━━test3: CtrlPView::RgArgs creation [files]━━━━━\n");
-  abuf buf = abuf::from_copy_str("rg.txt");
-  printf("### testing command '%s'\n", buf.to_string());
-  CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
-
-  printf("### args debug print\n");
-  buf = args.debugPrint();
-  printf("%s\n", buf.to_string());
-
-  std::vector<std::string> argsVec = CtrlPView::rgArgsToCommandLineArgs(args);  
-  printf("### args vec[size=%d]\n", (int)argsVec.size());
-  for(int i = 0; i < argsVec.size(); ++i) {
-    printf("  . %s\n", argsVec[i].c_str());
-  }  
-  assert(concatWithSpaces(argsVec) == "--files -g rg.txt -S");
-}
-
-void test4() {
-  printf("━━━━━test4: CtrlPView::RgArgs creation [search]━━━━━\n");
-  abuf buf = abuf::from_copy_str("#foo#bar");
+  printf("━━━━━test3: CtrlPView::RgArgs creation [search]━━━━━\n");
+  abuf buf = abuf::from_copy_str("  #foo  #bar   ");
   printf("### testing command '%s'\n", buf.to_string());
   CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
   printf("### args debug print\n");
@@ -116,7 +98,25 @@ void test4() {
     printf("  . %s\n", argsVec[i].c_str());
   }  
   // TODO: think about what to do for current file. Maybe stick in a @"absolute_filepath" by default?
-  assert(concatWithSpaces(argsVec) == "foo|bar -S");
+  assert(concatWithSpaces(argsVec) == "foo|bar -S -n");
+}
+
+void test4() {
+  printf("━━━━━test3: CtrlPView::RgArgs creation [files]━━━━━\n");
+  abuf buf = abuf::from_copy_str("  rg.txt   ");
+  printf("### testing command '%s'\n", buf.to_string());
+  CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
+
+  printf("### args debug print\n");
+  buf = args.debugPrint();
+  printf("%s\n", buf.to_string());
+
+  std::vector<std::string> argsVec = CtrlPView::rgArgsToCommandLineArgs(args);  
+  printf("### args vec[size=%d]\n", (int)argsVec.size());
+  for(int i = 0; i < argsVec.size(); ++i) {
+    printf("  . %s\n", argsVec[i].c_str());
+  }  
+  assert(concatWithSpaces(argsVec) == "--files -g rg.txt -S -n");
 }
 
 
