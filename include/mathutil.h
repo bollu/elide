@@ -94,6 +94,15 @@ struct Ix {
 
   bool is_inbounds(Size<T> size) const;
   bool is_inbounds_or_end(Size<T> size) const;
+  int distance(Ix<T> other) const {
+    if(other.ix < this->ix) {
+      return this->ix - other.ix;
+    } else {
+      assert(this->ix <= other.ix);
+      return other.ix - this->ix;
+    }
+  }
+
 };
 
 template<typename T>
@@ -127,6 +136,11 @@ struct Size {
   Ix<T> largestIx() const {
     assert(this->size > 0);
     return Ix<T>(this->size - 1);
+  }
+
+  // returns 'true' if ix at the end of this range.
+  bool isEnd(Ix<T> ix) const {
+    return this->size == ix.ix;
   }
 
   // mirrors the index from the left to be its flipped version from the right.

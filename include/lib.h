@@ -868,12 +868,16 @@ struct CtrlPView {
 
 
   struct RgArgs {
-    std::vector<std::string> dirPatterns;
-    std::string filePattern;
-    std::vector<std::string> searchPatterns;
+    std::vector<std::string> pathGlobPatterns; // patterns to filter the search in, added with '-g'.
+    std::vector<std::string> directoryPaths; // directories to search in.
+    std::string fileContentPattern;
   };
-  // top := FILEGLOB? ARG*
-  // ARG := "@" SEARCHDIR | "/"" SEARCHSTR
+  // #foo
+  // *.lean#bar|baz@../@../../ (TODO: pressing TAB should cycle between the components).
+  // (GLOBPAT",")*("@"FILEPAT|"#"TEXTPAT|","GLOBPAT)*
+  // FILENAMEPAT := <str>
+  // FSPAT := "@"<str>
+  // TEXTPAT := "#"<str>
   static RgArgs parseUserCommand(abuf buf);
 
   // rg TEXT_STRING PROJECT_PATH -g FILE_PATH_GLOB # find all files w/contents matching pattern.

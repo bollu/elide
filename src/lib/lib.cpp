@@ -24,6 +24,7 @@
 #include "lib.h"
 #include "uri_encode.h"
 #include "lean_lsp.h"
+#include <algorithm>
 
 // https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 // [(<accent>;)?<forground>;<background>;
@@ -2070,22 +2071,89 @@ bool ctrlpWhenQuit(CtrlPView *view) {
   return out;
 }
 
+
+// places glob pattern after the parse.
+//   . end of file.
+//   . at sigil (@ or #).
+const char SIGIL_GLOB_PATTERN_SEPARATOR = ','; 
+const char SIGIL_FILE_DIRECTORY = '@'; // <email>@<provider.com> (where)
+const char SIGIL_CONTENT_PATTERN = '#';
+
+std::string parseStringText(const abuf *buf, Ix<Byte> *i) {
+  const Ix<Byte> begin = *i;
+  for(; *i < buf->nbytes() && 
+  	buf->getByteAt(*i) != ',' && 
+  	buf->getByteAt(*i) != '#' && 
+	buf->getByteAt(*i) != '@'; ++*i) {  }
+  // [begin, i)
+  return std::string(buf->buf(), i->distance(begin));
+}
+
+// sepBy(GLOBPAT,",")("@"FILEPAT|"#"TEXTPAT|","GLOBPAT)*
+enum RgPatKind {
+  RPK_GLOB,
+  RPK_DIR,
+  RPK_TEXT,
+};
 CtrlPView::RgArgs CtrlPView::parseUserCommand(abuf buf) {
   CtrlPView::RgArgs args;
-  args.filePattern = std::string(buf.to_string());
+  Ix<Byte> i(0);
+  RgPatKind k = RgPatKind::RPK_GLOB;
+  for(; i < buf.nbytes(); i++) {
+    // grab fragment.
+    std::string fragment = parseStringText(&buf, &i);
+    
+    // add fragment.
+    if (k == RPK_GLOB) {
+      args.pathGlobPatterns.push_back(fragment);
+    } else if (k == RPK_DIR) {
+      args.directoryPaths.push_back(fragment);
+    } else if (k == RPK_TEXT) {
+      if (args.fileContentPattern == "") {
+        args.fileContentPattern = fragment;
+      } else {
+        args.fileContentPattern += "|";
+        args.fileContentPattern += fragment;
+      }
+    } 
+
+    // decide next fragment.
+    if (buf.nbytes().isEnd(i)) { break; }
+    else {
+      const char sep = buf.getByteAt(i);
+      // , separator, be glob pattern.
+      if (sep == ',') { k = RPK_GLOB; }
+      else if (sep == '@') { k = RPK_DIR; }
+      else if (sep == '#') { k = RPK_TEXT; }
+      else { die("unknown ripgrep glob pattern separator '%c'", sep); }
+    }
+  }
   return args;
 };
 
 // rg TEXT_STRING PROJECT_PATH -g FILE_PATH_GLOB # find all files w/contents matching pattern.
 // rg PROJECT_PATH --files -g FILE_PATH_GLOB # find all files w/ filename matching pattern.
 std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs args) {
-  assert(args.dirPatterns.size() == 0);
-  assert(args.searchPatterns.size() == 0);
-
+  // search for files
   std::vector<std::string> out;
-  out.push_back("--files");
-  out.push_back("-g");
-  out.push_back(args.filePattern);
+  if (args.fileContentPattern != "") {
+    // we are searching
+    out.push_back(args.fileContentPattern);
+  } else {
+    out.push_back("--files"); // we are searching for files, no pattern.
+  }
+
+  // fill in search dirs.
+  out.insert(out.end(), args.directoryPaths.begin(), args.directoryPaths.end());
+
+  // fill in file glob pattern for file name.
+  for(const std::string &s : args.pathGlobPatterns) {
+    out.push_back("-g");
+    out.push_back(s);
+  }
+
+  // smart case
+  out.push_back("-S");
   return out;
 
 };

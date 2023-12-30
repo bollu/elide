@@ -21,10 +21,10 @@ void test1() {
       printf("    . line: '%s'\n", line.to_string());
     }
     process.lines.clear();
-    if (!process.isRunningNonBlocking()) {
-      printf("    . process has TERMINATED. Stopping loop!\n");
-      break;
-    }
+    // if (!process.isRunningNonBlocking()) {
+    //   printf("    . process has TERMINATED. Stopping loop!\n");
+    //   break;
+    // }
     sleep(1);
   }
   printf("### final buffer\n");
@@ -61,10 +61,10 @@ void test2() {
       }
     }
     process.lines.clear();
-    if (!process.isRunningNonBlocking()) {
-      printf("    . process has TERMINATED. Stopping loop!\n");
-      break;
-    }
+    // if (!process.isRunningNonBlocking()) {
+    //   printf("    . process has TERMINATED. Stopping loop!\n");
+    //   break;
+    // }
     sleep(1);
   }
   printf("### final buffer\n");
@@ -75,31 +75,51 @@ void test2() {
 }
 
 
+std::string concatWithSpaces(std::vector<std::string> &ss) {
+  std::string out = "";
+  for(int i = 0; i < ss.size(); ++i) {
+    if (i > 0) { out += " "; }
+    out += ss[i];
+  }
+  return out;
+}
+
 void test3() {
-  printf("━━━━━test3: CtrlPView::RgArgs creation━━━━━\n");
+  printf("━━━━━test3: CtrlPView::RgArgs creation [files]━━━━━\n");
   abuf buf = abuf::from_copy_str("rg.txt");
   printf("### testing command '%s'\n", buf.to_string());
   CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
-  assert(args.filePattern  == "rg.txt");
-  assert(args.dirPatterns.size() == 0);
-  assert(args.searchPatterns.size() == 0);
 
   std::vector<std::string> argsVec = CtrlPView::rgArgsToCommandLineArgs(args);  
   printf("### args vec[size=%d]\n", (int)argsVec.size());
   for(int i = 0; i < argsVec.size(); ++i) {
     printf("  . %s\n", argsVec[i].c_str());
   }  
-  assert(argsVec.size() == 3);
-  assert(argsVec[0] == "--files");
-  assert(argsVec[1] == "-g");
-  assert(argsVec[2] == "rg.txt");
+  assert(concatWithSpaces(argsVec) == "--files -g rg.txt -S");
 }
+
+void test4() {
+  printf("━━━━━test4: CtrlPView::RgArgs creation [search]━━━━━\n");
+  abuf buf = abuf::from_copy_str("#foo#bar");
+  printf("### testing command '%s'\n", buf.to_string());
+  CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
+
+  std::vector<std::string> argsVec = CtrlPView::rgArgsToCommandLineArgs(args);  
+  printf("### args vec[size=%d]\n", (int)argsVec.size());
+  for(int i = 0; i < argsVec.size(); ++i) {
+    printf("  . %s\n", argsVec[i].c_str());
+  }  
+  // TODO: think about what to do for current file. Maybe stick in a @"absolute_filepath" by default?
+  assert(concatWithSpaces(argsVec) == "foo|bar -S");
+}
+
 
 
 int main() {
   test1();
   test2();
   test3();
+  test4();
   return 0;
 }
 
