@@ -12,7 +12,7 @@ void test1() {
   printf("### sleeping...\n");
   printf("### readling lines from rg...\n");
   int total_lines = 0;
-  for(int i = 0; i < 5; ++i) {
+  for(int i = 0; i < 3; ++i) {
     printf("  reading [iter=#%d]...", i);
     const int nlines = process.readLinesNonBlocking();
     total_lines += nlines;
@@ -47,7 +47,7 @@ void test2() {
   printf("### sleeping...\n");
   printf("### readling lines from rg...\n");
   int total_lines = 0;
-  for(int i = 0; i < 5; ++i) {
+  for(int i = 0; i < 3; ++i) {
     printf("  reading [iter=#%d]...", i);
     const int nlines = process.readLinesNonBlocking();
     total_lines += nlines;
@@ -90,6 +90,10 @@ void test3() {
   printf("### testing command '%s'\n", buf.to_string());
   CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
 
+  printf("### args debug print\n");
+  buf = args.debugPrint();
+  printf("%s\n", buf.to_string());
+
   std::vector<std::string> argsVec = CtrlPView::rgArgsToCommandLineArgs(args);  
   printf("### args vec[size=%d]\n", (int)argsVec.size());
   for(int i = 0; i < argsVec.size(); ++i) {
@@ -103,7 +107,9 @@ void test4() {
   abuf buf = abuf::from_copy_str("#foo#bar");
   printf("### testing command '%s'\n", buf.to_string());
   CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
-
+  printf("### args debug print\n");
+  buf = args.debugPrint();
+  printf("%s\n", buf.to_string());
   std::vector<std::string> argsVec = CtrlPView::rgArgsToCommandLineArgs(args);  
   printf("### args vec[size=%d]\n", (int)argsVec.size());
   for(int i = 0; i < argsVec.size(); ++i) {

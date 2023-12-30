@@ -2080,13 +2080,14 @@ const char SIGIL_FILE_DIRECTORY = '@'; // <email>@<provider.com> (where)
 const char SIGIL_CONTENT_PATTERN = '#';
 
 std::string parseStringText(const abuf *buf, Ix<Byte> *i) {
+  assert(*i < buf->nbytes());
   const Ix<Byte> begin = *i;
   for(; *i < buf->nbytes() && 
   	buf->getByteAt(*i) != ',' && 
   	buf->getByteAt(*i) != '#' && 
 	buf->getByteAt(*i) != '@'; ++*i) {  }
   // [begin, i)
-  return std::string(buf->buf(), i->distance(begin));
+  return std::string(buf->buf() + begin.ix, i->distance(begin));
 }
 
 // sepBy(GLOBPAT,",")("@"FILEPAT|"#"TEXTPAT|","GLOBPAT)*
@@ -2102,20 +2103,21 @@ CtrlPView::RgArgs CtrlPView::parseUserCommand(abuf buf) {
   for(; i < buf.nbytes(); i++) {
     // grab fragment.
     std::string fragment = parseStringText(&buf, &i);
-    
     // add fragment.
-    if (k == RPK_GLOB) {
-      args.pathGlobPatterns.push_back(fragment);
-    } else if (k == RPK_DIR) {
-      args.directoryPaths.push_back(fragment);
-    } else if (k == RPK_TEXT) {
-      if (args.fileContentPattern == "") {
-        args.fileContentPattern = fragment;
-      } else {
-        args.fileContentPattern += "|";
-        args.fileContentPattern += fragment;
-      }
-    } 
+    if (fragment != "") {
+      if (k == RPK_GLOB) { 
+        args.pathGlobPatterns.push_back(fragment);
+      } else if (k == RPK_DIR) {
+        args.directoryPaths.push_back(fragment);
+      } else if (k == RPK_TEXT) {
+        if (args.fileContentPattern == "") {
+          args.fileContentPattern = fragment;
+        } else {
+          args.fileContentPattern += "|";
+          args.fileContentPattern += fragment;
+        }
+      } 
+    } // if condition: empty fragment.
 
     // decide next fragment.
     if (buf.nbytes().isEnd(i)) { break; }

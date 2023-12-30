@@ -624,7 +624,7 @@ public:
 
     redoStack.pop();
     this->setCheckpoint(val); // apply the invariant.
-  } 
+  }
 
   // save the current state for later undoing and redoing.
   void mkUndoMemento() {
@@ -871,6 +871,24 @@ struct CtrlPView {
     std::vector<std::string> pathGlobPatterns; // patterns to filter the search in, added with '-g'.
     std::vector<std::string> directoryPaths; // directories to search in.
     std::string fileContentPattern;
+
+    void debugPrint(abuf *buf) const {
+      buf->appendfmtstr(100, "pathGlobPatterns [n=%d]\n", (int)pathGlobPatterns.size());
+      for(const std::string &s : pathGlobPatterns) {
+        buf->appendfmtstr(100, "  . %s\n", s.c_str());
+      }
+      buf->appendfmtstr(100, "directoryPaths [n=%d]\n", (int)directoryPaths.size());
+      for(const std::string &s : directoryPaths) {
+        buf->appendfmtstr(100, "  . %s\n", s.c_str());
+      }
+      buf->appendfmtstr(100, "fileContentPattern '%s'", fileContentPattern.c_str());
+    } 
+
+    abuf debugPrint() const {
+      abuf buf;
+      this->debugPrint(&buf);
+      return buf;
+    }
   };
   // #foo
   // *.lean#bar|baz@../@../../ (TODO: pressing TAB should cycle between the components).
