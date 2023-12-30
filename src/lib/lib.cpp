@@ -1683,9 +1683,8 @@ void editorProcessKeypress() {
     char *default_basepath = strdup(
       g_editor.curFile.lean_server_state.lakefile_dirpath ?
       g_editor.curFile.lean_server_state.lakefile_dirpath :
-      dirname(strdup(g_editor.curFile.absolute_filepath)));
-    ctrlpHandleInput(&g_editor.curFile.ctrlp, 
-        default_basepath, c);
+      dirname(g_editor.curFile.absolute_filepath));
+    ctrlpHandleInput(&g_editor.curFile.ctrlp, default_basepath, c);
     free(default_basepath);
 
     if (ctrlpWhenQuit(&g_editor.curFile.ctrlp)) {
@@ -2054,6 +2053,11 @@ bool ctrlpWhenQuit(CtrlPView *view) {
   view->quitPressed = false;
   return out;
 }
+bool ctrlpWhenSelected(CtrlPView *view) {
+  const bool out = view->selectPressed;
+  view->selectPressed = false;
+  return out;
+}
 
 
 // places glob pattern after the parse.
@@ -2193,6 +2197,8 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
     } else if (c == CTRL_KEY('c') || c == 'q') {
       // quit and go back to previous state.
       view->quitPressed = true;
+    } else if (c == '\r') {
+      view->selectPressed = true;
     }
  
   } else {
@@ -2225,6 +2231,8 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
     } else if (isprint(c) && c != ' ' && c != '\t') {
       view->textArea.insertCodepointBefore(view->textCol, (const char *)&c);
       view->textCol += 1;
+    }    else if (c == '\r') {
+      view->selectPressed = true;
     }
   } 
 }

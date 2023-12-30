@@ -908,6 +908,7 @@ struct CtrlPView {
   Size<Codepoint> textCol;
   RgProcess rgProcess;
   bool quitPressed = false;
+  bool selectPressed = false;
 
 
   struct RgArgs {
@@ -948,6 +949,7 @@ struct CtrlPView {
 
 // convert level 'quitPressed' into edge trigger.
 bool ctrlpWhenQuit(CtrlPView *view);
+bool ctrlpWhenSelected(CtrlPView *view);
 void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c);
 void ctrlpDraw(CtrlPView *view, abuf *buf);
 
