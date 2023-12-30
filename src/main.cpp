@@ -17,6 +17,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include "lib.h"
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 int main(int argc, char **argv){
   // make stdin non blocking.
@@ -27,20 +30,24 @@ int main(int argc, char **argv){
 
   disableRawMode();
 
-  char *filepath = NULL;
+  char *path = NULL;
   if (argc >= 2) {
-    filepath = argv[1];
-  } else {
-    filepath = strdup("/tmp/edtr-scratch");
+    path = argv[1];
   }
 
+  std::string path_str(fs::path(path).parent_path());
+  g_editor.original_cwd = abuf::from_copy_str(path_str.c_str());  
+
+  if (path && fs::is_regular_file(path)) {
+    g_editor.openNewFile(path);
+  }
   // look for lakefile.lean in directory parents. if available,
   // then start lean server there. 
   // If unavailable, then start lean server with lean --server.
 
-  fileConfigOpen(&g_editor.curFile, filepath); // TODO: refactor to use curFile.
-  fileConfigLaunchLeanServer(&g_editor.curFile);
-  fileConfigSyncLeanState(&g_editor.curFile);
+  // fileConfigOpen(&g_editor.curFile, filepath); // TODO: refactor to use curFile.
+  // fileConfigLaunchLeanServer(&g_editor.curFile);
+  // fileConfigSyncLeanState(&g_editor.curFile);
 
   enableRawMode();
   while (1) {

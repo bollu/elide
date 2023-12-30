@@ -531,7 +531,7 @@ void fileConfigInsertRowBefore(FileConfig *f, int at, const char *s, size_t len)
     f->rows[i] = f->rows[i - 1];   
   }
   f->rows[at].setBytes(s, len);
-  g_editor.curFile.makeDirty();
+  f->makeDirty();
 }
 
 // delete the current row.
@@ -613,7 +613,7 @@ void fileConfigInsertEnterKey(FileConfig *f) {
     row = &f->rows[f->cursor.row];
     // chop off at row[...:f->cursor.col]
     row->truncateNCodepoints(Size<Codepoint>(f->cursor.col));
-    g_editor.curFile.makeDirty();
+    f->makeDirty();
     // place cursor at next row (f->cursor.row + 1), column of the indent.
     f->cursor.row++;
     f->cursor.col = num_indent;
@@ -795,9 +795,8 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
 
 /*** file i/o ***/
-void fileConfigOpen(FileConfig *f, const char *filename) {
-  free(f->absolute_filepath);
-  f->absolute_filepath = strdup(filename);
+FileConfig::FileConfig(const char *filename) {
+  this->absolute_filepath = strdup(filename);
 
   FILE *fp = fopen(filename, "a+");
   if (!fp) {
@@ -813,11 +812,13 @@ void fileConfigOpen(FileConfig *f, const char *filename) {
            (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) {
       linelen--;
     }
-    fileConfigInsertRowBefore(f, f->rows.size(), line, linelen);
+    fileConfigInsertRowBefore(this, this->rows.size(), line, linelen);
   }
   free(line);
   fclose(fp);
-  f->is_initialized = true;
+  this->is_initialized = true;
+  fileConfigLaunchLeanServer(this);
+  fileConfigSyncLeanState(this);
 }
 
 
@@ -855,7 +856,7 @@ void fileConfigSave(FileConfig *f) {
   if (!f->whenDirtySave()) { return; }
 
   abuf buf;
-  fileConfigRowsToBuf(&g_editor.curFile, &buf);
+  fileConfigRowsToBuf(f, &buf);
   // | open for read and write
   // | create if does not exist
   // 0644: +r, +w
@@ -878,26 +879,6 @@ void fileConfigSave(FileConfig *f) {
 
 /*** output ***/
 
-void editorScroll() {
-  g_editor.curFile.cursor_render_col = 0;
-  assert (g_editor.curFile.cursor.row >= 0 && g_editor.curFile.cursor.row <= g_editor.curFile.rows.size());
-  if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
-    g_editor.curFile.cursor_render_col = 
-      g_editor.curFile.rows[g_editor.curFile.cursor.row].cxToRx(Size<Codepoint>(g_editor.curFile.cursor.col));
-  }
-  if (g_editor.curFile.cursor.row < g_editor.curFile.scroll_row_offset) {
-    g_editor.curFile.scroll_row_offset = g_editor.curFile.cursor.row;
-  }
-  if (g_editor.curFile.cursor.row >= g_editor.curFile.scroll_row_offset + g_editor.screenrows) {
-    g_editor.curFile.scroll_row_offset = g_editor.curFile.cursor.row - g_editor.screenrows + 1;
-  }
-  if (g_editor.curFile.cursor_render_col < g_editor.curFile.scroll_col_offset) {
-    g_editor.curFile.scroll_col_offset = g_editor.curFile.cursor_render_col;
-  }
-  if (g_editor.curFile.cursor_render_col >= g_editor.curFile.scroll_col_offset + g_editor.screencols) {
-    g_editor.curFile.scroll_col_offset = g_editor.curFile.cursor_render_col - g_editor.screencols + 1;
-  }
-}
 
 int num_digits(int n) {
   if (n < 0) { n = -n; }
@@ -927,17 +908,53 @@ int write_int_to_str(char *s, int num) {
 }
 
 
-void editorDrawRows(abuf &ab) {
+
+void fileConfigDraw(FileConfig *f) {
+  f->cursor_render_col = 0;
+  assert (f->cursor.row >= 0 && f->cursor.row <= f->rows.size());
+  if (f->cursor.row < f->rows.size()) {
+    f->cursor_render_col = 
+      f->rows[f->cursor.row].cxToRx(Size<Codepoint>(f->cursor.col));
+  }
+  if (f->cursor.row < f->scroll_row_offset) {
+    f->scroll_row_offset = f->cursor.row;
+  }
+  if (f->cursor.row >= f->scroll_row_offset + g_editor.screenrows) {
+    f->scroll_row_offset = f->cursor.row - g_editor.screenrows + 1;
+  }
+  if (f->cursor_render_col < f->scroll_col_offset) {
+    f->scroll_col_offset = f->cursor_render_col;
+  }
+  if (f->cursor_render_col >= f->scroll_col_offset + g_editor.screencols) {
+    f->scroll_col_offset = f->cursor_render_col - g_editor.screencols + 1;
+  }
+
+  abuf ab;
+  ab.appendstr("\x1b[?25l"); // hide cursor
+
+  // VT100 escapes.
+  // \x1b: escape.
+  // J: erase in display.
+  // [2J: clear entire screen
+  // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
+  // cursor to bottom
+  //          0 is default arg, so [J: clear screen from cursor to bottom
+  ab.appendstr("\x1b[2J");
+
+  // H: cursor position
+  // [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  ab.appendstr("\x1b[1;1H");
+
   // When we print the line number, tilde, we then print a
   // "\r\n" like on any other line, but this causes the terminal to scroll in
   // order to make room for a new, blank line. Let’s make the last line an
   // exception when we print our
   // "\r\n".
-
   // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
-  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + g_editor.curFile.scroll_row_offset + 1) + 1;
+  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + f->scroll_row_offset + 1) + 1;
   for (int row = 0; row < g_editor.screenrows; row++) {
-    int filerow = row + g_editor.curFile.scroll_row_offset;
+    int filerow = row + f->scroll_row_offset;
 
     // convert the line number into a string, and write it.
     {
@@ -964,22 +981,22 @@ void editorDrawRows(abuf &ab) {
     const TextAreaMode textAreaMode = 
       g_editor.vim_mode == VM_NORMAL ? TextAreaMode::TAM_Normal : TAM_Insert;
 
-    if (filerow < g_editor.curFile.rows.size()) {
-      const abuf &row = g_editor.curFile.rows[filerow];
+    if (filerow < f->rows.size()) {
+      const abuf &row = f->rows[filerow];
       const Size<Codepoint> NCOLS = 
         clampu<Size<Codepoint>>(row.ncodepoints(), g_editor.screencols - LINE_NUMBER_NUM_CHARS - 1);
       assert(g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT);
 
-      if (filerow == g_editor.curFile.cursor.row) {
+      if (filerow == f->cursor.row) {
         for(Size<Codepoint> i(0); i <= NCOLS; ++i) {
-          drawColWithCursor(&ab, &row, i, g_editor.curFile.cursor.col, textAreaMode);
+          drawColWithCursor(&ab, &row, i, f->cursor.col, textAreaMode);
         }
       } else {
         for(Ix<Codepoint> i(0); i < NCOLS; ++i) {
           ab.appendCodepoint(row.getCodepoint(i));
         }
       }
-    } else if (filerow == g_editor.curFile.rows.size() && g_editor.curFile.cursor.row == filerow) {
+    } else if (filerow == f->rows.size() && f->cursor.row == filerow) {
         abufAppendCodepointWithCursor(&ab, textAreaMode, " ");
     } 
     else {
@@ -997,32 +1014,6 @@ void editorDrawRows(abuf &ab) {
     // to make space for status bar.
     ab.appendstr("\r\n");
   }
-}
-
-void editorDrawNormalInsertMode() {
-
-  // initEditor();
-  editorScroll();
-  abuf ab;
-
-
-  ab.appendstr("\x1b[?25l"); // hide cursor
-
-  // VT100 escapes.
-  // \x1b: escape.
-  // J: erase in display.
-  // [2J: clear entire screen
-  // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
-  // cursor to bottom
-  //          0 is default arg, so [J: clear screen from cursor to bottom
-  ab.appendstr("\x1b[2J");
-
-  // H: cursor position
-  // [<row>;<col>H   (args separated by ;).
-  // Default arguments for H is 1, so it's as if we had sent [1;1H
-  ab.appendstr("\x1b[1;1H");
-
-  editorDrawRows(ab);
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
@@ -1064,27 +1055,30 @@ void editorDrawInfoViewGoal(abuf *ab, const char *str) {
 
 }
 
-bool isInfoViewTacticsHoverTabEnabled() {
+bool isInfoViewTacticsHoverTabEnabled(FileConfig *f) {
   json_object  *result = nullptr;
-  json_object_object_get_ex(g_editor.curFile.leanHoverViewHover, "result", &result);
+  json_object_object_get_ex(f->leanHoverViewHover, "result", &result);
   return result != nullptr; 
 }
 
-bool isInfoViewTacticsTacticsTabEnabled() {
+bool isInfoViewTacticsTacticsTabEnabled(FileConfig *f) {
   json_object  *result = nullptr;
-  json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainTermGoal, "result", &result);
+  json_object_object_get_ex(f->leanInfoViewPlainTermGoal, "result", &result);
   if (result != nullptr) { return true; }; 
   
-  json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainGoal, "result", &result);
+  json_object_object_get_ex(f->leanInfoViewPlainGoal, "result", &result);
   if (result != nullptr) { return true; }; 
   return false;
 }
 
-void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
+void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, FileConfig *f, abuf *buf) {
     assert(tab >= 0 && tab < IVT_NumTabs);
     const char *str[IVT_NumTabs] = {"Tactics", "Hover","Messages"};    
-    bool enabled[IVT_NumTabs] = {isInfoViewTacticsTacticsTabEnabled(), isInfoViewTacticsHoverTabEnabled(), true};
-    // TODO: add a concept of a tab being enabled.
+    bool enabled[IVT_NumTabs] = {
+      isInfoViewTacticsTacticsTabEnabled(g_editor.curFile()),
+      isInfoViewTacticsHoverTabEnabled(g_editor.curFile()),
+      true
+    };
 
     for(int i = 0; i < IVT_NumTabs; ++i) {
       if (i == (int) tab) {
@@ -1110,7 +1104,7 @@ void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
     buf->appendstr("\r\n");
 }
 
-void editorDrawInfoViewTacticsTab() {
+void editorDrawInfoViewTacticsTab(FileConfig *f) {
   abuf ab;
 
   ab.appendstr("\x1b[?25l"); // hide cursor
@@ -1128,18 +1122,13 @@ void editorDrawInfoViewTacticsTab() {
 
   // always append a space, since we decrement a row from screen rows
   // to make space for status bar.
-  // ab.appendstr("@@@ LEAN INFOVIEW @@@ \r\n");
-  editorDrawInfoViewTacticsTabbar(IVT_Tactic, &ab);
-  assert(g_editor.curFile.leanInfoViewPlainGoal);
-  assert(g_editor.curFile.leanInfoViewPlainTermGoal);
-  // ab.appendfmtstr(120, "gl: %s \x1b[K \r\n", 
-  //   json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
-  // ab.appendfmtstr(120, "trmgl: %s \x1b[K \r\n", 
-  //   json_object_to_json_string_ext(g_editor.curFile.leanInfoViewPlainTermGoal, JSON_C_TO_STRING_NOSLASHESCAPE));
+  editorDrawInfoViewTacticsTabbar(IVT_Tactic, f, &ab);
+  assert(f->leanInfoViewPlainGoal != nullptr);
+  assert(f->leanInfoViewPlainTermGoal!= nullptr);
 
   do {
     json_object  *result = nullptr;
-    json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainTermGoal, "result", &result);
+    json_object_object_get_ex(f->leanInfoViewPlainTermGoal, "result", &result);
     if (result == nullptr) {
       ab.appendstr("▶ Expected Type: --- \x1b[K \r\n");
     } else {
@@ -1157,7 +1146,7 @@ void editorDrawInfoViewTacticsTab() {
 
   do {
     json_object  *result = nullptr;
-    json_object_object_get_ex(g_editor.curFile.leanInfoViewPlainGoal, "result", &result);
+    json_object_object_get_ex(f->leanInfoViewPlainGoal, "result", &result);
     if (result == nullptr) {
       ab.appendstr("▶ Tactic State: --- \x1b[K \r\n");
     } else {
@@ -1194,36 +1183,31 @@ void editorDrawInfoViewTacticsTab() {
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
-void editorDrawInfoViewMessagesTab() {
+void editorDrawInfoViewMessagesTab(FileConfig *f) {
   abuf ab;
-
   ab.appendstr("\x1b[?25l"); // hide cursor
   ab.appendstr("\x1b[2J");   // J: erase in display.
   ab.appendstr("\x1b[1;1H");  // H: cursor position
-  editorDrawInfoViewTacticsTabbar(IVT_Messages, &ab);
+  editorDrawInfoViewTacticsTabbar(IVT_Messages, f, &ab);
   ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
   ab.appendstr("\r\n");  // always append a space
-
-
-
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 
 }
 
 
-void editorDrawInfoViewHoverTab() {
+void editorDrawInfoViewHoverTab(FileConfig *f) {
   abuf ab;
-
   ab.appendstr("\x1b[?25l"); // hide cursor
   ab.appendstr("\x1b[2J");   // J: erase in display.
   ab.appendstr("\x1b[1;1H");  // H: cursor position
-  editorDrawInfoViewTacticsTabbar(IVT_Hover, &ab);
+  editorDrawInfoViewTacticsTabbar(IVT_Hover, f, &ab);
   ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
   ab.appendstr("\r\n");  // always append a space
 
   do {
     json_object  *result = nullptr;
-    json_object_object_get_ex(g_editor.curFile.leanHoverViewHover, "result", &result);
+    json_object_object_get_ex(f->leanHoverViewHover, "result", &result);
     if (result == nullptr) {
       ab.appendstr("▶ Hover: --- \x1b[K \r\n");
     } else {
@@ -1262,8 +1246,12 @@ void editorDrawInfoViewHoverTab() {
 }
 
 
-InfoViewTab infoViewTabCycleNext(InfoViewTab t) {
-  bool enabled[IVT_NumTabs] = {isInfoViewTacticsTacticsTabEnabled(), isInfoViewTacticsHoverTabEnabled(), true};
+InfoViewTab infoViewTabCycleNext(FileConfig *f, InfoViewTab t) {
+  bool enabled[IVT_NumTabs] = {
+    isInfoViewTacticsTacticsTabEnabled(f),
+    isInfoViewTacticsHoverTabEnabled(f),
+    true
+  };
   bool foundEnabled = false;
   t = InfoViewTab(((int) t + 1)  % IVT_NumTabs);
   for(int i = 0; i < IVT_NumTabs; ++i) {
@@ -1278,41 +1266,41 @@ InfoViewTab infoViewTabCycleNext(InfoViewTab t) {
   return t;
 }
 
-
-
-void editorDrawInfoView() {
-  bool enabled[IVT_NumTabs] = {isInfoViewTacticsTacticsTabEnabled(), isInfoViewTacticsHoverTabEnabled(), true};
+void editorDrawInfoView(FileConfig *f) {
+  bool enabled[IVT_NumTabs] = {
+    isInfoViewTacticsTacticsTabEnabled(f),
+    isInfoViewTacticsHoverTabEnabled(f),
+    true
+  };
   bool foundEnabled = false;
   for(int i = 0; i < IVT_NumTabs; ++i) {
-    if (enabled[g_editor.curFile.infoViewTab]) {
+    if (enabled[f->infoViewTab]) {
       foundEnabled = true;
       break;
     } else {
-      g_editor.curFile.infoViewTab = InfoViewTab((int(g_editor.curFile.infoViewTab) + 1) % IVT_NumTabs);
+      f->infoViewTab = InfoViewTab((int(f->infoViewTab) + 1) % IVT_NumTabs);
     }
   }
   assert(foundEnabled && "unable to find any enabled tab on the info view.");
 
-  if(g_editor.curFile.infoViewTab <= IVT_Tactic && 
-        isInfoViewTacticsTacticsTabEnabled()) {
-      editorDrawInfoViewTacticsTab();
+  if(f->infoViewTab <= IVT_Tactic && 
+        isInfoViewTacticsTacticsTabEnabled(f)) {
+      editorDrawInfoViewTacticsTab(f);
     return;
   }
 
-  if(g_editor.curFile.infoViewTab <= IVT_Hover &&
-        isInfoViewTacticsHoverTabEnabled()) {
-      editorDrawInfoViewHoverTab();
+  if(f->infoViewTab <= IVT_Hover &&
+        isInfoViewTacticsHoverTabEnabled(f)) {
+      editorDrawInfoViewHoverTab(f);
       return;
   }
 
-  if (g_editor.curFile.infoViewTab <= IVT_Messages) {
-    editorDrawInfoViewMessagesTab();
+  if (f->infoViewTab <= IVT_Messages) {
+    editorDrawInfoViewMessagesTab(f);
     return;
   }
 
   assert(false && "unreachable, should not reach here in drawInfoView.");
-
-
 }
 
 void editorDrawCompletionMode() {
@@ -1328,24 +1316,41 @@ void editorDrawCompletionMode() {
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
-void editorDrawCtrlPMode() {
+void editorDrawNoFile() {
   abuf ab;
-  ctrlpDraw(&g_editor.curFile.ctrlp, &ab);
+  ab.appendstr("\x1b[?25l"); // hide cursor
+  // VT100 escapes.
+  // \x1b: escape.
+  // J: erase in display.
+  // [2J: clear entire screen
+  // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
+  // cursor to bottom
+  //          0 is default arg, so [J: clear screen from cursor to bottom
+  ab.appendstr("\x1b[2J");
+  // H: cursor position
+  // [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  ab.appendstr("\x1b[1;1H");
+  ab.appendstr("We will know . We must know ~ David Hilbert.\r\n");
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
 void editorDraw() {
   if (g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT) {
-    editorDrawNormalInsertMode();
-    return;
+    if (g_editor.curFile()) {
+      fileConfigDraw(g_editor.curFile());
+    } else {
+      editorDrawNoFile();
+    }
   } else if (g_editor.vim_mode == VM_COMPLETION) {
     editorDrawCompletionMode();
   } else if (g_editor.vim_mode == VM_CTRLP) {
-    editorDrawCtrlPMode();
+    ctrlpDraw(&g_editor.ctrlp);
   } else {
     assert(g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL);
-    editorDrawInfoView();
+    assert(g_editor.curFile() != NULL);
+    editorDrawInfoView(g_editor.curFile());
   }
-
 }
 
 void editorSetStatusMessage(const char *fmt, ...) {
@@ -1533,51 +1538,51 @@ void fileConfigDeleteTillEndOfRow(FileConfig *f) {
 }
 
 
-void editorMoveCursor(int key) {
+void fileConfigMoveCursor(FileConfig *f, int key) {
   switch (key) {
   case 'w': {
-    fileConfigCursorMoveWordNext(&g_editor.curFile);
+    fileConfigCursorMoveWordNext(f);
     break;
   }
   case 'b': {
-    fileConfigCursorMoveWordPrev(&g_editor.curFile);
+    fileConfigCursorMoveWordPrev(f);
     break;
   }
 
   case 'h': {
-    fileConfigCursorMoveCharLeft(&g_editor.curFile);
+    fileConfigCursorMoveCharLeft(f);
     break;
   }
   case 'l':
-    fileConfigCursorMoveCharRight(&g_editor.curFile);
+    fileConfigCursorMoveCharRight(f);
     break;
   case 'k':
-    if (g_editor.curFile.cursor.row > 0) {
-      g_editor.curFile.cursor.row--;
+    if (f->cursor.row > 0) {
+      f->cursor.row--;
     }
-    g_editor.curFile.cursor.col = 
-      std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
+    f->cursor.col = 
+      std::min<Size<Codepoint>>(f->cursor.col, f->rows[f->cursor.row].ncodepoints());
     break;
   case 'j':
-    if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
-      g_editor.curFile.cursor.row++;
+    if (f->cursor.row < f->rows.size()) {
+      f->cursor.row++;
     }
-    if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
-      g_editor.curFile.cursor.col = 
-        std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
+    if (f->cursor.row < f->rows.size()) {
+      f->cursor.col = 
+        std::min<Size<Codepoint>>(f->cursor.col, f->rows[f->cursor.row].ncodepoints());
     }
     break;
   case CTRL_KEY('d'):
-    g_editor.curFile.cursor.row = clampu<int>(g_editor.curFile.cursor.row + g_editor.screenrows / 4, g_editor.curFile.rows.size());
-    if (g_editor.curFile.cursor.row < g_editor.curFile.rows.size()) {
-      g_editor.curFile.cursor.col = 
-        std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
+    f->cursor.row = clampu<int>(f->cursor.row + g_editor.screenrows / 4, f->rows.size());
+    if (f->cursor.row < f->rows.size()) {
+      f->cursor.col = 
+        std::min<Size<Codepoint>>(f->cursor.col, f->rows[f->cursor.row].ncodepoints());
     }
     break;
   case CTRL_KEY('u'):
-    g_editor.curFile.cursor.row = clamp0<int>(g_editor.curFile.cursor.row - g_editor.screenrows / 4);
-    g_editor.curFile.cursor.col = 
-      std::min<Size<Codepoint>>(g_editor.curFile.cursor.col, g_editor.curFile.rows[g_editor.curFile.cursor.row].ncodepoints());
+    f->cursor.row = clamp0<int>(f->cursor.row - g_editor.screenrows / 4);
+    f->cursor.col = 
+      std::min<Size<Codepoint>>(f->cursor.col, f->rows[f->cursor.row].ncodepoints());
     break;
   }
 }
@@ -1646,9 +1651,9 @@ int editorReadRawEscapeSequence() {
 // open row below ('o'.)
 void fileConfigOpenRowBelow(FileConfig *f) {
   if (f->cursor.row == f->rows.size()) {
-    fileConfigInsertRowBefore(&g_editor.curFile, f->cursor.row, nullptr, 0);
+    fileConfigInsertRowBefore(f, f->cursor.row, nullptr, 0);
   } else {
-    fileConfigInsertRowBefore(&g_editor.curFile, f->cursor.row + 1, nullptr, 0);
+    fileConfigInsertRowBefore(f, f->cursor.row + 1, nullptr, 0);
     f->cursor.row += 1;
     f->cursor.col = Size<Codepoint>(0);
   }
@@ -1656,7 +1661,7 @@ void fileConfigOpenRowBelow(FileConfig *f) {
 
 // open row above ('O');
 void fileConfigOpenRowAbove(FileConfig *f) {
-  fileConfigInsertRowBefore(&g_editor.curFile, 0, nullptr, 0);
+  fileConfigInsertRowBefore(f, 0, nullptr, 0);
 }
 
 void editorProcessKeypress() {
@@ -1680,19 +1685,21 @@ void editorProcessKeypress() {
     // if lakefile is available, use it as the path.
     // if not, use the file path as the base path.
     // TODO: search for `.git` and use it as the base path.
-    char *default_basepath = strdup(
-      g_editor.curFile.lean_server_state.lakefile_dirpath ?
-      g_editor.curFile.lean_server_state.lakefile_dirpath :
-      dirname(g_editor.curFile.absolute_filepath));
-    ctrlpHandleInput(&g_editor.curFile.ctrlp, default_basepath, c);
-    free(default_basepath);
-
-    if (ctrlpWhenQuit(&g_editor.curFile.ctrlp)) {
-      g_editor.vim_mode = g_editor.curFile.ctrlp.previous_state;
+    // TODO: |g_editor basePath, refactor into separate file.|
+    // char *default_basepath = strdup(
+    //   f->lean_server_state.lakefile_dirpath ?
+    //   f->lean_server_state.lakefile_dirpath :
+    //   dirname(f->absolute_filepath));
+    ctrlpHandleInput(&g_editor.ctrlp, c);
+    // free(default_basepath);
+    if (ctrlpWhenQuit(&g_editor.ctrlp)) {
+      g_editor.vim_mode = g_editor.ctrlp.previous_state;
       return;
     }
   }
   else if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
+    assert(g_editor.curFile());
+    FileConfig *f = g_editor.curFile();
     switch(c) {
     case 'q': {
       g_editor.vim_mode = VM_NORMAL;
@@ -1700,7 +1707,7 @@ void editorProcessKeypress() {
     }
     case '\t': {
       // TODO: this is not per file info? or is it?
-      g_editor.curFile.infoViewTab = infoViewTabCycleNext(g_editor.curFile.infoViewTab);
+      f->infoViewTab = infoViewTabCycleNext(f, f->infoViewTab);
       return;
     }
     case CTRL_KEY('c'):
@@ -1715,36 +1722,41 @@ void editorProcessKeypress() {
     }
   }
   else if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in normal mode
+    FileConfig *f = g_editor.curFile();
+    if (f == nullptr) {
+      ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
+      return;      
+    }
+    assert(f != nullptr);
+
     switch (c) {
     case CTRL_KEY('p'): {
-      g_editor.curFile.ctrlp.previous_state = VM_NORMAL;
-      g_editor.curFile.ctrlp.textAreaMode = TAM_Insert;
-      g_editor.vim_mode = VM_CTRLP;
+      ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
       return;
     }
     case 'D': {
-      g_editor.curFile.mkUndoMemento();
-      fileConfigDeleteTillEndOfRow(&g_editor.curFile);
+      f->mkUndoMemento();
+      fileConfigDeleteTillEndOfRow(f);
       return;
     }
     case 'q': {
-      fileConfigSave(&g_editor.curFile);
+      fileConfigSave(f);
       die("bye!");
       return;
     }
     case 'u': {
-      g_editor.curFile.doUndo();
+      f->doUndo();
       return;
     }
     case 'r':
     case 'U': {
-      g_editor.curFile.doRedo();
+      f->doRedo();
       return;
 
     }
     case 'x': {
-      g_editor.curFile.mkUndoMemento();
-      fileConfigXCommand(&g_editor.curFile);
+      f->mkUndoMemento();
+      fileConfigXCommand(f);
       break;
     }
     case 'h':
@@ -1755,39 +1767,39 @@ void editorProcessKeypress() {
     case CTRL_KEY('u'):
     case 'w': 
     case 'b': {
-      editorMoveCursor(c);
+      fileConfigMoveCursor(f, c);
       break;
     }
     case 'o': {
-      g_editor.curFile.mkUndoMemento();
-      fileConfigOpenRowBelow(&g_editor.curFile);
+      f->mkUndoMemento();
+      fileConfigOpenRowBelow(f);
       g_editor.vim_mode = VM_INSERT;
       return;
     }
     case 'O': {
-      g_editor.curFile.mkUndoMemento();
-      fileConfigOpenRowAbove(&g_editor.curFile);
+      f->mkUndoMemento();
+      fileConfigOpenRowAbove(f);
       g_editor.vim_mode = VM_INSERT;
       return; 
     }
 
     case 'a': {
-      g_editor.curFile.mkUndoMemento();
-      fileConfigCursorMoveCharRightNoWraparound(&g_editor.curFile);
+      f->mkUndoMemento();
+      fileConfigCursorMoveCharRightNoWraparound(f);
       g_editor.vim_mode = VM_INSERT;
       return;
     }
     case 'd': {
-      g_editor.curFile.mkUndoMemento();
-      fileConfigDeleteCurrentRow(&g_editor.curFile);
+      f->mkUndoMemento();
+      fileConfigDeleteCurrentRow(f);
       return;
     }
     case '$': {
-      fileConfigCursorMoveEndOfRow(&g_editor.curFile);
+      fileConfigCursorMoveEndOfRow(f);
       return;
     }
     case '0': {
-      fileConfigCursorMoveBeginOfRow(&g_editor.curFile);
+      fileConfigCursorMoveBeginOfRow(f);
       return;
     }
 
@@ -1795,50 +1807,54 @@ void editorProcessKeypress() {
     case ' ':
     case '?': {
       // TODO: make this more local.
-      fileConfigRequestGoalState(&g_editor.curFile);
+      fileConfigRequestGoalState(f);
       g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL;
       return;
     }
     case 'i':
-      g_editor.curFile.mkUndoMemento();
+      f->mkUndoMemento();
       g_editor.vim_mode = VM_INSERT;
       return;
     } // end switch over key.
   } // end mode == VM_NORMAL
   else {
     assert (g_editor.vim_mode == VM_INSERT); 
+    FileConfig *f = g_editor.curFile();
+    if (f == nullptr) {
+      ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
+      return;      
+    }
+    assert(f != nullptr);
 
     // make an undo memento every second.
-    g_editor.curFile.mkUndoMementoRecent();
+    f->mkUndoMementoRecent();
 
     switch (c) { // behaviors only in edit mode.
-    case CTRL_KEY('\\'): {
-      g_editor.curFile.ctrlp.previous_state = VM_COMPLETION;
-      g_editor.vim_mode = VM_COMPLETION;
-      return;
-    }
+    // case CTRL_KEY('\\'): {
+    //   ctrlpOpen(&g_editor.ctrlp, VM_COMPLETION, g_editor.original_cwd);
+    //   return;
+    // }
     case CTRL_KEY('p'): {
-      g_editor.curFile.ctrlp.previous_state = VM_INSERT;
-      g_editor.vim_mode = VM_CTRLP;
+      ctrlpOpen(&g_editor.ctrlp, VM_INSERT, g_editor.original_cwd);
       return;
     }
     case '\r':
-      fileConfigInsertEnterKey(&g_editor.curFile);
+      fileConfigInsertEnterKey(f);
       return;
     case KEYEVENT_BACKSPACE: { // this is backspace, apparently
-      fileConfigBackspace(&g_editor.curFile);
+      fileConfigBackspace(f);
       return;
     }
     // when switching to normal mode, sync the lean state. 
     case CTRL_KEY('c'): { // escape key
       g_editor.vim_mode = VM_NORMAL;
-      fileConfigSave(&g_editor.curFile);
-      fileConfigSyncLeanState(&g_editor.curFile);
+      fileConfigSave(f);
+      fileConfigSyncLeanState(f);
       return;
    }
     default:
       if (isprint(c)){
-        fileConfigInsertCharBeforeCursor(&g_editor.curFile, c);
+        fileConfigInsertCharBeforeCursor(f, c);
         return;
       }
     } // end switch case.
@@ -2128,6 +2144,7 @@ CtrlPView::RgArgs CtrlPView::parseUserCommand(abuf buf) {
   return args;
 };
 
+
 // rg TEXT_STRING PROJECT_PATH -g FILE_PATH_GLOB # find all files w/contents matching pattern.
 // rg PROJECT_PATH --files -g FILE_PATH_GLOB # find all files w/ filename matching pattern.
 std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs args) {
@@ -2156,7 +2173,14 @@ std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs ar
 };
 
 
-void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
+void ctrlpOpen(CtrlPView *view, VimMode previous_state, abuf cwd) {
+  view->cwd = cwd;
+  view->textAreaMode = TAM_Insert;
+  view->previous_state = previous_state;
+  g_editor.vim_mode = VM_CTRLP;
+}
+
+void ctrlpHandleInput(CtrlPView *view, int c) {
   assert(view->textCol <= view->textArea.ncodepoints());
   if (view->textAreaMode == TAM_Normal) {
     if (c == 'j' || c == CTRL_KEY('n')) {
@@ -2237,7 +2261,8 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
   } 
 }
 
-void ctrlpDraw(CtrlPView *view, abuf *ab) {
+void ctrlpDraw(CtrlPView *view) {
+  abuf ab;
   if (view->textArea.whenDirty()) {
     // nuke previous rg process, and clear all data it used to own.
     view->rgProcess.killSync();
@@ -2255,12 +2280,12 @@ void ctrlpDraw(CtrlPView *view, abuf *ab) {
   view->rgProcess.readLinesNonBlocking();
   // }
 
-  ab->appendstr("\x1b[?25l"); // hide cursor
-  ab->appendstr("\x1b[2J");   // J: erase in display.
-  ab->appendstr("\x1b[1;1H");  // H: cursor position
+  ab.appendstr("\x1b[?25l"); // hide cursor
+  ab.appendstr("\x1b[2J");   // J: erase in display.
+  ab.appendstr("\x1b[1;1H");  // H: cursor position
 
   // append format string.
-  ab->appendfmtstr(120, "┎CTRLP MODE (%s |%s|%d matches)┓\x1b[K\r\n", 
+  ab.appendfmtstr(120, "┎CTRLP MODE (%s |%s|%d matches)┓\x1b[K\r\n", 
     textAreaModeToString(view->textAreaMode),
     view->rgProcess.running ? "running" : "completed",
     view->rgProcess.lines.size());
@@ -2282,27 +2307,27 @@ void ctrlpDraw(CtrlPView *view, abuf *ab) {
   assert(lp <= view->textCol);
   assert(view->textCol <= rp);
 
-  // ab->appendstr(ESCAPE_CODE_DULL);
+  // ab.appendstr(ESCAPE_CODE_DULL);
   for(auto i = lm; i < lp; ++i) {
-    ab->appendChar('.');
+    ab.appendChar('.');
   }
-  // ab->appendstr(ESCAPE_CODE_UNSET);
+  // ab.appendstr(ESCAPE_CODE_UNSET);
   for(auto i = lp; i <= rp; ++i) {
-    drawColWithCursor(ab, &view->textArea, i, view->textCol, view->textAreaMode);
+    drawColWithCursor(&ab, &view->textArea, i, view->textCol, view->textAreaMode);
   }
-  // ab->appendstr(ESCAPE_CODE_DULL);
+  // ab.appendstr(ESCAPE_CODE_DULL);
   for(auto i = rp+1; i < rm; ++i) {
-    ab->appendChar('.');
+    ab.appendChar('.');
   }
-  // ab->appendstr(ESCAPE_CODE_UNSET);
-  ab->appendstr("\x1b[K\r\n");
-  ab->appendstr("━━━━━\x1b[K\r\n");
+  // ab.appendstr(ESCAPE_CODE_UNSET);
+  ab.appendstr("\x1b[K\r\n");
+  ab.appendstr("━━━━━\x1b[K\r\n");
 
   if (!(view->rgProcess.lines.size() == 0) || view->rgProcess.selectedLine != -1);
   static const int NROWS = g_editor.screenrows - 5;
   for(int i = 0; i < view->rgProcess.lines.size() && i < NROWS; ++i) {
     if (i == view->rgProcess.selectedLine) {
-      ab->appendstr(ESCAPE_CODE_CURSOR_SELECT);
+      ab.appendstr(ESCAPE_CODE_CURSOR_SELECT);
     }
 
     const abuf &line = view->rgProcess.lines[i];
@@ -2312,25 +2337,25 @@ void ctrlpDraw(CtrlPView *view, abuf *ab) {
     const int NCODEPOINTS = NCOLS - NELLIPSIS;
 
     Ix<Codepoint> n(0);
-    ab->appendstr("  . ");
+    ab.appendstr("  . ");
     for(; n < NCODEPOINTS && n < line.ncodepoints(); ++n) {
-      ab->appendCodepoint(line.getCodepoint(n));
+      ab.appendCodepoint(line.getCodepoint(n));
     }
 
     // TODO: create an API to build a string by adding stuff to left and right,
     // and keeping track of space left in the middle.
     if (line.ncodepoints() > NCODEPOINTS) {
       // we had to truncate.
-      ab->appendstr(ELLIPSIS);
+      ab.appendstr(ELLIPSIS);
     } 
 
     if (i == view->rgProcess.selectedLine) {
-      ab->appendstr(ESCAPE_CODE_UNSET);
+      ab.appendstr(ESCAPE_CODE_UNSET);
     }
 
-    ab->appendstr("\x1b[K \r\n");
+    ab.appendstr("\x1b[K \r\n");
   }
-  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab->buf(), ab->len()));
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
 /*

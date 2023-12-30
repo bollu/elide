@@ -716,7 +716,8 @@ enum InfoViewTab {
   IVT_NumTabs
 };
 
-static InfoViewTab infoViewTabCycleNext(InfoViewTab t);
+struct FileConfig;
+static InfoViewTab infoViewTabCycleNext(FileConfig *f, InfoViewTab t);
 
 // a struct to encapsulate a child proces that is line buffered,
 // which is a closure plus a childpid. 
@@ -904,6 +905,7 @@ struct CtrlPView {
     int colend = 0;
   };
 
+  abuf cwd; // default working directory for the search.
   abuf textArea;
   Size<Codepoint> textCol;
   RgProcess rgProcess;
@@ -950,13 +952,16 @@ struct CtrlPView {
 // convert level 'quitPressed' into edge trigger.
 bool ctrlpWhenQuit(CtrlPView *view);
 bool ctrlpWhenSelected(CtrlPView *view);
-void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c);
-void ctrlpDraw(CtrlPView *view, abuf *buf);
+void ctrlpOpen(CtrlPView *view, VimMode previous_state, abuf cwd);
+void ctrlpHandleInput(CtrlPView *view, int c);
+void ctrlpDraw(CtrlPView *view);
 
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
 // Do I want a *global* undo/redo? Probably not, no?
 // TODO: think about just copying the sublime text API :)
 struct FileConfig : public Undoer<FileConfigUndoState> {
+  FileConfig(const char *absolute_filepath) ;
+
   bool is_initialized = false;
 
   // offset for scrolling.
@@ -973,7 +978,6 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
   // TextDocument for LSP
   TextDocumentItem text_document_item;
 
-  CtrlPView ctrlp;
   CompletionView completion;
 
   // if 'b' is true, then mark the state as dirty.
@@ -1004,7 +1008,6 @@ struct AbbreviationDict {
   bool is_initialized = false;
 };
 
-
 struct EditorConfig {
   VimMode vim_mode = VM_NORMAL;
   struct termios orig_termios;
@@ -1014,10 +1017,29 @@ struct EditorConfig {
   char statusmsg[80];
   time_t statusmsg_time = 0;
 
-  FileConfig curFile;
+  FileConfig *curFile() {
+    if (files.size() == 0) { 
+      return NULL;
+    } else { 
+      assert(fileIx < files.size());
+      return &files[fileIx];
+    }
+  };
 
+  void openNewFile(char *absolute_path) {
+    FileConfig f(absolute_path);
+    this->files.push_back(f);
+    fileIx = this->files.size() - 1;
+  }
+
+  abuf original_cwd; // cwd that the process starts in.
+  CtrlPView ctrlp;
   AbbreviationDict abbrevDict;
   EditorConfig() { statusmsg[0] = '\0'; }
+
+private:
+  std::vector<FileConfig> files;
+  int fileIx = 0;
 
 };
 
@@ -1057,7 +1079,6 @@ bool is_space_or_tab(char c);
 void fileConfigInsertEnterKey(FileConfig *f);
 void fileConfigInsertCharBeforeCursor(FileConfig *f, int c); // 32 bit.
 void fileConfigDelChar(FileConfig *f);
-void fileConfigOpen(FileConfig *f, const char *filename);
 void fileConfigRowsToBuf(FileConfig *f, abuf *buf);
 void fileConfigDebugPrint(FileConfig *f, abuf *buf); 
 void fileConfigCursorMoveWordNext(FileConfig *f);
