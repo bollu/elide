@@ -1347,7 +1347,6 @@ void editorDrawCompletionMode() {
 void editorDrawCtrlPMode() {
   abuf ab;
   ctrlpDraw(&g_editor.curFile.ctrlp, &ab);
-  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
 void editorDraw() {
@@ -1603,9 +1602,11 @@ void editorMoveCursor(int key) {
 int editorReadRawEscapeSequence() {
   int nread;
   char c;
-  while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-    if (nread == -1 && errno != EAGAIN)
-      die("read");
+  if ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+    if (nread == -1 && errno != EAGAIN)  {
+      die("unable to read");
+    }
+    return 0; // no input. is it safe to return 0?
   }
 
   // if we see an escape char, then read.
@@ -1695,12 +1696,14 @@ void editorProcessKeypress() {
     // if lakefile is available, use it as the path.
     // if not, use the file path as the base path.
     // TODO: search for `.git` and use it as the base path.
-    const char *default_basepath = 
+    char *default_basepath = 
       g_editor.curFile.lean_server_state.lakefile_dirpath ?
-      g_editor.curFile.lean_server_state.lakefile_dirpath :
-      dirname(g_editor.curFile.absolute_filepath);
+      strdup(g_editor.curFile.lean_server_state.lakefile_dirpath) :
+      dirname(strdup(g_editor.curFile.absolute_filepath));
     ctrlpHandleInput(&g_editor.curFile.ctrlp, 
         default_basepath, c);
+    free(default_basepath);
+
     if (ctrlpWhenQuit(&g_editor.curFile.ctrlp)) {
       g_editor.vim_mode = g_editor.curFile.ctrlp.previous_state;
       return;
@@ -2158,36 +2161,45 @@ void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c) {
     // nuke previous rg process, and clear all data it used to own.
     view->rgProcess.killSync();
 
+    std::vector<std::string> dbgargs;
+    dbgargs.push_back("--files");
+    dbgargs.push_back("-g");
+    dbgargs.push_back("*");
+
     // invoke the new rg process.
     CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea);
-    view->rgProcess.execpAsync(cwd, CtrlPView::rgArgsToCommandLineArgs(args));
+    view->rgProcess.execpAsync("/home/bollu/software/edtr/build", 
+    dbgargs);
+      // CtrlPView::rgArgsToCommandLineArgs(args));
   }
+
+
 }
 
-void ctrlpDraw(const CtrlPView *view, abuf *ab) {
-  // VT100 escapes.
-  // \x1b: escape. J: erase in display. [2J: clear entire screen
-  ab->appendstr("\x1b[2J");
-  // H: cursor position. [<row>;<col>H   (args separated by ;).
-  // Default arguments for H is 1, so it's as if we had sent [1;1H
-  ab->appendstr("\x1b[1;1H");
+void ctrlpDraw(CtrlPView *view, abuf *ab) {
+  // we need a function that is called each time x(.
+  if (view->rgProcess.isRunningNonBlocking()) {
+    view->rgProcess.readLinesNonBlocking();
+  }
 
   ab->appendstr("\x1b[?25l"); // hide cursor
+  ab->appendstr("\x1b[2J");   // J: erase in display.
+  ab->appendstr("\x1b[1;1H");  // H: cursor position
 
   // append format string.
-  ab->appendfmtstr(120, "┎CTRLP MODE (%s)┓\r\n", 
-    textAreaModeToString(view->textAreaMode));
+  ab->appendfmtstr(120, "┎CTRLP MODE (%s |%s|%d matches)┓\x1b[K\r\n", 
+    textAreaModeToString(view->textAreaMode),
+    view->rgProcess.running ? "running" : "completed",
+    view->rgProcess.lines.size());
   
   // need to consider a window around the character.
   // this is a nice design pattern.
   // TODO: refactor into SquishyAABB.
-  const int LEFT_WINDOW_PADDING = 40;
-  const int RIGHT_WINDOW_PADDING = 40;
+  const int LEFT_WINDOW_PADDING = 20;
+  const int RIGHT_WINDOW_PADDING = 20;
   const int BORDER_WIDTH = 3; // ellipsis width;
   const int LEFT_WINDOW_MARGIN = LEFT_WINDOW_PADDING - BORDER_WIDTH;
   const int RIGHT_WINDOW_MARGIN = RIGHT_WINDOW_PADDING + BORDER_WIDTH;
-
-  const int NCHARS = 40;
 
   Size<Codepoint> lm = view->textCol.sub0(LEFT_WINDOW_MARGIN);
   Size<Codepoint> lp = view->textCol.sub0(LEFT_WINDOW_PADDING);
@@ -2210,12 +2222,32 @@ void ctrlpDraw(const CtrlPView *view, abuf *ab) {
     ab->appendChar('.');
   }
   // ab->appendstr(ESCAPE_CODE_UNSET);
-  ab->appendstr("\r\n");
+  ab->appendstr("\x1b[K\r\n");
+  ab->appendstr("━━━━━\x1b[K\r\n");
 
-  // H: cursor position. [<row>;<col>H   (args separated by ;).
-  // Default arguments for H is 1, so it's as if we had sent [1;1H
-  ab->appendstr("\x1b[1;1H");
+  static const int NROWS = 5;
+  for(int i = 0; i < view->rgProcess.lines.size() && i < NROWS; ++i) {
+    const abuf &line = view->rgProcess.lines[i];
+    const char *ELLIPSIS = "...";
+    const int NELLIPSIS = strlen(ELLIPSIS );
+    const int NCOLS = 40;
+    const int NCODEPOINTS = NCOLS - NELLIPSIS;
 
+    Ix<Codepoint> n(0);
+    ab->appendstr("  . ");
+    for(; n < NCODEPOINTS && n < line.ncodepoints(); ++n) {
+      ab->appendCodepoint(line.getCodepoint(n));
+    }
+
+    // TODO: create an API to build a string by adding stuff to left and right,
+    // and keeping track of space left in the middle.
+    if (line.ncodepoints() > NCODEPOINTS) {
+      // we had to truncate.
+      ab->appendstr(ELLIPSIS);
+    } 
+    ab->appendstr("\x1b[K \r\n");
+  }
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab->buf(), ab->len()));
 }
 
 bool RgProcess::isRunningNonBlocking() {
@@ -2247,7 +2279,7 @@ void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> arg
   };
 
   if(childpid == 0) {
-
+    fclose(stderr);
     // child->parent, child will only write to this pipe, so close read end.
     close(this->child_stdout_to_parent_buffer[PIPE_READ_IX]);
 
@@ -2282,6 +2314,8 @@ void RgProcess::execpAsync(const char *working_dir, std::vector<std::string> arg
 
 // kills the process synchronously.
 void RgProcess::killSync() {
+  if (!this->running) { return; }
+
   this->lines.clear();
   kill(this->childpid, SIGKILL);
   this->running = false;
@@ -2306,8 +2340,8 @@ int RgProcess::_read_stdout_str_from_child_nonblocking() {
 int RgProcess::readLinesNonBlocking() {
   _read_stdout_str_from_child_nonblocking();
   int nlines = 0;
-  int newline_ix = 0;
-  for(; newline_ix < this->child_stdout_buffer.len(); newline_ix++) {
+  while(1) {
+    int newline_ix = 0;
     for(; newline_ix < this->child_stdout_buffer.len(); newline_ix++) {
       if (this->child_stdout_buffer.getByteAt(Ix<Byte>(newline_ix)) == '\n') {
         break;

@@ -884,7 +884,7 @@ struct CtrlPView {
 // convert level 'quitPressed' into edge trigger.
 bool ctrlpWhenQuit(CtrlPView *view);
 void ctrlpHandleInput(CtrlPView *view, const char *cwd, int c);
-void ctrlpDraw(const CtrlPView *view, abuf *buf);
+void ctrlpDraw(CtrlPView *view, abuf *buf);
 
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
 // Do I want a *global* undo/redo? Probably not, no?

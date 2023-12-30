@@ -19,8 +19,12 @@
 #include "lib.h"
 
 int main(int argc, char **argv){
+  // make stdin non blocking.
+  fcntl(0, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK);
+
   enableRawMode();
   initEditor();
+
   disableRawMode();
 
   char *filepath = NULL;
@@ -42,6 +46,10 @@ int main(int argc, char **argv){
   while (1) {
     editorDraw();
     editorProcessKeypress();
+    const long MICRO_TO_MILLI = 1000;
+    usleep(5 * MICRO_TO_MILLI);
+
+    // printf("processing keypress..\n");
   };
   disableRawMode();
   return 0;

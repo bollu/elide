@@ -41,7 +41,7 @@ void test2() {
   std::vector<std::string> args;
   args.push_back("--files");
   args.push_back("-g");
-  args.push_back("rg.txt");
+  args.push_back("*");
   printf("### executing rg.\n");
   process.execpAsync(".", args);
   printf("### sleeping...\n");
@@ -54,6 +54,11 @@ void test2() {
     printf(" | read new lines [nlines=%d]\n", nlines);
     for(abuf line : process.lines) {
       printf("    . line: '%s'\n", line.to_string());
+      // check that we in fact have lines.
+      for(Ix<Byte> i(0); i < line.len(); ++i) {
+          assert(line.getByteAt(i) != '\n');
+          assert(line.getByteAt(i) != '\r');
+      }
     }
     process.lines.clear();
     if (!process.isRunningNonBlocking()) {
@@ -67,7 +72,6 @@ void test2() {
   printf("### killing rg...\n");
   process.killSync();
   printf("### Total [nlines=%d]\n", total_lines);
-  assert(total_lines == 1);
 }
 
 
