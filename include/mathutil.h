@@ -1,3 +1,5 @@
+#include <functional>
+
 template<typename T>
 static int clamp(T lo, T val, T hi) {
   return std::min<T>(std::max<T>(lo, val), hi);

@@ -54,7 +54,6 @@ pkg_check_modules(UV REQUIRED IMPORTED_TARGET libuv)
 # libedtr
 add_library(libedtr src/lib/lib.cpp src/lean_lsp.cpp src/lib/uri_encode.cpp)
 find_package(json-c CONFIG)
-find_package(libuv CONFIG)
 target_include_directories(libedtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)
 target_include_directories(libedtr PUBLIC include/)
 target_link_libraries(libedtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)

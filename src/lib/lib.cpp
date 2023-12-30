@@ -762,7 +762,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // $/lean/plainGoal
   if (file_config->leanInfoViewPlainGoal) {
-    // json_object_put(file_config->leanInfoViewPlainTermGoal);
+    json_object_put(file_config->leanInfoViewPlainGoal);
     file_config->leanInfoViewPlainGoal = nullptr;
   }
 
@@ -785,7 +785,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // $/lean/plainTermGoal
   if (file_config->leanInfoViewPlainTermGoal) {
-    // json_object_put(file_config->leanInfoViewPlainTermGoal);
+    json_object_put(file_config->leanInfoViewPlainTermGoal);
     file_config->leanInfoViewPlainTermGoal = nullptr;
   }
 
@@ -798,7 +798,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // textDocument/hover
   if (file_config->leanHoverViewHover) {
-    // json_object_put(file_config->leanInfoViewPlainTermGoal);
+    json_object_put(file_config->leanHoverViewHover);
     file_config->leanHoverViewHover = nullptr;
   }
 
@@ -1697,10 +1697,10 @@ void editorProcessKeypress() {
     // if lakefile is available, use it as the path.
     // if not, use the file path as the base path.
     // TODO: search for `.git` and use it as the base path.
-    char *default_basepath = 
+    char *default_basepath = strdup(
       g_editor.curFile.lean_server_state.lakefile_dirpath ?
-      strdup(g_editor.curFile.lean_server_state.lakefile_dirpath) :
-      dirname(strdup(g_editor.curFile.absolute_filepath));
+      g_editor.curFile.lean_server_state.lakefile_dirpath :
+      dirname(strdup(g_editor.curFile.absolute_filepath)));
     ctrlpHandleInput(&g_editor.curFile.ctrlp, 
         default_basepath, c);
     free(default_basepath);
