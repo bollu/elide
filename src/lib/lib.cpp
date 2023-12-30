@@ -817,8 +817,8 @@ FileConfig::FileConfig(const char *filename) {
   free(line);
   fclose(fp);
   this->is_initialized = true;
-  fileConfigLaunchLeanServer(this);
-  fileConfigSyncLeanState(this);
+  // fileConfigLaunchLeanServer(this);
+  // fileConfigSyncLeanState(this);
 }
 
 

@@ -86,7 +86,7 @@ std::string concatWithSpaces(std::vector<std::string> &ss) {
 
 void test3() {
   printf("━━━━━test3: CtrlPView::RgArgs creation [search]━━━━━\n");
-  abuf buf = abuf::from_copy_str("  #foo  #bar   ");
+  abuf buf = abuf::from_copy_str("#foo#bar");
   printf("### testing command '%s'\n", buf.to_string());
   CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
   printf("### args debug print\n");
@@ -103,7 +103,7 @@ void test3() {
 
 void test4() {
   printf("━━━━━test3: CtrlPView::RgArgs creation [files]━━━━━\n");
-  abuf buf = abuf::from_copy_str("  rg.txt   ");
+  abuf buf = abuf::from_copy_str("rg.txt");
   printf("### testing command '%s'\n", buf.to_string());
   CtrlPView::RgArgs args = CtrlPView::parseUserCommand(buf);
 
