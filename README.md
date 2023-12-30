@@ -38,6 +38,7 @@ $ mkdir build && cd build && cmake ../ && make -j4
 - [KILO: build your own text editor](https://viewsourcecode.org/snaptoken/kilo/).
 - [vis editor](https://github.com/martanne/vis).
 - [Language server protocol](https://microsoft.github.io/language-server-protocol/) reference.
+- [Atom's new buffer implementation](https://web.archive.org/web/20221129082104/http://blog.atom.io/2017/10/12/atoms-new-buffer-implementation.html)
 
 
 #### Developer Diary
@@ -125,6 +126,7 @@ The user is said to be *in a undo sequence* if at least one undo has been presse
 
 When a user *begins* an undo sequence, it is important to get a checkpoint of the current state and push it into the redo stack.
 But this must only be done one, at the beginning of the undo sequence!
+
 
 
 
