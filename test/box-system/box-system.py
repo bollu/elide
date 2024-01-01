@@ -1,135 +1,52 @@
 #!/usr/bin/env python3
 
 
-# but it is weird, because it is stateful.
-class Point:
-  def __repr__(self):
-    return f"p({self.i}, {self._box})"
+class BoxIdeal:
+ def __init__(self, boxes):
+   self.boxes = boxes
 
-  def floating(self):
-    """make a fixed point float"""
-    assert self.is_fixed
-    return Point(self._i, UNIV)
-
-  def __init__(self, i : int, box : "Box"):
-    assert isinstance(i, int)
-    assert isinstance(box, AbstractBox)
-    self._box = box
-    self._i = self._box._clamp(i)
-
-  def copy(self):
-    return Point(self._i, self._box.copy())
-
-  @staticmethod
-  def mkFixed(i : int):
-    """Point with fixed location."""
-    p = Point(i, FixedBox(i))
-    return p
-
-  # return the fixed value of this box
-  @property
-  def fixedi(self) -> int:
-    assert self.is_fixed
-    return self._i
-
-  @property
-  def is_fixed(self) -> bool:
-    return isinstance(self._box, FixedBox)
-
-  @property
-  def is_absurd(self) -> bool:
-    return isinstance(self._box, AbsurdBox)
-
-  @property
-  def i(self):
-    return self._i
-
-  def left(self, len : int):
-    return Point(self.i - len, self._box)
-
-  def right(self, len : int):
-    return Point(self.i + len, self._box)
-
-  def add_box(self, box):
-    print(f"add_box {self} {box}")
-    assert isinstance(box, AbstractBox)
-    self._box = intersect_box(self._box, box)
-    assert isinstance(self._box, AbstractBox)
-    self._i = self._box._clamp(self._i)
-    return self
-
-  def max(self):
-    return self._box.max()
-  def min(self):
-    return self._box.min()
-
-  # TODO: check that points share box ancestor.
-  def __geq__(self, other):
-    return self.val >= other.val
-
-  def __leq__(self, other):
-    return self.val <= other.val
-
-
-  def _normalize(self):
-    # TODO: check that all boxes have nonempty intersection.
-    assert len(self._boxes) > 0
-    out = self._boxes[0]
-    for box in self._boxes[1:]:
-      out = intersect_box(box, out)
-    self._boxes = [out]  
-
-def intersect_box(b1 : AbstractBox, b2 : AbstractBox) -> AbstractBox:
-  return box(max(b1.max(), b2.max()), min(b1.min(), b2.min()))
-      
-
-class Box(AbstractBox):
+class Box:
   """semi open intervals: [l, r)"""
   def __repr__(self):
     return f"B[{self.l}, {self.r})"
 
-  def __init__(self, l, r):
+  def __init__(self, l, r, parent=None):
     self.l = l
     self.r = r
-    assert isinstance(self.l, Point)
-    assert isinstance(self.r, Point)
+    assert isinstance(self.l, int)
+    assert isinstance(self.r, int)
 
-  def min(self):
-    return min(self.l.min(), self.r.min())
+    if not parent:
+      self.parent = self
 
-  def max(self):
-    return max(self.l.max(), self.r.max())
-
-  def copy(self):
-    return Box(self.l.copy(), self.r.copy())
-
-  def point(self, i : int):
-    p = Point(i, self.copy())
-    return p
-
-  def _clamp(self, i : int) -> int:
-    if i <= self.l.i: i = self.l.i
-    if i >= self.r.i: i = self.r.i
-    return i
 
   # mk child box
-  def subbox(self, l, r) -> "Box": 
-    import pudb; pudb.set_trace()
-    if isinstance(l, int):
-      l = Point.mkFixed(l)
+  # pl---l--r--pr
+  def subbox(self, l:Box, r : Box) -> "Box": 
+    return Box(l, r, self)
 
-    if isinstance(r, int):
-      r = Point.mkFixed(r)
+  def subpoint(self, i : int) -> "Box":
+    return self.subbox(i, i+1)
 
-    assert isinstance(l, Point)
-    assert isinstance(r, Point)
-    return intersect_box(self, box(l, r))
-    # return box(l.copy().add_box(self.copy()), r.copy().add_box(self.copy()))
+  def left(self, i:int):
+    return self.subbox(self.l-i, self.r-i)
 
+  def right(self, i:int):
+    return self.subbox(self.l+i, self.r+i)
+
+  def clamp(self, i:int):
+    if i <= self.l: i = self.l
+    if i >= self.r: i = self.r
+    if parent != self.parent:
+      i = self.parent.clamp(i)
+    return i
+    
   def range(self):
-    return range(self.l, self.r)
+    l = self.clamp(self.l)
+    r = self.clamp(self.r)
+    return range(l, r)
 
-  def max_length(self, maxlen):
+  def maxlen(self, maxlen):
     # capital = fixed, small = loose
     if self.l.is_fixed:
       # [L, ?)
@@ -179,18 +96,18 @@ for i in range(0, TEXTNCOL):
   b = box(0, TEXTNCOL)
   # presheaf? inclusion maps given by actual inclusion.
   print("b: ", b)
-  cursor = b.point(i)
+  cursor = b.subpoint(i) # cursor = 20. Fixed point after normalization.
   print("cursor: ", cursor)
   textL = cursor.left(4)
   print("  textL: ", textL)
   textR = cursor.right(4)
   print("  textR: ", textR)
   ellipsisL = b.subbox(VIEWSIZE, textL)
-  print("  ellipsisL[max_length=infty]: ", ellipsisL)
-  ellipsisL = ellipsisL.max_length(3) 
-  print("  ellipsisL[max_length=3]: ", ellipsisL)
+  print("  ellipsisL[maxlen=infty]: ", ellipsisL)
+  ellipsisL = ellipsisL.maxlen(3) 
+  print("  ellipsisL[maxlen=3]: ", ellipsisL)
 
-  ellipsisR = b.subbox(textR.floating(), TEXTNCOL-VIEWSIZE).max_length(3)
+  ellipsisR = b.subbox(textR, TEXTNCOL-VIEWSIZE).maxlen(3)
   print("  ellipsisL: ", ellipsisL, "ellipsisR: ", ellipsisR)
   out = "  "
   out += "'"

@@ -1,10 +1,38 @@
 cmake_minimum_required(VERSION 3.20)
 
+project(ward C CXX)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -fdiagnostics-color=always -fsanitize=address,undefined")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always -O2")
+
+# https://github.com/facebook/folly/blob/main/CMake/FindLibUring.cmake
+# https://stackoverflow.com/a/29316084/5305365 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing)
+pkg_check_modules(UV REQUIRED IMPORTED_TARGET libuv)
+
+# libedtr
+add_library(edtr src/lib/lib.cpp src/lean_lsp.cpp src/lib/uri_encode.cpp)
+find_package(json-c CONFIG)
+target_include_directories(edtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)
+target_include_directories(edtr PUBLIC include/)
+target_link_libraries(edtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)
+install(TARGETS edtr DESTINATION lib)
+
+# edtr
+add_executable(elide src/main.cpp)
+target_link_libraries(elide PRIVATE edtr)
+install(TARGETS elide DESTINATION bin)
+file(COPY src/abbreviations.json DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
+add_subdirectory(test/)
+
+
 ## ASAN
-
-
 get_property(isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-
 if(isMultiConfig)
     if(NOT "Asan" IN_LIST CMAKE_CONFIGURATION_TYPES)
         list(APPEND CMAKE_CONFIGURATION_TYPES Asan)
@@ -37,32 +65,3 @@ set(CMAKE_SHARED_LINKER_FLAGS_ASAN
 ## ASAN
 
 
-project(ward C CXX)
-
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -fdiagnostics-color=always -fsanitize=address,undefined")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always -O2")
-
-# https://github.com/facebook/folly/blob/main/CMake/FindLibUring.cmake
-# https://stackoverflow.com/a/29316084/5305365 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing)
-pkg_check_modules(UV REQUIRED IMPORTED_TARGET libuv)
-
-# libedtr
-add_library(libedtr src/lib/lib.cpp src/lean_lsp.cpp src/lib/uri_encode.cpp)
-find_package(json-c CONFIG)
-target_include_directories(libedtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)
-target_include_directories(libedtr PUBLIC include/)
-target_link_libraries(libedtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)
-install(TARGETS libedtr DESTINATION lib)
-
-# edtr
-add_executable(edtr src/main.cpp)
-target_link_libraries(edtr PRIVATE libedtr)
-install(TARGETS edtr DESTINATION bin)
-file(COPY src/abbreviations.json DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-
-add_subdirectory(test/)

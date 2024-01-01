@@ -139,10 +139,39 @@ struct abuf {
     this->_is_dirty = true;
   }
 
+
   // append a UTF-8 codepoint.
   void appendCodepoint(const char *codepoint) {
     const int len = utf8_next_code_point_len(codepoint);
     this->appendbuf(codepoint, len);
+    this->_is_dirty = true;
+  }
+
+  void prependbuf(const char *s, int slen) {
+    assert(slen >= 0 && "negative length!");
+    if (slen == 0) { return; }
+    this->_buf = (char *)realloc(this->_buf, this->_len + slen);
+    
+    // shift data forward.
+    for(int i = 0; i < _len; ++i) {
+      this->_buf[this->_len - 1 - i] = this->_buf[this->_len + slen - 1 - i];
+    }
+
+    for(int i = 0; i < slen; ++i) {
+      this->_buf[i] = s[i];
+    }
+
+    this->_len += slen;
+    this->_is_dirty = true;
+  }
+
+  void prependbuf(const abuf *other) {
+    prependbuf(other->_buf, other->len());
+    this->_is_dirty = true;
+  }
+  void prependCodepoint(const char *codepoint) {
+    const int len = utf8_next_code_point_len(codepoint);
+    this->prependbuf(codepoint, len);
     this->_is_dirty = true;
   }
 
@@ -761,101 +790,6 @@ private:
   int _read_stdout_str_from_child_nonblocking();
 };
 
-// // enapsulates the logic of having a single line of text area.
-// struct SingleLineTextAreaState {
-//   abuf buf;
-//   bool _dirty = false;
-
-//   void draw(abuf *out, int screenrows, int screencols) {
-//     const char *ELLIPSIS = "...";
-//     const int NUM_ELLIPSIS = strlen(ELLIPSIS);
-//     // TODO: this should be done based on codepoints.
-//     // TODO: create an abstraction for intervals and pushing the bounds left and right
-//     const int ndraw = std::min<int>(screencols - NUM_ELLIPSIS, buf.ncodepoints().size);
-//     if (ndraw < buf.ncodepoints().size)  {
-//       out->appendstr(ELLIPSIS);
-//     };
-//     for(int i = 0; i < ndraw; ++i) {
-//       out->appendCodepoint(buf.getCodepoint(Ix<Codepoint>(buf.ncodepoints().size - 1 - i)));
-//     }
-//   }
-// };
-
-// // A single line text area.
-// struct SingleLineTextArea : Undoer<SingleLineTextAreaState> {
-//   bool whenQuit() { const bool out = this->_quit; this->_quit = false; return out; }
-//   // converts level trigger of dirty into edge trigger.
-//   bool whenDirty() { bool out = _dirty; _dirty = false; return out; };
-
-//   void show() { _quit = false; }
-//   void handleKeypress(int c);
-//   abuf getText() { return buf; };  
-// private:
-//   bool _quit = false;
-// };
-
-
-// autocomplete view.
-struct CompletionView {
-/*
-  void handleKeypress(int c, FileConfig *f);  {
-    textArea->handleKeypress(c);
-    if (textArea->whenDirty()) {
-      json_object *req = 
-        lspCreateTextDocumentCompletionRequest(f->text_document_item.uri, 
-          Position(f->cursor.row, cursorCol_buf.size),
-          CompletionTriggerKind::Invoked);
-      request_id = f->lean_server_state.write_request_to_child_blocking("textDocument/completion", req);
-      json_object_put(req);
-
-      json_object *response = f->lean_server_state.read_json_response_from_child_blocking(request_id);
-      json_object_put(response);
-    }
-
-    if (textArea->whenQuit()) {
-      this->_quit = true;
-      this->completion = textArea->getText();
-    }
-  };
- */
-
-  // bool whenQuit() {
-  //   const bool old = this->_quit;
-  //   this->_quit = false;
-  //   return old;
-  // }
-
-  // void draw(abuf *buf, const int screenrows, const int screencols) const {
-  //   this->textArea.draw(buf, screenrows, screencols);
-  // }
-
-  // // return the set of completions.
-  // const std::vector<std::string>& getCompletions() const {
-  //   return completions;
-  // }
-
-// private:
-//   std::vector<std::string> completions;
-//   SingleLineTextArea textArea;
-//   std::string completion;
-//   bool isQuit = false;
-};
-
-
-// TODO: have notion of project path?
-// base it off of `lakefile.lean`, or `.git`, or keep in the current path.
-// struct SearchView {
-//   Cursor cursor; // cursor in the search view.
-
-//   abuf searchViewString; // string that is being searched.
-//   bool dirty = false;
-
-//   RgProcess search;
-//   std::vector<json_object *> SearchViewRgMatches;
-//   bool drawEnabled; // whether this is enabled or not. 
-//   RgServerState rgState; // ripgrep state for text search.
-
-// };
 
 // NOTE: 
 // TextDocument for LSP does not need to be cached, as its value monotonically increases,
@@ -973,8 +907,6 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
 
   // TextDocument for LSP
   TextDocumentItem text_document_item;
-
-  CompletionView completion;
 
   // if 'b' is true, then mark the state as dirty.
   // if 'b' is false, then leave the dirty state as-is.

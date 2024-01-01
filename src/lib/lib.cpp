@@ -63,7 +63,7 @@ void abufAppendCodepointWithCursor(abuf *dst, TextAreaMode tam, const char *code
 //   colIx : index of the column to be drawn. `0 <= colIx <= row.ncodepoints()`.
 //   cursorIx : index of cursor, of value `0 <= cursorIx <= row.ncodepoints()`.
 //   tam : text area mode, affects if the cursor will be bright or dull.
-void drawColWithCursor(abuf *dst, const abuf *row, 
+void appendColWithCursor(abuf *dst, const abuf *row, 
   Size<Codepoint> colIx, 
   Size<Codepoint> cursorIx, 
   TextAreaMode tam) {
@@ -987,7 +987,7 @@ void fileConfigDraw(FileConfig *f) {
 
       if (filerow == f->cursor.row) {
         for(Size<Codepoint> i(0); i <= NCOLS; ++i) {
-          drawColWithCursor(&ab, &row, i, f->cursor.col, textAreaMode);
+          appendColWithCursor(&ab, &row, i, f->cursor.col, textAreaMode);
         }
       } else {
         for(Ix<Codepoint> i(0); i < NCOLS; ++i) {
@@ -2232,9 +2232,9 @@ void ctrlpHandleInput(CtrlPView *view, int c) {
     if (c == CTRL_KEY('c')) {
       view->textAreaMode = TAM_Normal;
       // quit and go back to previous state.
-    } else if (c == KEYEVENT_ARROW_LEFT) {
+    } else if (c == KEYEVENT_ARROW_LEFT || c == CTRL_KEY('b')) {
       view->textCol = view->textCol.sub0(1);
-    } else if (c == KEYEVENT_ARROW_RIGHT) {
+    } else if (c == KEYEVENT_ARROW_RIGHT || c == CTRL_KEY('f')) {
       view->textCol = 
         clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
     } else if (c == KEYEVENT_BACKSPACE) {
@@ -2276,86 +2276,98 @@ void ctrlpDraw(CtrlPView *view) {
   }
 
 
-
   // we need a function that is called each time x(.
-  // if (view->rgProcess.isRunningNonBlocking()) {
   view->rgProcess.readLinesNonBlocking();
-  // }
 
-  ab.appendstr("\x1b[?25l"); // hide cursor
-  ab.appendstr("\x1b[2J");   // J: erase in display.
-  ab.appendstr("\x1b[1;1H");  // H: cursor position
+  { // draw text of the search.
+    ab.appendstr("\x1b[?25l"); // hide cursor
+    ab.appendstr("\x1b[2J");   // J: erase in display.
+    ab.appendstr("\x1b[1;1H");  // H: cursor position
 
-  // append format string.
-  ab.appendfmtstr(120, "┎CTRLP MODE (%s |%s|%d matches)┓\x1b[K\r\n", 
-    textAreaModeToString(view->textAreaMode),
-    view->rgProcess.running ? "running" : "completed",
-    view->rgProcess.lines.size());
-  
-  // need to consider a window around the character.
-  // this is a nice design pattern.
-  // TODO: refactor into SquishyAABB.
-  const int LEFT_WINDOW_PADDING = 20;
-  const int RIGHT_WINDOW_PADDING = 20;
-  const int BORDER_WIDTH = 3; // ellipsis width;
-  const int LEFT_WINDOW_MARGIN = LEFT_WINDOW_PADDING - BORDER_WIDTH;
-  const int RIGHT_WINDOW_MARGIN = RIGHT_WINDOW_PADDING + BORDER_WIDTH;
+    // append format string.
+    ab.appendfmtstr(120, "┎CTRLP MODE (%s |%s|%d matches)┓\x1b[K\r\n", 
+      textAreaModeToString(view->textAreaMode),
+      view->rgProcess.running ? "running" : "completed",
+      view->rgProcess.lines.size());
+    
+    const int NELLIPSIS = 2; // ellipsis width;
+    const int NCOLS = g_editor.screencols - 5;
+    const int NROWS = g_editor.screenrows - 5;
+    const int VIEWSIZE = 80;
+    const int NCODEPOINTS = view->textArea.ncodepoints().size;
 
-  Size<Codepoint> lm = view->textCol.sub0(LEFT_WINDOW_MARGIN);
-  Size<Codepoint> lp = view->textCol.sub0(LEFT_WINDOW_PADDING);
-  Size<Codepoint> rp = clampu(view->textCol + RIGHT_WINDOW_PADDING, view->textArea.ncodepoints());
-  Size<Codepoint> rm = clampu(view->textCol + RIGHT_WINDOW_MARGIN, view->textArea.ncodepoints());
+    // interesting, see that the left and right actually appears to be well-typed.
+    // NCODEPOINTS = 40. VIEWSIZE = 10
+    // [0, 0] -> [-10, 10] -> [0, 10] -> [0, 10]
+    // [1, 1] -> [-9, 11] -> [0, 11] -> [0, 10]?
+    const auto intervalText = 
+      interval(view->textCol.size)
+      .ldl(VIEWSIZE)
+      .clamp(0, NCODEPOINTS) // clamp length to be inbounds.
+      .len_clampl_move_r(VIEWSIZE) // move right hand side point to be inbounds
+      .clamp(0, NCODEPOINTS); // clamp right to be inbounds
 
-  assert(lp <= view->textCol);
-  assert(view->textCol <= rp);
+    const auto intervalEllipsisL = interval(0, intervalText.l);
+    for(int i = 0; i < NELLIPSIS; ++i) {
+      ab.appendstr(ESCAPE_CODE_DULL);
+      ab.appendstr(i < intervalEllipsisL.r ?  "«" : " ");
+      ab.appendstr(ESCAPE_CODE_UNSET);
+    }
+    ab.appendstr(" ");
 
-  // ab.appendstr(ESCAPE_CODE_DULL);
-  for(auto i = lm; i < lp; ++i) {
-    ab.appendChar('.');
+    // TODO: why does the right hand size computation not work?
+    for(int i = intervalText.l; i <= intervalText.r; ++i) {
+      appendColWithCursor(&ab, &view->textArea, i, view->textCol, view->textAreaMode);
+    }
+
+    ab.appendstr(" ");
+
+    const auto intervalEllipsisR = interval(intervalText.r, NCODEPOINTS).lregauge();
+    for(int i = 0; i < NELLIPSIS; ++i) {
+      ab.appendstr(ESCAPE_CODE_DULL);
+      ab.appendstr(i < intervalEllipsisR.r ?  "»" : " ");
+      ab.appendstr(ESCAPE_CODE_UNSET);
+    }
+    ab.appendstr("\x1b[K\r\n");
   }
-  // ab.appendstr(ESCAPE_CODE_UNSET);
-  for(auto i = lp; i <= rp; ++i) {
-    drawColWithCursor(&ab, &view->textArea, i, view->textCol, view->textAreaMode);
-  }
-  // ab.appendstr(ESCAPE_CODE_DULL);
-  for(auto i = rp+1; i < rm; ++i) {
-    ab.appendChar('.');
-  }
+
   // ab.appendstr(ESCAPE_CODE_UNSET);
   ab.appendstr("\x1b[K\r\n");
   ab.appendstr("━━━━━\x1b[K\r\n");
 
-  if (!(view->rgProcess.lines.size() == 0) || view->rgProcess.selectedLine != -1);
-  static const int NROWS = g_editor.screenrows - 5;
-  for(int i = 0; i < view->rgProcess.lines.size() && i < NROWS; ++i) {
-    if (i == view->rgProcess.selectedLine) {
-      ab.appendstr(ESCAPE_CODE_CURSOR_SELECT);
-    }
+  { // draw text from rg.
+    const int VIEWSIZE = 80;
+    const int NELLIPSIS = 3;
+    const int NCOLS = g_editor.screencols - 5;
+    const int NROWS = g_editor.screenrows - 5;
 
-    const abuf &line = view->rgProcess.lines[i];
-    const char *ELLIPSIS = "...";
-    const int NELLIPSIS = strlen(ELLIPSIS );
-    const int NCOLS = g_editor.screencols - 20;
-    const int NCODEPOINTS = NCOLS - NELLIPSIS;
+    for(int i = 0; i < view->rgProcess.lines.size() && i < NROWS; ++i) {
+      const abuf &line = view->rgProcess.lines[i];
+      const int NCODEPOINTS = line.ncodepoints().size;
 
-    Ix<Codepoint> n(0);
-    ab.appendstr("  . ");
-    for(; n < NCODEPOINTS && n < line.ncodepoints(); ++n) {
-      ab.appendCodepoint(line.getCodepoint(n));
-    }
+      if (i == view->rgProcess.selectedLine) {
+        ab.appendstr(ESCAPE_CODE_CURSOR_SELECT);
+      }
 
-    // TODO: create an API to build a string by adding stuff to left and right,
-    // and keeping track of space left in the middle.
-    if (line.ncodepoints() > NCODEPOINTS) {
-      // we had to truncate.
-      ab.appendstr(ELLIPSIS);
-    } 
+      const interval intervalText = interval(0, VIEWSIZE - NELLIPSIS).clamp(0, NCODEPOINTS);
+      for(int i = intervalText.l; i < intervalText.r; ++i) {
+        ab.appendCodepoint(line.getCodepoint(Ix<Codepoint>(i)));
+      }
 
-    if (i == view->rgProcess.selectedLine) {
-      ab.appendstr(ESCAPE_CODE_UNSET);
-    }
+      const interval intervalEllipsisR = interval(intervalText.r, NCODEPOINTS).lregauge();
+      for(int i = 0; i < 2; ++i) {
+        ab.appendstr(ESCAPE_CODE_DULL);
+        ab.appendstr(i < intervalEllipsisR.r ?  "»" : " ");
+        ab.appendstr(ESCAPE_CODE_UNSET);
 
-    ab.appendstr("\x1b[K \r\n");
+      }
+
+      if (i == view->rgProcess.selectedLine) {
+        ab.appendstr(ESCAPE_CODE_UNSET);
+      }
+
+      ab.appendstr("\x1b[K \r\n");
+    } // end loop for drawing rg.
   }
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
