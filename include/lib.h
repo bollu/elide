@@ -628,6 +628,7 @@ struct TildeView {
   std::optional<int> scrollback_ix = {};
   bool quitPressed = false;
   std::vector<std::string> log;
+  FILE *logfile = nullptr;
 };
 
 extern TildeView g_tilde;
@@ -637,7 +638,8 @@ void tildeOpen(TildeView *tilde);
 void tildeHandleInput(TildeView *tilde, int c);
 void tildeDraw(TildeView *tilde);
 // this sucks, global state.
-void tildeWrite(std::string str);
+// void tildeWrite(std::string str);
+void tildeWrite(const char *fmt, ...);
 };
 
 struct Cursor {

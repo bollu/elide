@@ -1738,7 +1738,7 @@ void editorProcessKeypress() {
         ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
       } else if (c == 'q') {
         exit(0);
-      } else if (c == '~' || c == '`') {
+      } else if (c == '`') {
         tilde::tildeOpen(&tilde::g_tilde);
         g_editor.vim_mode = VM_TILDE;
         return;
@@ -1748,7 +1748,7 @@ void editorProcessKeypress() {
 
     assert(f != nullptr);
     switch (c) {
-    case CTRL_KEY('~'): {
+    case '`': {
       tilde::tildeOpen(&tilde::g_tilde);
       g_editor.vim_mode = VM_TILDE;
       return;
@@ -2176,10 +2176,25 @@ namespace tilde {
       }
     });
   };
-  
-  void tildeWrite(std::string str) {
+
+  void tildeWrite(const char *fmt, ...) {
+    if (!g_tilde.logfile) {
+      g_tilde.logfile = fopen("/tmp/edtr-stderr", "w");
+    }
+    assert(g_tilde.logfile);
+    
+    va_list args;
+    va_start(args, fmt);
+    const int ERROR_LEN = 9000; 
+    char *buf = (char*)calloc(sizeof(char), ERROR_LEN);
+    vsnprintf(buf, ERROR_LEN, fmt, args);
+    va_end(args);
+    std::string str(buf, buf+ERROR_LEN);
+    free(buf);
     g_tilde.log.push_back(str);
-  };
+    fwrite(str.c_str(), 1, str.size(), g_tilde.logfile);
+  }
+  
 };
 
 /** ctrlp **/

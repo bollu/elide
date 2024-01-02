@@ -29,7 +29,8 @@ int main(int argc, char **argv){
 
   std::optional<fs::path> path;
   if (argc >= 2) { path = fs::path(argv[1]); }
-  g_editor.original_cwd = fs::current_path();  
+  g_editor.original_cwd = fs::current_path(); 
+  tilde::tildeWrite("original_cwd: '%s'", g_editor.original_cwd.c_str()); 
   if (path && fs::is_regular_file(*path)) {
     g_editor.openNewFile(*path);
   }
