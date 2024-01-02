@@ -128,55 +128,35 @@ void _exec_lean_server_on_child(std::optional<fs::path> lakefile_dirpath) {
 
 // tries to find the lake for `file_path`,
 // and returns NULL if file_path is NULL.
-std::optional<fs::path> get_lakefile_dirpath(fs::path file_path_cpp) {
+std::optional<fs::path> get_lakefile_path(const fs::path &absolute_lean_filepath) {
+  assert(absolute_lean_filepath.is_absolute());
   // walk up directory tree of 'file_path' in a loop, printing parents,
   // until we hit the root directory, then stop.
-  char *dirpath = strdup(file_path_cpp.c_str());
-  dirpath = strdup(dirname(dirpath));
-  
-  int prev_inode = -1; // inode of child. if it equals inode of parent, then we have hit /. 
+  fs::path dirpath = absolute_lean_filepath;
+  dirpath.remove_filename();
 
   // only iterate this loop a bounded number of times.
-  int NUM_PARENT_DIRS_TO_WALK = 1000;
-  bool hit_root = false;
-  for(int i = 0; i < NUM_PARENT_DIRS_TO_WALK && !hit_root; ++i) {
-    assert(i != NUM_PARENT_DIRS_TO_WALK - 1 && 
+  int NITERS = 1000;
+  for(int i = 0; i < NITERS; ++i) {
+    assert(i != NITERS - 1 && 
       "ERROR: recursing when walking up parents to find `lakefile.lean`.");
-    DIR *dir = opendir(dirpath);
-    assert(dir && "unable to open directory");
-    dirent *entry = NULL;
-    while ((entry = readdir(dir)) != NULL) {
-      const char *file_name = entry->d_name;
-      if (strcmp(file_name, ".") == 0) {
-        const int cur_inode = entry->d_ino;
-        hit_root = hit_root || (cur_inode == prev_inode);
-        prev_inode = cur_inode;
+    for (auto const &it : fs::directory_iterator{dirpath}) {
+      if (it.path().filename() == "lakefile.lean") {
+        fs::path lakefile_path = it.path();
+        std::optional<fs::path>(lakefile_path.remove_filename());
       }
-
-      if (strcmp(file_name, "lakefile.lean") == 0) {
-        char *realpath_dirpath = realpath(dirpath, NULL);
-        free(dirpath);
-        return std::optional<fs::path>(realpath_dirpath);
-      }
-    } // end readdir() while loop.
-    closedir(dir);
-
-    // walk up parent, free memory.
-    const char *parent_dot_dot_slash = "/../";
-    char *parent_path = (char *)calloc(strlen(dirpath) + strlen(parent_dot_dot_slash) + 1,
-      sizeof(char));
-    sprintf(parent_path, "%s%s", dirpath, parent_dot_dot_slash);
-    free(dirpath);
-    dirpath = parent_path;
-  } // end for loop over directory parents.
-  
+    }
+    fs::path dirpath_parent = dirpath.parent_path();
+    // we hit the root. 
+    if (dirpath_parent == dirpath) { break; }
+    dirpath = dirpath_parent;
+  }
   return {};
 }
 
-
 // create a new lean server.
 // if file_path == NULL, then create `lean --server`.
-LeanServerState LeanServerState::init(std::optional<fs::path> file_path) {
+LeanServerState LeanServerState::init(std::optional<fs::path> absolute_filepath) {
   LeanServerState state;
 
   CHECK_POSIX_CALL_0(pipe(state.parent_buffer_to_child_stdin));
@@ -192,9 +172,14 @@ LeanServerState LeanServerState::init(std::optional<fs::path> file_path) {
   fputs("\n===\n", state.child_stdout_log_file);
   fputs("\n===\n", state.child_stderr_log_file);
 
-  if (file_path) {
-    state.lakefile_dirpath = get_lakefile_dirpath(*file_path);
+  if (absolute_filepath) {
+    assert(absolute_filepath->is_absolute());
+
+    state.lakefile_dirpath = get_lakefile_path(*absolute_filepath);
     std::cerr << "lakefile_dirpath: " << (state.lakefile_dirpath ? state.lakefile_dirpath->string() : "NO LAKEFILE") << "\n";
+    if (state.lakefile_dirpath) {
+      assert(state.lakefile_dirpath->is_absolute());
+    }
   }
 
   pid_t childpid = fork();
@@ -793,8 +778,8 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
 /*** file i/o ***/
 FileConfig::FileConfig(fs::path absolute_filepath) {
+  assert(absolute_filepath.is_absolute());
   this->absolute_filepath = absolute_filepath;
-
   FILE *fp = fopen(absolute_filepath.c_str(), "a+");
   if (!fp) {
     die("fopen");
@@ -1695,7 +1680,7 @@ void editorProcessKeypress() {
     }
 
     if (ctrlpWhenSelected(&g_editor.ctrlp)) {
-      g_editor.openNewFile(ctrlpGetSelectedFile(&g_editor.ctrlp));
+      g_editor.openNewFile(ctrlpGetSelectedFileAbsoluteFilepath(&g_editor.ctrlp));
       g_editor.vim_mode = g_editor.ctrlp.previous_state;
       return;
     }
@@ -2100,7 +2085,8 @@ bool ctrlpWhenSelected(CtrlPView *view) {
   return out;
 }
 
-fs::path ctrlpGetSelectedFile(const CtrlPView *view) {
+fs::path ctrlpGetSelectedFileAbsoluteFilepath(const CtrlPView *view) {
+  assert(view->absolute_cwd.is_absolute());
   assert(view->rgProcess.lines.size() > 0);
   assert(view->rgProcess.selectedLine >= 0);
   assert(view->rgProcess.selectedLine < view->rgProcess.lines.size());
@@ -2112,9 +2098,10 @@ fs::path ctrlpGetSelectedFile(const CtrlPView *view) {
        (*line.getCodepoint(colonOrEndIx) != ':'));
       ++colonOrEndIx) {}
   // TODO: check that std::string knows what to do when given two pointers.
-  std::string path(line.buf(), line.getCodepoint(colonOrEndIx));
-  // die("found path: '%s'", path.c_str());
-  return path;
+  const fs::path relative_path_to_file(std::string(line.buf(), line.getCodepoint(colonOrEndIx)));
+  const fs::path absolute_path_to_file = view->absolute_cwd / relative_path_to_file;
+  // die("found path: '%s'", absolute_path_to_file.c_str());
+  return absolute_path_to_file;
 }
 
 
@@ -2205,7 +2192,7 @@ std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs ar
   // fill in file glob pattern for file name.
   for(const std::string &s : args.pathGlobPatterns) {
     out.push_back("-g");
-    out.push_back(s);
+    out.push_back("*" + s + "*");
   }
 
   out.push_back("-S"); // smart case
@@ -2215,8 +2202,9 @@ std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs ar
 };
 
 
-void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd) {
-  view->cwd = cwd;
+void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path absolute_cwd) {
+  assert(absolute_cwd.is_absolute());
+  view->absolute_cwd = absolute_cwd;
   view->textAreaMode = TAM_Insert;
   view->previous_state = previous_state;
   g_editor.vim_mode = VM_CTRLP;

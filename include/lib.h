@@ -852,7 +852,7 @@ static const char *textAreaModeToString(TextAreaMode mode) {
 struct CtrlPView {
   VimMode previous_state;
   TextAreaMode textAreaMode;
-  fs::path cwd; // default working directory for the search.
+  fs::path absolute_cwd; // default working directory for the search.
   abuf textArea;
   Size<Codepoint> textCol;
   RgProcess rgProcess;
@@ -899,7 +899,7 @@ struct CtrlPView {
 // convert level 'quitPressed' into edge trigger.
 bool ctrlpWhenQuit(CtrlPView *view);
 bool ctrlpWhenSelected(CtrlPView *view);
-fs::path ctrlpGetSelectedFile(const CtrlPView *view);
+fs::path ctrlpGetSelectedFileAbsoluteFilepath(const CtrlPView *view);
 void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd);
 void ctrlpHandleInput(CtrlPView *view, int c);
 void ctrlpDraw(CtrlPView *view);
@@ -973,6 +973,7 @@ struct EditorConfig {
   };
 
   void openNewFile(fs::path absolute_path) {
+    assert(absolute_path.is_absolute());
     FileConfig f(absolute_path);
     this->files.push_back(f);
     fileIx = this->files.size() - 1;
@@ -990,7 +991,6 @@ private:
 };
 
 extern EditorConfig g_editor; // global editor handle.
-
 
 void enableRawMode();
 void disableRawMode();
