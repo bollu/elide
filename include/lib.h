@@ -277,6 +277,10 @@ struct abuf {
     return to_string_start_len(0, this->_len);
   }
 
+  std::string to_std_string() const {
+    return std::string(this->_buf, this->_buf + this->_len);
+  }
+
   // Return first index `i >= begin_ix` such that `buf[i:i+len] = s[0:len]`.
   // Return `-1` otherwise.
   int find_sub_buf(const char *findbuf, int findbuf_len, int begin_ix) const {

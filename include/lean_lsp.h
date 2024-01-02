@@ -91,9 +91,24 @@ struct Uri {
 
   Uri() = default;
 
-  Uri(const Uri &uri) {
-    this->uri = strdup(uri.uri);
+  // TODO: refactor to use std::string or abuf.
+  Uri &operator = (const Uri &other) {
+    if (!other.uri) {
+      this->uri = nullptr;
+    } else {
+      this->uri = strdup(other.uri);
+    }
+    return *this;
   }
+  Uri(const Uri &other) {
+    *this = other;
+  }
+
+  Uri(Uri &&other) {
+    this->uri = other.uri;
+    other.uri = nullptr;
+  }
+
 
   ~Uri() { free(uri); }
 
@@ -140,16 +155,6 @@ struct TextDocumentItem {
     text = other.text ? strdup(other.text) : NULL;;
     is_initialized = other.is_initialized;
     return *this;
-  }
-
-  TextDocumentItem(TextDocumentItem &&other) {
-    uri = other.uri;
-    languageId = other.languageId;
-    version = other.version;
-    text = other.text;
-    is_initialized = other.is_initialized;
-    other.text = NULL;
-    other.languageId = NULL;
   }
   
   TextDocumentItem(const TextDocumentItem &other) {

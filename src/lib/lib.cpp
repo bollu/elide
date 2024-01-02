@@ -710,7 +710,6 @@ void fileConfigBackspace(FileConfig *f) {
 void fileConfigLaunchLeanServer(FileConfig *file_config) {
   assert(file_config->lean_server_state.initialized == false);
   file_config->lean_server_state = LeanServerState::init(file_config->absolute_filepath); // start lean --server.  
-  // file_config->lean_server_state = LeanServerState::init(NULL); // start lean --server.  
 
   json_object *req = lspCreateInitializeRequest();
   LspRequestId request_id = 
@@ -1815,10 +1814,20 @@ void editorProcessKeypress() {
     case 'g':
     case ' ':
     case '?': {
-      // TODO: make this more local.
-      fileConfigRequestGoalState(f);
-      g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL;
+      // TODO: dear god get right of this code duplication.
+      if (f->absolute_filepath.extension() == ".lean") {
+        if (!f->lean_server_state.initialized) {
+          // TODO: switch to `std::optional`
+          fileConfigLaunchLeanServer(f);
+        }
+        assert(f->lean_server_state.initialized);
+        fileConfigSyncLeanState(f);
+        // TODO: make this more local.
+        fileConfigRequestGoalState(f);
+        g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL;
+      }
       return;
+
     }
     case 'i':
       f->mkUndoMemento();
@@ -1861,7 +1870,14 @@ void editorProcessKeypress() {
     case CTRL_KEY('c'): { // escape key
       g_editor.vim_mode = VM_NORMAL;
       fileConfigSave(f);
-      fileConfigSyncLeanState(f);
+      if (f->absolute_filepath.extension() == "lean") {
+        if (!f->lean_server_state.initialized) {
+          // TODO: switch to `std::optional`
+          fileConfigLaunchLeanServer(f);
+      }
+        assert(f->lean_server_state.initialized);
+        fileConfigSyncLeanState(f);
+      }
       return;
    }
     default:
