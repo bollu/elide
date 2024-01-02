@@ -1227,25 +1227,32 @@ void editorDrawInfoViewHoverTab(FileConfig *f) {
 
 }
 
-
-InfoViewTab infoViewTabCycleNext(FileConfig *f, InfoViewTab t) {
+InfoViewTab _infoViewTabCycleDelta(FileConfig *f, InfoViewTab t, int delta) {
   bool enabled[IVT_NumTabs] = {
     isInfoViewTacticsTacticsTabEnabled(f),
     isInfoViewTacticsHoverTabEnabled(f),
     true
   };
   bool foundEnabled = false;
-  t = InfoViewTab(((int) t + 1)  % IVT_NumTabs);
+  t = InfoViewTab(((int) t + delta)  % IVT_NumTabs);
   for(int i = 0; i < IVT_NumTabs; ++i) {
     if (enabled[t]) {
       foundEnabled = true;
       break;
     } else {
-      t = InfoViewTab(((int) t + 1) % IVT_NumTabs);
+      t = InfoViewTab(((int) t + delta) % IVT_NumTabs);
     }
   }
   assert(foundEnabled && "unable to find any enabled tab on the info view.");
   return t;
+}
+
+InfoViewTab infoViewTabCycleNext(FileConfig *f, InfoViewTab t) {
+  return _infoViewTabCycleDelta(f, t, +1);
+}
+
+InfoViewTab infoViewTabCyclePrevious(FileConfig *f, InfoViewTab t) {
+  return _infoViewTabCycleDelta(f, t, +IVT_NumTabs-1);
 }
 
 void editorDrawInfoView(FileConfig *f) {
@@ -1699,16 +1706,21 @@ void editorProcessKeypress() {
     assert(g_editor.curFile());
     FileConfig *f = g_editor.curFile();
     switch(c) {
-    case 'q': {
-      g_editor.vim_mode = VM_NORMAL;
+    case 'h':
+    case 'j': {
+      f->infoViewTab = infoViewTabCyclePrevious(f, f->infoViewTab);
       return;
     }
+    case 'l':
+    case 'k': 
+    // case ' ':
     case '\t': {
       // TODO: this is not per file info? or is it?
       f->infoViewTab = infoViewTabCycleNext(f, f->infoViewTab);
       return;
     }
     case CTRL_KEY('c'):
+    case 'q':
     case 'g':
     case ' ':
     case '?': {
@@ -1726,8 +1738,9 @@ void editorProcessKeypress() {
         ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
       } else if (c == 'q') {
         exit(0);
-      } else if (c == '~') {
+      } else if (c == '~' || c == '`') {
         tilde::tildeOpen(&tilde::g_tilde);
+        g_editor.vim_mode = VM_TILDE;
         return;
       }
       return;
@@ -1737,6 +1750,7 @@ void editorProcessKeypress() {
     switch (c) {
     case CTRL_KEY('~'): {
       tilde::tildeOpen(&tilde::g_tilde);
+      g_editor.vim_mode = VM_TILDE;
       return;
     }
     case CTRL_KEY('p'): {
@@ -2114,7 +2128,7 @@ namespace tilde {
   void tildeHandleInput(TildeView *tilde, int c) {
       const int NSCREENROWS = 20;
 
-    if (c == CTRL_KEY('c') || c == CTRL_KEY('q')) {
+    if (c == CTRL_KEY('c') || c == CTRL_KEY('q') || c == 'q' || c == '`' || c == '~') {
       tilde->quitPressed = true;
     } else if (c == CTRL_KEY('d')) {
       if (tilde->scrollback_ix) {

@@ -791,6 +791,7 @@ enum InfoViewTab {
 
 struct FileConfig;
 static InfoViewTab infoViewTabCycleNext(FileConfig *f, InfoViewTab t);
+static InfoViewTab infoViewTabCyclePrevious(FileConfig *f, InfoViewTab t);
 
 // a struct to encapsulate a child proces that is line buffered,
 // which is a closure plus a childpid. 
