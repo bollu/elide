@@ -32,7 +32,7 @@ int main(int argc, char **argv){
   g_editor.original_cwd = fs::current_path(); 
   tilde::tildeWrite("original_cwd: '%s'", g_editor.original_cwd.c_str()); 
   if (path && fs::is_regular_file(*path)) {
-    g_editor.openNewFile(*path);
+    g_editor.getOrOpenNewFile(*path);
   }
   // look for lakefile.lean in directory parents. if available,
   // then start lean server there. 

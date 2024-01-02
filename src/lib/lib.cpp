@@ -1696,7 +1696,7 @@ void editorProcessKeypress() {
     }
 
     if (ctrlpWhenSelected(&g_editor.ctrlp)) {
-      g_editor.openNewFile(ctrlpGetSelectedFileAbsoluteFilepath(&g_editor.ctrlp));
+      g_editor.getOrOpenNewFile(ctrlpGetSelectedFileAbsoluteFilepath(&g_editor.ctrlp));
       g_editor.vim_mode = g_editor.ctrlp.previous_state;
       return;
     }
@@ -1748,6 +1748,14 @@ void editorProcessKeypress() {
 
     assert(f != nullptr);
     switch (c) {
+    case CTRL_KEY('o'): {
+      g_editor.undoFileMove();
+      return;
+    }
+    case CTRL_KEY('i'): {
+      g_editor.redoFileMove();
+      return;
+    }
     case '`': {
       tilde::tildeOpen(&tilde::g_tilde);
       g_editor.vim_mode = VM_TILDE;
@@ -2182,7 +2190,7 @@ namespace tilde {
       g_tilde.logfile = fopen("/tmp/edtr-stderr", "w");
     }
     assert(g_tilde.logfile);
-    
+
     va_list args;
     va_start(args, fmt);
     const int ERROR_LEN = 9000; 
