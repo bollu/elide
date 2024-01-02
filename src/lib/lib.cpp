@@ -1328,7 +1328,9 @@ void editorDraw() {
     editorDrawCompletionMode();
   } else if (g_editor.vim_mode == VM_CTRLP) {
     ctrlpDraw(&g_editor.ctrlp);
-  } else {
+  } else if (g_editor.vim_mode == VM_TILDE) {
+    tilde::tildeDraw(&tilde::g_tilde);
+  }else {
     assert(g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL);
     assert(g_editor.curFile() != NULL);
     editorDrawInfoView(g_editor.curFile());
@@ -1663,6 +1665,13 @@ void editorProcessKeypress() {
       return;
     }
   }
+  else if (g_editor.vim_mode == VM_TILDE) {
+      tilde::tildeHandleInput(&tilde::g_tilde, c);
+      if (tilde::tildeWhenQuit(&tilde::g_tilde)) {
+        g_editor.vim_mode = VM_NORMAL;
+        return;
+      }
+  }
   else if (g_editor.vim_mode == VM_CTRLP) {
     // if lakefile is available, use it as the path.
     // if not, use the file path as the base path.
@@ -1717,12 +1726,19 @@ void editorProcessKeypress() {
         ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
       } else if (c == 'q') {
         exit(0);
+      } else if (c == '~') {
+        tilde::tildeOpen(&tilde::g_tilde);
+        return;
       }
       return;
     }
 
     assert(f != nullptr);
     switch (c) {
+    case CTRL_KEY('~'): {
+      tilde::tildeOpen(&tilde::g_tilde);
+      return;
+    }
     case CTRL_KEY('p'): {
       ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
       return;
@@ -2068,6 +2084,88 @@ void load_abbreviation_dict_from_file(AbbreviationDict *dict, fs::path abbrev_pa
     die("unable to load abbreviations from file '%s'.\n", abbrev_path);
   }
   load_abbreviation_dict_from_json(dict, o);
+};
+
+
+void drawCallback(std::function<void(abuf &ab)> f) {
+  abuf ab;
+  ab.appendstr("\x1b[?25l"); // hide cursor
+  ab.appendstr("\x1b[2J");   // J: erase in display.
+  ab.appendstr("\x1b[1;1H");  // H: cursor position
+  f(ab);
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+}
+
+/** tilde **/
+namespace tilde {
+  TildeView g_tilde;
+
+  bool tildeWhenQuit(TildeView *tilde) {
+    bool out = tilde->quitPressed;
+    tilde->quitPressed = false;
+    return out;
+  };
+
+  void tildeOpen(TildeView *tilde) {
+    tilde->quitPressed = false;
+    tilde->scrollback_ix = {};
+  };
+
+  void tildeHandleInput(TildeView *tilde, int c) {
+      const int NSCREENROWS = 20;
+
+    if (c == CTRL_KEY('c') || c == CTRL_KEY('q')) {
+      tilde->quitPressed = true;
+    } else if (c == CTRL_KEY('d')) {
+      if (tilde->scrollback_ix) {
+        const int nextix = clamp0u<int>(*tilde->scrollback_ix + NSCREENROWS, tilde->log.size() - 1);
+        // we have hit bottom, at idempotent, stop scrolling and allow us to follow
+        // the output.
+        if (nextix == tilde->scrollback_ix) {
+          tilde->scrollback_ix = {};
+        } else {
+          tilde->scrollback_ix = nextix;
+        }
+      }
+    } else if (c == CTRL_KEY('u')) {
+      if (!tilde->scrollback_ix) {
+        tilde->scrollback_ix = clamp0(tilde->log.size() - 1 - NSCREENROWS);
+      } else {
+        tilde->scrollback_ix = clamp0(*tilde->scrollback_ix - NSCREENROWS);
+      }
+    } else if (c == 'g') {
+      tilde->scrollback_ix = 0;
+    } else if (c == 'G') {
+      tilde->scrollback_ix = tilde->log.size() - 1;
+    }
+  }
+
+  void tildeDraw(TildeView *tilde) {
+    drawCallback([&](abuf &ab) {
+      const int IX = tilde->scrollback_ix ? *tilde->scrollback_ix : tilde->log.size() - 1;
+      const int NUMROWS = 40;
+      const interval drawRect = 
+        interval(IX)
+        .ldl(NUMROWS/2).clamp(0, tilde->log.size())
+        .rdr(NUMROWS/2).clamp(0, tilde->log.size());
+      ab.appendstr("~CONSOLE\x1b[K \r\n");
+
+      for(int i = drawRect.l; i < drawRect.r; ++i) {
+        if (i == IX) {
+          ab.appendstr(ESCAPE_CODE_CURSOR_SELECT);
+        }
+        ab.appendstr(tilde->log[i].c_str());
+        if (i == IX) {
+          ab.appendstr(ESCAPE_CODE_UNSET);
+        }
+        ab.appendstr("\x1b[K \r\n");
+      }
+    });
+  };
+  
+  void tildeWrite(std::string str) {
+    g_tilde.log.push_back(str);
+  };
 };
 
 /** ctrlp **/

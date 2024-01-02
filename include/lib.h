@@ -618,6 +618,26 @@ enum VimMode {
   VM_INFOVIEW_DISPLAY_GOAL, // mode where infoview is shown.
   VM_COMPLETION, // mode where code completion results show up.
   VM_CTRLP, // mode where control-p search anything results show up.
+  VM_TILDE, // mode where the editor logs its info, like the infamous quake `~`.
+};
+
+namespace tilde {
+struct TildeView {
+  // if there is a scrollback_ix, then we are scrolling back.
+  // if there is no scrollback_ix, then we are following output.
+  std::optional<int> scrollback_ix = {};
+  bool quitPressed = false;
+  std::vector<std::string> log;
+};
+
+extern TildeView g_tilde;
+
+bool tildeWhenQuit(TildeView *tilde);
+void tildeOpen(TildeView *tilde);
+void tildeHandleInput(TildeView *tilde, int c);
+void tildeDraw(TildeView *tilde);
+// this sucks, global state.
+void tildeWrite(std::string str);
 };
 
 struct Cursor {
@@ -766,6 +786,8 @@ enum InfoViewTab {
   IVT_Messages, // show messages form the LSP server in the info view.
   IVT_NumTabs
 };
+
+
 
 struct FileConfig;
 static InfoViewTab infoViewTabCycleNext(FileConfig *f, InfoViewTab t);
