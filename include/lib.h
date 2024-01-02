@@ -152,7 +152,7 @@ struct abuf {
     if (slen == 0) { return; }
     this->_buf = (char *)realloc(this->_buf, this->_len + slen);
     
-    // shift data forward.
+  // shift data forward.
     for(int i = 0; i < _len; ++i) {
       this->_buf[this->_len - 1 - i] = this->_buf[this->_len + slen - 1 - i];
     }
@@ -399,6 +399,19 @@ struct abuf {
     }
     return this->_buf + delta;
   }
+
+  // TODO: think about why we need the other version.
+  // 'Clearly', this version is correct, since even when 'ix = len',
+  // we will return a valid pointer (end of list).
+  const char *getCodepoint(Size<Codepoint> sz) const {
+    assert(sz <= this->ncodepoints());
+    int delta = 0;
+    for(Ix<Codepoint> i(0); i < sz; i++) {
+      delta += utf8_next_code_point_len(this->_buf + delta);
+    }
+    return this->_buf + delta;
+  }
+
 
   // get the raw _buf. While functionally equivalent to
   // getCodepoint, this gives one more license to do things like `memcpy`
@@ -882,6 +895,7 @@ struct CtrlPView {
 // convert level 'quitPressed' into edge trigger.
 bool ctrlpWhenQuit(CtrlPView *view);
 bool ctrlpWhenSelected(CtrlPView *view);
+fs::path ctrlpGetSelectedFile(const CtrlPView *view);
 void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd);
 void ctrlpHandleInput(CtrlPView *view, int c);
 void ctrlpDraw(CtrlPView *view);
@@ -890,7 +904,7 @@ void ctrlpDraw(CtrlPView *view);
 // Do I want a *global* undo/redo? Probably not, no?
 // TODO: think about just copying the sublime text API :)
 struct FileConfig : public Undoer<FileConfigUndoState> {
-  FileConfig(fs::path absolute_filepath) ;
+  FileConfig(fs::path absolute_filepath);
 
   bool is_initialized = false;
 

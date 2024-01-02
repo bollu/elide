@@ -123,7 +123,8 @@ static json_object *json_object_new_uri(Uri uri) {
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
 struct TextDocumentItem {
   Uri uri;
-  char *languageId = nullptr;; // owned pointer of the language.
+  // TODO: move to `abuf` or `std::string`. 
+  char *languageId = nullptr;
   int version = -1; // version of the document. (it will increase after each change, including undo/redo).
   char *text = nullptr; // owned pointer of the text of the document
   bool is_initialized = false;
@@ -132,11 +133,29 @@ struct TextDocumentItem {
   TextDocumentItem(Uri uri, char *languageId, int version, char *text) : 
     uri(uri), languageId(languageId), version(version), text(text), is_initialized(true) {};
 
-  TextDocumentItem(const TextDocumentItem &other) : 
-  	uri(other.uri), 
-	languageId(strdup(other.languageId)),
-	version(other.version),
-  	text(strdup(other.text)), is_initialized(true) {}
+  TextDocumentItem &operator =(const TextDocumentItem &other) {
+    uri = other.uri;
+    languageId = other.languageId ? strdup(other.languageId) : NULL;
+    version = other.version;
+    text = other.text ? strdup(other.text) : NULL;;
+    is_initialized = other.is_initialized;
+    return *this;
+  }
+
+  TextDocumentItem(TextDocumentItem &&other) {
+    uri = other.uri;
+    languageId = other.languageId;
+    version = other.version;
+    text = other.text;
+    is_initialized = other.is_initialized;
+    other.text = NULL;
+    other.languageId = NULL;
+  }
+  
+  TextDocumentItem(const TextDocumentItem &other) {
+    *this = other;
+  }
+
   void init_from_file_path(fs::path file_path);
 
   ~TextDocumentItem() {

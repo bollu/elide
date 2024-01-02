@@ -1694,6 +1694,13 @@ void editorProcessKeypress() {
       g_editor.vim_mode = g_editor.ctrlp.previous_state;
       return;
     }
+
+    if (ctrlpWhenSelected(&g_editor.ctrlp)) {
+      g_editor.openNewFile(ctrlpGetSelectedFile(&g_editor.ctrlp));
+      g_editor.vim_mode = g_editor.ctrlp.previous_state;
+      return;
+    }
+
   }
   else if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
     assert(g_editor.curFile());
@@ -2075,6 +2082,23 @@ bool ctrlpWhenSelected(CtrlPView *view) {
   const bool out = view->selectPressed;
   view->selectPressed = false;
   return out;
+}
+
+fs::path ctrlpGetSelectedFile(const CtrlPView *view) {
+  assert(view->rgProcess.lines.size() > 0);
+  assert(view->rgProcess.selectedLine >= 0);
+  assert(view->rgProcess.selectedLine < view->rgProcess.lines.size());
+  const abuf &line = view->rgProcess.lines[view->rgProcess.selectedLine];
+  // search for the first `:`, that is going to be the file path.
+  Size<Codepoint> colonOrEndIx = 0;
+  for(; 
+      ((colonOrEndIx < line.ncodepoints()) && 
+       (*line.getCodepoint(colonOrEndIx) != ':'));
+      ++colonOrEndIx) {}
+  // TODO: check that std::string knows what to do when given two pointers.
+  std::string path(line.buf(), line.getCodepoint(colonOrEndIx));
+  // die("found path: '%s'", path.c_str());
+  return path;
 }
 
 
