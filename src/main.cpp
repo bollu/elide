@@ -27,12 +27,11 @@ int main(int argc, char **argv){
 
   disableRawMode();
 
-  const char *path = NULL;
-  if (argc >= 2) { path = argv[1]; }
-
-  g_editor.original_cwd = fs::current_path().parent_path();  
-  if (path && fs::is_regular_file(path)) {
-    g_editor.openNewFile(path);
+  std::optional<fs::path> path;
+  if (argc >= 2) { path = fs::path(argv[1]); }
+  g_editor.original_cwd = fs::current_path();  
+  if (path && fs::is_regular_file(*path)) {
+    g_editor.openNewFile(*path);
   }
   // look for lakefile.lean in directory parents. if available,
   // then start lean server there. 

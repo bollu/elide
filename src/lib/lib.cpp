@@ -782,7 +782,7 @@ FileConfig::FileConfig(fs::path absolute_filepath) {
   this->absolute_filepath = absolute_filepath;
   FILE *fp = fopen(absolute_filepath.c_str(), "a+");
   if (!fp) {
-    die("fopen");
+    die("fopen: unable to open file '%s'", absolute_filepath.c_str());
   }
   fseek(fp, 0, /*whence=*/SEEK_SET);
 
@@ -2198,7 +2198,11 @@ fs::path ctrlpGetSelectedFileAbsoluteFilepath(const CtrlPView *view) {
   // TODO: check that std::string knows what to do when given two pointers.
   const fs::path relative_path_to_file(std::string(line.buf(), line.getCodepoint(colonOrEndIx)));
   const fs::path absolute_path_to_file = view->absolute_cwd / relative_path_to_file;
-  // die("found path: '%s'", absolute_path_to_file.c_str());
+  // tilde::g_tilde.appendfmtstr(
+  //   "absolute path '%s' | relative '%s' | found: '%s'", 
+  //   view->absolute_cwd.c_str(),
+  //   relative_path_to_file.c_str(), 
+  //   absolute_path_to_file.c_str());
   return absolute_path_to_file;
 }
 
