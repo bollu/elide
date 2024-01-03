@@ -867,7 +867,12 @@ Cursor positionToCursor(const Position p) {
   return c;
 }
 
-std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *file_config) {
+enum GotoKind {
+  Definition,
+  TypeDefiition
+};
+
+std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *file_config, GotoKind kind) {
   assert(file_config->is_initialized);
   assert(file_config->text_document_item.is_initialized);
 
@@ -875,8 +880,18 @@ std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *file_config) {
       lspCreateTextDocumentDefinitionRequest(file_config->text_document_item.uri,
           cursorToPosition(file_config->cursor));
   tilde::tildeWrite("Request [textDocument/definition] %s", json_object_to_json_string(req));
+
+  std::string gotoKindStr;
+  if (kind == GotoKind::Definition) {
+    gotoKindStr = "textDocument/definition";
+  } else if (kind == GotoKind::TypeDefiition) {
+    gotoKindStr = "textDocument/typeDefinition";
+  } else {
+    assert(false && "unknown GotoKind");
+  }
+  assert(gotoKindStr != "");
   LspRequestId request_id = 
-    file_config->lean_server_state.write_request_to_child_blocking("textDocument/definition", req);
+    file_config->lean_server_state.write_request_to_child_blocking(gotoKindStr.c_str(), req);
 
   json_object_ptr response = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
   tilde::tildeWrite("Response [textDocument/definition] %s", json_object_to_json_string(response));
@@ -1840,15 +1855,28 @@ void editorProcessKeypress() {
       }
       assert(f->lean_server_state.initialized);
       fileConfigSyncLeanState(f);
-      std::optional<FileLocation> loc = fileConfigGotoDefinition(g_editor.curFile());
+      std::optional<FileLocation> loc = fileConfigGotoDefinition(g_editor.curFile(), GotoKind::Definition);
       if (loc) {
         tilde::tildeWrite("goto definition file location cursor (%d, %d)", 
           loc->cursor.row, loc->cursor.col.size);
         g_editor.getOrOpenNewFile(*loc);
-      } else {
-        // TODO: show error.
-        // assert(false && "unable to goto definition");
+      } 
+      return;
+    }
+    case CTRL_KEY('['): { // is this a good choice of key? I am genuinely unsure.
+      // goto definition.
+      // TODO: refactor this code. to force initialization first.
+      if (!f->lean_server_state.initialized) {
+        fileConfigLaunchLeanServer(f);
       }
+      assert(f->lean_server_state.initialized);
+      fileConfigSyncLeanState(f);
+      std::optional<FileLocation> loc = fileConfigGotoDefinition(g_editor.curFile(), GotoKind::TypeDefiition);
+      if (loc) {
+        tilde::tildeWrite("goto definition file location cursor (%d, %d)", 
+          loc->cursor.row, loc->cursor.col.size);
+        g_editor.getOrOpenNewFile(*loc);
+      } 
       return;
     }
     case CTRL_KEY('o'): {
