@@ -315,15 +315,28 @@ struct interval {
     return interval(l, r + dr);
   }
 
+  // set the length to be at least `lenM`, and achieve this by moving `r`.
   interval len_clampl_move_r(int lenM) const {
     interval i = interval(l, std::max<int>(r, l + lenM));
     assert(i.len() >= lenM);
     return i;
   }
 
-  interval minlen_move_R(int lenM) const {
-    interval i = interval(l, std::min<int>(r, l + lenM));
-    assert(i.len() <= lenM);
+  // set the length to be at least `lenM`, and achieve this by moving `l`.
+  interval len_clampl_move_l(int lenM) const {
+    interval i = interval(std::min<int>(l, - lenM), r);
+    assert(i.len() >= lenM);
+    return i;
+  }
+
+  // set the length to be at least `lenM`, and achieve this by moving `l`.
+  interval len_clampl_move_lr(int lenM) const {
+    const int len_needed = std::max<int>(0, lenM - this->len());
+    const int deltal = len_needed / 2;
+    const int deltar = len_needed - deltal; 
+    assert(deltal + deltar == len_needed);
+    interval i = interval(l - deltal, r + deltar);
+    assert(i.len() >= lenM);
     return i;
   }
 

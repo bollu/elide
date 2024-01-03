@@ -10,7 +10,8 @@ int main() {
   static const int BUF_SIZE = 4096;
   char BUF[BUF_SIZE];
   int nread = 0;
-  json_object *req = NULL, *response = NULL;
+  json_object *req = NULL;
+  json_object_ptr response;
   LspRequestId request_id(-1);
 
   LeanServerState state = LeanServerState::init(NULL);

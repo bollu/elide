@@ -17,9 +17,8 @@ int main() {
     char BUF[BUF_SIZE];
     int nread = 0;
     LspRequestId request_id(-1);
-    json_object *response = NULL;
+    json_object_ptr response;
 
-    enableRawMode();
     LeanServerState state = LeanServerState::init({});
 
     fprintf(stderr, "### reading child [stderr], expecting 'starting lean --server'...\n");

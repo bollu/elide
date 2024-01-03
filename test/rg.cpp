@@ -121,7 +121,7 @@ void test4() {
   for(int i = 0; i < argsVec.size(); ++i) {
     printf("  . %s\n", argsVec[i].c_str());
   }  
-  assert(concatWithSpaces(argsVec) == "--files -g rg.txt -S -n");
+  assert(concatWithSpaces(argsVec) == "--files -g *rg.txt* -S -n");
 }
 
 

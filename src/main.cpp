@@ -49,7 +49,7 @@ int main(int argc, char **argv){
 
     editorDraw();
     editorProcessKeypress();
-
+    editorTickPostKeypress();
 
     timespec tend;
     Debouncer::get_time(&tend);

@@ -73,7 +73,7 @@ struct Test {
   bool run() {
     static int ntest = 1;
     printf("@@@ Test %d\n", ntest++);
-    FileConfig f("");
+    FileConfig f(FileLocation("", Cursor(0, 0)));
     fileConfigSetTestString(f, this->before);
     printFileConfig(&f, "Before");
     this->runner(&f);

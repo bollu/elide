@@ -239,8 +239,8 @@ static Position json_object_parse_position(json_object *o) {
   json_object *character = nullptr;
   json_object_object_get_ex(o, "character", &character);
   assert(character != nullptr);
-  const int characteri = json_object_get_int(character);
-  return Position(linei, characteri);
+  const int endi = json_object_get_int(character);
+  return Position(linei, endi);
 }
 
 // $/lean/plainTermGoal

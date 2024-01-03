@@ -1757,6 +1757,24 @@ void fileConfigOpenRowAbove(FileConfig *f) {
   fileConfigInsertRowBefore(f, 0, nullptr, 0);
 }
 
+void editorTickPostKeypress() {
+  FileConfig *f  = g_editor.curFile();
+  if (!f) { return; }
+  if (f->lean_server_state.unhandled_server_requests.size() > 0) {
+    json_object_ptr req = f->lean_server_state.unhandled_server_requests.back();
+    f->lean_server_state.unhandled_server_requests.pop_back();
+    tilde::tildeWrite(" [server/request] %s", json_object_to_json_string(req));
+
+    // '{"params":{"version":0,"uri":"file%3A%2F%2F%2Fhome%2Fbollu%2Fsoftware%2Fedtr%2Fbuild%2Ftest%2Flake-testdir%2FMain.lean",
+    //   "diagnostics":[
+    //    {"source":"Lean 4","severity":1,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},
+    //     "message":"unknown package 'LakeTestdir'",
+    //     "fullRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}}
+    //    ]}, // End diagnostics.
+    //   "method":"textDocument/publishDiagnostics","jsonrpc":"2.0"}'
+  }
+};
+
 void editorProcessKeypress() {
   int nread;
   int c = editorReadRawEscapeSequence();
@@ -2273,22 +2291,14 @@ namespace tilde {
     if (c == CTRL_KEY('c') || c == CTRL_KEY('q') || c == 'q' || c == '`' || c == '~') {
       tilde->quitPressed = true;
     } else if (c == CTRL_KEY('d')) {
-      if (tilde->scrollback_ix) {
-        const int nextix = clamp0u<int>(*tilde->scrollback_ix + NSCREENROWS, tilde->log.size() - 1);
-        // we have hit bottom, at idempotent, stop scrolling and allow us to follow
-        // the output.
-        if (nextix == tilde->scrollback_ix) {
-          tilde->scrollback_ix = {};
-        } else {
-          tilde->scrollback_ix = nextix;
-        }
-      }
+        tilde->scrollback_ix = 
+        clamp0u<int>(tilde->scrollback_ix + NSCREENROWS, tilde->log.size() - 1);;
     } else if (c == CTRL_KEY('u')) {
-      if (!tilde->scrollback_ix) {
-        tilde->scrollback_ix = clamp0(tilde->log.size() - 1 - NSCREENROWS);
-      } else {
-        tilde->scrollback_ix = clamp0(*tilde->scrollback_ix - NSCREENROWS);
-      }
+        tilde->scrollback_ix = clamp0(tilde->scrollback_ix - NSCREENROWS);
+    } else if (c == CTRL_KEY('p') || c == 'k') {
+        tilde->scrollback_ix = clamp0(tilde->scrollback_ix - 1);
+    } else if (c == CTRL_KEY('n') || c == 'j') {
+        tilde->scrollback_ix = clampu<int>(tilde->scrollback_ix + 1, tilde->log.size() - 1);
     } else if (c == 'g') {
       tilde->scrollback_ix = 0;
     } else if (c == 'G') {
@@ -2298,24 +2308,43 @@ namespace tilde {
 
   void tildeDraw(TildeView *tilde) {
     drawCallback([&](abuf &ab) {
-      const int IX = tilde->scrollback_ix ? *tilde->scrollback_ix : tilde->log.size() - 1;
-      const int NUMROWS = 40;
-      const interval drawRect = 
-        interval(IX)
-        .ldl(NUMROWS/2).clamp(0, tilde->log.size())
-        .rdr(NUMROWS/2).clamp(0, tilde->log.size());
+      const int IX = tilde->scrollback_ix;
+      assert(IX >= 0);
+      if (tilde->log.size() > 0) {
+        assert(IX < tilde->log.size());
+      }
       ab.appendstr("~CONSOLE\x1b[K \r\n");
 
-      for(int i = drawRect.l; i < drawRect.r; ++i) {
-        if (i == IX) {
-          ab.appendstr(ESCAPE_CODE_CURSOR_SELECT);
-        }
-        ab.appendstr(tilde->log[i].c_str());
-        if (i == IX) {
-          ab.appendstr(ESCAPE_CODE_UNSET);
-        }
+      static const int NDRAWCOLS = 118;
+      static const int NDRAWROWS = 12;
+
+      const interval drawRect = 
+        interval(IX)
+        .len_clampl_move_lr(NDRAWROWS)
+        .clamp(0, tilde->log.size()-1);
+
+      assert(drawRect.l <= IX);
+      assert(IX <= drawRect.r);
+      
+      // TODO: draw per column.
+      for(int r = drawRect.l; r <= drawRect.r; ++r) {
         ab.appendstr("\x1b[K \r\n");
+        if (r == IX) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
+        ab.appendstr("▶  ");
+        if (r == IX) { ab.appendstr(ESCAPE_CODE_UNSET); }
+
+        abuf rowbuf = abuf::from_copy_str(tilde->log[r].c_str());
+        for(int c = 0; c < rowbuf.ncodepoints().size; ++c) {
+          if (c % NDRAWCOLS == NDRAWCOLS - 1) {
+            ab.appendstr("\x1b[K \r\n");
+            if (r == IX) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
+            ab.appendstr("   ┃");
+            if (r == IX) { ab.appendstr(ESCAPE_CODE_UNSET); }
+          }
+          ab.appendCodepoint(rowbuf.getCodepoint(c));
+        }
       }
+
     });
   };
 
@@ -2337,6 +2366,10 @@ namespace tilde {
     str += "\n";
     fwrite(str.c_str(), 1, str.size(), g_tilde.logfile);
     fflush(g_tilde.logfile);
+
+    // scroll back upon writing.
+    g_tilde.scrollback_ix = g_tilde.log.size() - 1;
+
   }
 
   void tildeWrite(const std::string &str) {

@@ -624,9 +624,7 @@ enum VimMode {
 
 namespace tilde {
 struct TildeView {
-  // if there is a scrollback_ix, then we are scrolling back.
-  // if there is no scrollback_ix, then we are following output.
-  std::optional<int> scrollback_ix = {};
+  int scrollback_ix = 0;
   bool quitPressed = false;
   std::vector<std::string> log;
   FILE *logfile = nullptr;
@@ -934,6 +932,18 @@ void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd);
 void ctrlpHandleInput(CtrlPView *view, int c);
 void ctrlpDraw(CtrlPView *view);
 
+
+struct FileConfigMessageState {
+  struct Message {
+    std::string message;
+    int severity;
+    Cursor start;
+    Cursor end;
+  };
+  int version;
+  std::vector<Message> messages;
+};
+
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
 // Do I want a *global* undo/redo? Probably not, no?
 // TODO: think about just copying the sublime text API :)
@@ -1181,6 +1191,7 @@ std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *f);
 Position cursorToPosition(Cursor c);
 
 void editorDraw();
+void editorTickPostKeypress();
 void editorScroll();
 void editorDrawRows(abuf &ab);
 void editorDrawStatusBar(abuf &ab);

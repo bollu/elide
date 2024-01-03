@@ -13,7 +13,7 @@ void print_unhandled_requests(LeanServerState *state) {
     return;
   }
 
-  for(json_object *o : state->unhandled_server_requests) {
+  for(json_object_ptr o : state->unhandled_server_requests) {
     fprintf(stderr, "    '%s'\n", json_object_to_json_string_ext(o, JSON_C_TO_STRING_NOSLASHESCAPE));
   }
   state->unhandled_server_requests.clear();
@@ -23,7 +23,7 @@ int main() {
   static const int BUF_SIZE = 4096;
   char BUF[BUF_SIZE];
   int nread = 0;
-  json_object *req = NULL, *response = NULL;
+  json_object *req = NULL; json_object_ptr response;
   LspRequestId request_id(-1);
 
   const char *file_path = realpath("./lake-testdir/Main.lean", NULL);
