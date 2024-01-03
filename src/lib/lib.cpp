@@ -777,12 +777,13 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
 
 /*** file i/o ***/
-FileConfig::FileConfig(fs::path absolute_filepath) {
-  assert(absolute_filepath.is_absolute());
-  this->absolute_filepath = absolute_filepath;
-  FILE *fp = fopen(absolute_filepath.c_str(), "a+");
+FileConfig::FileConfig(FileLocation loc) {
+  this->cursor = loc.cursor;
+  this->absolute_filepath = loc.absolute_filepath;
+  assert(this->absolute_filepath.is_absolute());
+  FILE *fp = fopen(this->absolute_filepath.c_str(), "a+");
   if (!fp) {
-    die("fopen: unable to open file '%s'", absolute_filepath.c_str());
+    die("fopen: unable to open file '%s'", this->absolute_filepath.c_str());
   }
   fseek(fp, 0, /*whence=*/SEEK_SET);
 
@@ -1696,7 +1697,7 @@ void editorProcessKeypress() {
     }
 
     if (ctrlpWhenSelected(&g_editor.ctrlp)) {
-      g_editor.getOrOpenNewFile(ctrlpGetSelectedFileAbsoluteFilepath(&g_editor.ctrlp));
+      g_editor.getOrOpenNewFile(ctrlpGetSelectedFileLocation(&g_editor.ctrlp));
       g_editor.vim_mode = g_editor.ctrlp.previous_state;
       return;
     }
@@ -2202,8 +2203,17 @@ namespace tilde {
     g_tilde.log.push_back(str);
     fwrite(str.c_str(), 1, str.size(), g_tilde.logfile);
   }
+
+  void tildeWrite(const std::string &str) {
+    tildeWrite("%s", str.c_str());
+  };
+  
+  void tildeWrite(const abuf &buf) {
+    tildeWrite(buf.to_std_string());
+  }
   
 };
+
 
 /** ctrlp **/
 
@@ -2220,12 +2230,16 @@ bool ctrlpWhenSelected(CtrlPView *view) {
   return out;
 }
 
-fs::path ctrlpGetSelectedFileAbsoluteFilepath(const CtrlPView *view) {
+FileLocation ctrlpGetSelectedFileLocation(const CtrlPView *view) {
   assert(view->absolute_cwd.is_absolute());
   assert(view->rgProcess.lines.size() > 0);
   assert(view->rgProcess.selectedLine >= 0);
   assert(view->rgProcess.selectedLine < view->rgProcess.lines.size());
   const abuf &line = view->rgProcess.lines[view->rgProcess.selectedLine];
+
+  tilde::tildeWrite("line: ");
+  tilde::tildeWrite(line);
+    
   // search for the first `:`, that is going to be the file path.
   Size<Codepoint> colonOrEndIx = 0;
   for(; 
@@ -2235,12 +2249,26 @@ fs::path ctrlpGetSelectedFileAbsoluteFilepath(const CtrlPView *view) {
   // TODO: check that std::string knows what to do when given two pointers.
   const fs::path relative_path_to_file(std::string(line.buf(), line.getCodepoint(colonOrEndIx)));
   const fs::path absolute_path_to_file = view->absolute_cwd / relative_path_to_file;
-  // tilde::g_tilde.appendfmtstr(
-  //   "absolute path '%s' | relative '%s' | found: '%s'", 
-  //   view->absolute_cwd.c_str(),
-  //   relative_path_to_file.c_str(), 
-  //   absolute_path_to_file.c_str());
-  return absolute_path_to_file;
+
+  tilde::tildeWrite(
+    "absolute path '%s' | relative '%s' | found: '%s'", 
+    view->absolute_cwd.c_str(),
+    relative_path_to_file.c_str(), 
+    absolute_path_to_file.c_str());
+  
+  Size<Codepoint> lineNumberOrEndIx = colonOrEndIx;
+  for(; 
+      ((lineNumberOrEndIx < line.ncodepoints()) && 
+       (*line.getCodepoint(lineNumberOrEndIx) != ':'));
+      ++lineNumberOrEndIx) {}
+
+  int row = 0;  
+  const std::string lineNumberStr(line.getCodepoint(colonOrEndIx), line.getCodepoint(lineNumberOrEndIx));
+  if (lineNumberStr != "") {
+    row = atoi(lineNumberStr.c_str()) - 1;
+  }
+  tilde::tildeWrite("lineNumberStr: %s | row: %d", lineNumberStr.c_str(), row);
+  return FileLocation(absolute_path_to_file, Cursor(row, 0));
 }
 
 

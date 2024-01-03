@@ -272,6 +272,7 @@ struct abuf {
     return to_string_start_len(0, slen);
   }
 
+  // TODO: rename to 'to_c_str()'
   // convert buffer to string.
   char *to_string() const {
     return to_string_start_len(0, this->_len);
@@ -640,6 +641,8 @@ void tildeDraw(TildeView *tilde);
 // this sucks, global state.
 // void tildeWrite(std::string str);
 void tildeWrite(const char *fmt, ...);
+void tildeWrite(const std::string &str);
+void tildeWrite(const abuf &buf);
 };
 
 struct Cursor {
@@ -792,29 +795,6 @@ enum InfoViewTab {
   IVT_NumTabs
 };
 
-// an abstract undo stack where the user can push new states, and perform
-// undo/redo.
-template<typename T>
-struct UndoStack : private Undoer<T> {
-public:
-  void push(T newState) {
-    *((T *)this) = newState;
-    this->mkUndoMemento();
-  }
-
-  const T &get() {
-    return *(T *)this;
-  }
-
-  void undo() {
-    this->doUndo();
-  }
-
-  void redo() {
-    this->doRedo();
-  }
-};
-
 
 struct FileConfig;
 static InfoViewTab infoViewTabCycleNext(FileConfig *f, InfoViewTab t);
@@ -949,7 +929,8 @@ struct CtrlPView {
 // convert level 'quitPressed' into edge trigger.
 bool ctrlpWhenQuit(CtrlPView *view);
 bool ctrlpWhenSelected(CtrlPView *view);
-fs::path ctrlpGetSelectedFileAbsoluteFilepath(const CtrlPView *view);
+struct FileLocation;
+FileLocation ctrlpGetSelectedFileLocation(const CtrlPView *view);
 void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd);
 void ctrlpHandleInput(CtrlPView *view, int c);
 void ctrlpDraw(CtrlPView *view);
@@ -957,8 +938,9 @@ void ctrlpDraw(CtrlPView *view);
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
 // Do I want a *global* undo/redo? Probably not, no?
 // TODO: think about just copying the sublime text API :)
+struct FileLocation;
 struct FileConfig : public Undoer<FileConfigUndoState> {
-  FileConfig(fs::path absolute_filepath);
+  FileConfig(FileLocation loc);
 
   bool is_initialized = false;
 
@@ -995,6 +977,31 @@ private:
   bool _is_dirty_info_view = false;
 };
 
+// represents a file plus a location, used to save history of file opening/closing.
+struct FileLocation {
+  fs::path absolute_filepath;
+  Cursor cursor;
+
+  FileLocation(const FileConfig &file) : 
+    absolute_filepath(file.absolute_filepath), cursor(file.cursor) {}
+
+  FileLocation(const FileLocation &other) {
+    *this = other;
+  }
+
+  FileLocation(fs::path absolute_filepath, Cursor cursor) : 
+    absolute_filepath(absolute_filepath), cursor(cursor) {};
+
+  FileLocation &operator =(const FileLocation &other) {
+    this->absolute_filepath = other.absolute_filepath;
+    this->cursor = other.cursor;
+    return *this;
+  }
+
+};
+
+
+
 // unabbrevs[i] ASCII string maps to abbrevs[i] UTF-8 string.
 struct AbbreviationDict {
   char **unabbrevs = NULL; 
@@ -1005,30 +1012,54 @@ struct AbbreviationDict {
 };
 
 
-// represnts a file plus a location, used to save history of file opening/closing.
-struct FileLocation {
-  fs::path absolute_filepath;
-  Cursor cursor;
+template<typename T>
+struct Zipper {
+public:
+  int size() const {
+    return _ts.size();
+  }
 
-  FileLocation() {} // needs default constructor for Undoer? TODO: refactor!
-
-  FileLocation(FileConfig &f) : 
-    absolute_filepath(f.absolute_filepath), cursor(f.cursor) {};
-
-    bool operator == (const FileLocation &other) {
-      return other.absolute_filepath == this->absolute_filepath &&
-        other.cursor == this->cursor;
+  T* getFocus() {
+    if (_ts.size() == 0) {
+      return nullptr;
+    } else {
+      assert(this->_curIx >= 0);
+      assert(this->_curIx < this->_ts.size());
+      return &_ts[this->_curIx];
     }
+  }
 
-    operator bool() const {
-      const bool valid = absolute_filepath != ""; 
-      return valid;
-    }
+  void push_back_no_refocus(const T &t) {
+    _ts.push_back(t);
+  }
+  
+  void push_back_and_refocus(const T &t) {
+    _ts.push_back(t);
+    this->_curIx = _ts.size() - 1;
+  }
+
+  void left() {
+    if (this->_ts.size() == 0) { return; }
+      this->_curIx = clamp0<int>(this->_curIx - 1);
+  }
+
+  void right() {
+    if (this->_ts.size() == 0) { return; }
+    this->_curIx = clampu<int>(this->_curIx + 1, _ts.size() - 1);
+  }
+
+  int getIx() const {
+    return _curIx;
+  }
+
+private:
+  std::vector<T> _ts;
+  int _curIx = -1;
 };
 
 
 struct EditorConfig {
-  UndoStack<FileLocation> file_location_history;
+  Zipper<FileLocation> file_location_history;
   VimMode vim_mode = VM_NORMAL;
   struct termios orig_termios;
   int screenrows = 0;
@@ -1047,18 +1078,39 @@ struct EditorConfig {
   };
 
 
-  void getOrOpenNewFile(fs::path absolute_filepath) {
-    _getOrOpenNewFile(absolute_filepath, /*addToFileLocationHistory=*/true);
+  void getOrOpenNewFile(FileLocation file_loc) {
+    assert(file_loc.absolute_filepath.is_absolute());
+    // look if file exists.
+    for(int i = 0; i < this->files.size(); ++i) {
+      if (this->files[i].absolute_filepath == file_loc.absolute_filepath) {
+        fileIx = i;
+        this->files[fileIx].cursor = file_loc.cursor;
+        // TODO: this separation is kinda jank, fix it.
+        file_location_history.push_back_and_refocus(FileLocation(this->files[fileIx]));
+        return;
+      }
+    }
+    // we were unable to find an already open file, so make a new file.
+    fileIx = this->files.size();
+    this->files.push_back(FileConfig(file_loc));
+    this->files[fileIx].cursor = file_loc.cursor;
+    file_location_history.push_back_and_refocus(FileLocation(this->files[fileIx]));
   }
 
   void undoFileMove() {
-    file_location_history.undo();
-    _fileLocationHistoryApplyCurState();
+    const int prevIx = file_location_history.getIx();
+    file_location_history.left();
+    if (prevIx != file_location_history.getIx()) {
+      _fileLocationHistoryApplyCurState();
+    }
   }
 
   void redoFileMove() {
-    file_location_history.redo();
-    _fileLocationHistoryApplyCurState();
+    const int prevIx = file_location_history.getIx();
+    file_location_history.right();
+    if (prevIx != file_location_history.getIx()) {
+      _fileLocationHistoryApplyCurState();
+    }
   }
 
   fs::path original_cwd; // cwd that the process starts in.
@@ -1069,37 +1121,11 @@ private:
   std::vector<FileConfig> files;
   int fileIx = 0;
 
-  void _fileLocationHistoryPushCurFile() {
-    FileConfig *f = curFile();
-    if (!f) { return; }
-    file_location_history.push(*f);
-  }
-
-  void _getOrOpenNewFile(fs::path absolute_filepath, bool addToFileLocationHistory) {
-    assert(absolute_filepath.is_absolute());
-    // look if file exists.
-    for(int i = 0; i < this->files.size(); ++i) {
-      if (this->files[i].absolute_filepath == absolute_filepath) {
-        fileIx = i;
-        if (addToFileLocationHistory) { _fileLocationHistoryPushCurFile(); }
-        return;
-      }
-    }
-    // we were unable to find an already open file, so make a new file.
-    fileIx = this->files.size();
-    this->files.push_back(FileConfig(absolute_filepath));
-    if (addToFileLocationHistory) { _fileLocationHistoryPushCurFile(); }
-
-  }
-
-
   void _fileLocationHistoryApplyCurState() {
-    const FileLocation file_loc = file_location_history.get();
+    const FileLocation* file_loc = file_location_history.getFocus();
     if (!file_loc) { return; }
-    this->_getOrOpenNewFile(file_loc.absolute_filepath, /*addToFileLocationHistory=*/false);
-    FileConfig *f = curFile();
-    assert(f);
-    f->cursor = file_loc.cursor;
+    assert(file_loc);
+    this->getOrOpenNewFile(*file_loc);
 
   }
 };
