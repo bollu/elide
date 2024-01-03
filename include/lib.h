@@ -934,14 +934,8 @@ void ctrlpDraw(CtrlPView *view);
 
 
 struct FileConfigMessageState {
-  struct Message {
-    std::string message;
-    int severity;
-    Cursor start;
-    Cursor end;
-  };
   int version;
-  std::vector<Message> messages;
+  std::vector<LspDiagnostic> diagnostics;
 };
 
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.

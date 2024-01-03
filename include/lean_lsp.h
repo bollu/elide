@@ -222,6 +222,14 @@ struct LspPosition {
   LspPosition(int row, int col) : row(row), col(col) {};
 };
 
+
+struct LspRange {
+  LspPosition start;
+  LspPosition end;
+  LspRange(LspPosition start, LspPosition end) : 
+    start(start), end(end) {}
+};
+
 static json_object *json_object_new_position(LspPosition position) {
   json_object *o  = json_object_new_object();
   json_object_object_add(o, "line", json_object_new_int64(position.row));
@@ -242,6 +250,21 @@ static LspPosition json_object_parse_position(json_object *o) {
   const int endi = json_object_get_int(character);
   return LspPosition(linei, endi);
 }
+
+static LspRange json_object_parse_range(json_object *o) {
+  assert(o != nullptr);
+  json_object *start = nullptr;
+  json_object_object_get_ex(o, "start", &start);
+  assert(start != nullptr);
+  const LspPosition startPosition = json_object_parse_position(start);
+
+  json_object *end =nullptr;
+  json_object_object_get_ex(o, "end", &end);
+  assert(end != nullptr);
+  const LspPosition endPosition = json_object_parse_position(end);
+  return LspRange(startPosition, endPosition);
+}
+
 
 // $/lean/plainTermGoal
 static json_object *lspCreateLeanPlainTermGoalRequest(Uri uri, const LspPosition position) {
@@ -337,3 +360,21 @@ static json_object *lspCreateTextDocumentDeclarationRequest(Uri uri, const LspPo
   return o;
 };
 
+
+
+enum LspDiagnosticSeverity {
+  Error = 1,
+  Warning = 2,
+  Information = 3,
+  Hint = 4
+};
+
+
+struct LspDiagnostic {
+  std::string message;
+  LspDiagnosticSeverity severity;
+  LspRange range;
+
+  LspDiagnostic(LspRange range, std::string message, int LspDiagnosticSeverity) : 
+    range(range), message(message), severity(severity) {};
+};

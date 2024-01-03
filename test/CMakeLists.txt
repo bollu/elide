@@ -24,10 +24,16 @@ add_executable(utf8 utf8.cpp)
 target_link_libraries(utf8 PRIVATE edtr)
 add_test(NAME utf8 COMMAND $<TARGET_FILE:utf8>)
 
+
+file(COPY lake-testdir  DESTINATION .)
+
 add_executable(lake_open_file lake-open-file.cpp)
 target_link_libraries(lake_open_file PRIVATE edtr)
 add_test(NAME lake_open_file COMMAND $<TARGET_FILE:lake_open_file>)
-file(COPY lake-testdir  DESTINATION .)
+
+add_executable(lake_get_messages lake-get-messages.cpp)
+target_link_libraries(lake_get_messages PRIVATE edtr)
+add_test(NAME lake_get_messages COMMAND $<TARGET_FILE:lake_get_messages>)
 
 add_executable(abbreviations abbreviations.cpp)
 target_link_libraries(abbreviations PRIVATE edtr)
