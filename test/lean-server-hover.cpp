@@ -49,7 +49,7 @@ int main() {
 
   // textDocument/hover
   Uri uri; uri.init_from_file_path(strdup(file_path));
-  req = lspCreateTextDocumentHoverRequest(uri, Position(0, 35));
+  req = lspCreateTextDocumentHoverRequest(uri, LspPosition(0, 35));
   fprintf(stderr, "### writing textDocument/hover\n");
   fprintf(stderr, " '%s'\n", json_object_to_json_string(req));
   request_id = state.write_request_to_child_blocking("textDocument/hover", req);

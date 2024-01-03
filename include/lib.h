@@ -1188,7 +1188,7 @@ void fileConfigCursorMoveWordNext(FileConfig *f);
 void fileConfigCursorMoveWordPrevious(FileConfig *f);
 void fileConfigSave(FileConfig *f);
 std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *f);
-Position cursorToPosition(Cursor c);
+LspPosition cursorToLspPosition(Cursor c);
 
 void editorDraw();
 void editorTickPostKeypress();

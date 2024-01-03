@@ -214,22 +214,22 @@ static json_object *lspCreateInitializedNotification() {
 // }
 
 
-// TODO: rename to JsonPosition.
-struct Position {
+// TODO: rename to JsonLspPosition.
+struct LspPosition {
   int row = -42; // zero indexed line number.
   int col = -42; // utf-8 offset for column.
 
-  Position(int row, int col) : row(row), col(col) {};
+  LspPosition(int row, int col) : row(row), col(col) {};
 };
 
-static json_object *json_object_new_position(Position position) {
+static json_object *json_object_new_position(LspPosition position) {
   json_object *o  = json_object_new_object();
   json_object_object_add(o, "line", json_object_new_int64(position.row));
   json_object_object_add(o, "character", json_object_new_int64(position.col));
   return o;
 }
 
-static Position json_object_parse_position(json_object *o) {
+static LspPosition json_object_parse_position(json_object *o) {
   assert(o != nullptr);
   json_object *line = nullptr;
   json_object_object_get_ex(o, "line", &line);
@@ -240,11 +240,11 @@ static Position json_object_parse_position(json_object *o) {
   json_object_object_get_ex(o, "character", &character);
   assert(character != nullptr);
   const int endi = json_object_get_int(character);
-  return Position(linei, endi);
+  return LspPosition(linei, endi);
 }
 
 // $/lean/plainTermGoal
-static json_object *lspCreateLeanPlainTermGoalRequest(Uri uri, const Position position) {
+static json_object *lspCreateLeanPlainTermGoalRequest(Uri uri, const LspPosition position) {
   assert(uri);  
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
@@ -258,7 +258,7 @@ static json_object *lspCreateLeanPlainTermGoalRequest(Uri uri, const Position po
 
 
 // $/lean/plainGoal
-static json_object *lspCreateLeanPlainGoalRequest(Uri uri, const Position position) {
+static json_object *lspCreateLeanPlainGoalRequest(Uri uri, const LspPosition position) {
   assert(uri);    
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
@@ -272,7 +272,7 @@ static json_object *lspCreateLeanPlainGoalRequest(Uri uri, const Position positi
 
 
 // textDocument/hover
-static json_object *lspCreateTextDocumentHoverRequest(Uri uri, const Position position) {
+static json_object *lspCreateTextDocumentHoverRequest(Uri uri, const LspPosition position) {
   assert(uri);
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
@@ -293,7 +293,7 @@ enum class CompletionTriggerKind {
 
 // textDocument/completion
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
-static json_object *lspCreateTextDocumentCompletionRequest(Uri uri, const Position position, CompletionTriggerKind triggerKind) {
+static json_object *lspCreateTextDocumentCompletionRequest(Uri uri, const LspPosition position, CompletionTriggerKind triggerKind) {
   assert(uri);  
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
@@ -311,7 +311,7 @@ static json_object *lspCreateTextDocumentCompletionRequest(Uri uri, const Positi
 
 
 // textDocument/definition
-static json_object *lspCreateTextDocumentDefinitionRequest(Uri uri, const Position position) {
+static json_object *lspCreateTextDocumentDefinitionRequest(Uri uri, const LspPosition position) {
   assert(uri);
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
@@ -325,7 +325,7 @@ static json_object *lspCreateTextDocumentDefinitionRequest(Uri uri, const Positi
 
 
 // textDocument/declaration
-static json_object *lspCreateTextDocumentDeclarationRequest(Uri uri, const Position position) {
+static json_object *lspCreateTextDocumentDeclarationRequest(Uri uri, const LspPosition position) {
     assert(uri);
   json_object *o = json_object_new_object();
   // textDocumentIdentifier

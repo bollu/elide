@@ -50,7 +50,7 @@ int main() {
 
   // $/lean/plainGoal
   Uri uri; uri.init_from_file_path(strdup(file_path));
-  req = lspCreateLeanPlainGoalRequest(uri, Position(0, 35));
+  req = lspCreateLeanPlainGoalRequest(uri, LspPosition(0, 35));
   fprintf(stderr, "### writing $/lean/plainGoal\n");
   fprintf(stderr, " '%s'\n", json_object_to_json_string(req));
   request_id = state.write_request_to_child_blocking("$/lean/plainGoal", req);

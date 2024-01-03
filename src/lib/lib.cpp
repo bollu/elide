@@ -750,7 +750,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // TODO: need to convert col to 'bytes'
   req = lspCreateLeanPlainGoalRequest(file_config->text_document_item.uri, 
-    cursorToPosition(file_config->cursor));
+    cursorToLspPosition(file_config->cursor));
   request_id = 
     file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
   file_config->leanInfoViewPlainGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
@@ -758,7 +758,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   // $/lean/plainTermGoal
 
   req = lspCreateLeanPlainTermGoalRequest(file_config->text_document_item.uri, 
-    cursorToPosition(file_config->cursor));
+    cursorToLspPosition(file_config->cursor));
   request_id = 
     file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
   file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
@@ -766,7 +766,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   // textDocument/hover
 
   req = lspCreateTextDocumentHoverRequest(file_config->text_document_item.uri, 
-    cursorToPosition(file_config->cursor));
+    cursorToLspPosition(file_config->cursor));
   request_id = file_config->lean_server_state.write_request_to_child_blocking("textDocument/hover", req);
   file_config->leanHoverViewHover = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
@@ -856,11 +856,11 @@ void fileConfigSave(FileConfig *f) {
 
 
 
-Position cursorToPosition(const Cursor c) {
-  return Position(c.row, c.col.size);
+LspPosition cursorToLspPosition(const Cursor c) {
+  return LspPosition(c.row, c.col.size);
 }
 
-Cursor positionToCursor(const Position p) {
+Cursor LspPositionToCursor(const LspPosition p) {
   Cursor c;
   c.row = p.row;
   c.col = p.col;
@@ -878,7 +878,7 @@ std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *file_config, Go
 
   json_object *req = 
       lspCreateTextDocumentDefinitionRequest(file_config->text_document_item.uri,
-          cursorToPosition(file_config->cursor));
+          cursorToLspPosition(file_config->cursor));
   tilde::tildeWrite("Request [textDocument/definition] %s", json_object_to_json_string(req));
 
   std::string gotoKindStr;
@@ -949,11 +949,11 @@ std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *file_config, Go
   tilde::tildeWrite("response [textDocument/gotoDefinition] result.0.targetSelectionRange.start: '%s'", 
       json_object_to_json_string(result0_targetSelectionRange_start));
 
-  Position p = json_object_parse_position(result0_targetSelectionRange_start);
+  LspPosition p = json_object_parse_position(result0_targetSelectionRange_start);
   tilde::tildeWrite("response [textDocument/gotoDefinition] position: (%d, %d)", 
       p.row, p.col);
 
-  return FileLocation(absolute_filepath, positionToCursor(p));
+  return FileLocation(absolute_filepath, LspPositionToCursor(p));
 }
 
 /*** append buffer ***/
