@@ -1078,15 +1078,18 @@ struct EditorConfig {
   };
 
 
-  void getOrOpenNewFile(FileLocation file_loc) {
+  void getOrOpenNewFile(FileLocation file_loc, bool addToFileLocationHistory=true) {
     assert(file_loc.absolute_filepath.is_absolute());
+
+    if(addToFileLocationHistory) {
+      file_location_history.push_back_and_refocus(file_loc);
+    }
     // look if file exists.
     for(int i = 0; i < this->files.size(); ++i) {
       if (this->files[i].absolute_filepath == file_loc.absolute_filepath) {
         fileIx = i;
         this->files[fileIx].cursor = file_loc.cursor;
         // TODO: this separation is kinda jank, fix it.
-        file_location_history.push_back_and_refocus(FileLocation(this->files[fileIx]));
         return;
       }
     }
@@ -1094,14 +1097,14 @@ struct EditorConfig {
     fileIx = this->files.size();
     this->files.push_back(FileConfig(file_loc));
     this->files[fileIx].cursor = file_loc.cursor;
-    file_location_history.push_back_and_refocus(FileLocation(this->files[fileIx]));
   }
 
   void undoFileMove() {
     const int prevIx = file_location_history.getIx();
     file_location_history.left();
     if (prevIx != file_location_history.getIx()) {
-      _fileLocationHistoryApplyCurState();
+      // state changed, so we must have a file of interest.
+      this->getOrOpenNewFile(*file_location_history.getFocus(), /*addToFileLocationHistory=*/false);
     }
   }
 
@@ -1109,7 +1112,8 @@ struct EditorConfig {
     const int prevIx = file_location_history.getIx();
     file_location_history.right();
     if (prevIx != file_location_history.getIx()) {
-      _fileLocationHistoryApplyCurState();
+      // state changed, so we must have a file of interest.
+      this->getOrOpenNewFile(*file_location_history.getFocus(), /*addToFileLocationHistory=*/false);
     }
   }
 
@@ -1120,14 +1124,6 @@ struct EditorConfig {
 private:
   std::vector<FileConfig> files;
   int fileIx = 0;
-
-  void _fileLocationHistoryApplyCurState() {
-    const FileLocation* file_loc = file_location_history.getFocus();
-    if (!file_loc) { return; }
-    assert(file_loc);
-    this->getOrOpenNewFile(*file_loc);
-
-  }
 };
 
 extern EditorConfig g_editor; // global editor handle.
