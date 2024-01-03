@@ -53,3 +53,20 @@ void TextDocumentItem::init_from_file_path(fs::path file_path) {
   this->text = text;
   this->is_initialized = true;
 }
+
+// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
+LspDiagnostic json_parse_lsp_diagnostic(json_object *diagnostic) {
+  json_object *rangeo = NULL;
+  json_object_object_get_ex(diagnostic, "range", &rangeo);
+  LspRange range = json_object_parse_range(rangeo);
+
+  json_object *messageo = NULL;
+  json_object_object_get_ex(diagnostic, "message", &messageo);
+  const char *message = json_object_get_string(messageo);
+
+  json_object *severityo = NULL;
+  json_object_object_get_ex(diagnostic, "severity", &severityo);
+  int severity = json_object_get_int(severityo);
+  
+  return LspDiagnostic(range, message, severity);
+}
