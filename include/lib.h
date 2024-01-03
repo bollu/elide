@@ -646,7 +646,6 @@ void tildeWrite(const abuf &buf);
 };
 
 struct Cursor {
-// private:
   Size<Codepoint> col = Size<Codepoint>(0); // number of graphemes to move past from the start of the row to get to the current one.
   int row = 0; // index of row. Must be within [0, file->nrows].
 
@@ -998,6 +997,10 @@ struct FileLocation {
     return *this;
   }
 
+  bool operator == (const FileLocation &other) {
+    return cursor == other.cursor && absolute_filepath == other.absolute_filepath;
+  }
+
 };
 
 
@@ -1029,12 +1032,8 @@ public:
     }
   }
 
-  void push_back_no_refocus(const T &t) {
-    _ts.push_back(t);
-  }
-  
-  void push_back_and_refocus(const T &t) {
-    _ts.push_back(t);
+  void push_back(const T &t) {
+    _push_back_no_duplicates(t);
     this->_curIx = _ts.size() - 1;
   }
 
@@ -1053,6 +1052,13 @@ public:
   }
 
 private:
+
+  void _push_back_no_duplicates(const T &t) {
+    if (_ts.size() > 0 && t == _ts[_ts.size() - 1]) {
+      return;
+    }
+    _ts.push_back(t);
+  }
   std::vector<T> _ts;
   int _curIx = -1;
 };
@@ -1078,18 +1084,23 @@ struct EditorConfig {
   };
 
 
-  void getOrOpenNewFile(FileLocation file_loc, bool addToFileLocationHistory=true) {
+  void getOrOpenNewFile(FileLocation file_loc, bool isUndoRedo=false) {
     assert(file_loc.absolute_filepath.is_absolute());
 
-    if(addToFileLocationHistory) {
-      file_location_history.push_back_and_refocus(file_loc);
+    if (!isUndoRedo) {
+      if (this->fileIx != -1) {
+        assert(this->fileIx < this->files.size());
+        file_location_history.push_back(FileLocation(this->files[fileIx]));
+      }
+      file_location_history.push_back(file_loc);
     }
+
     // look if file exists.
     for(int i = 0; i < this->files.size(); ++i) {
       if (this->files[i].absolute_filepath == file_loc.absolute_filepath) {
         fileIx = i;
-        this->files[fileIx].cursor = file_loc.cursor;
         // TODO: this separation is kinda jank, fix it.
+        this->files[fileIx].cursor = file_loc.cursor;
         return;
       }
     }
@@ -1104,7 +1115,7 @@ struct EditorConfig {
     file_location_history.left();
     if (prevIx != file_location_history.getIx()) {
       // state changed, so we must have a file of interest.
-      this->getOrOpenNewFile(*file_location_history.getFocus(), /*addToFileLocationHistory=*/false);
+      this->getOrOpenNewFile(*file_location_history.getFocus(), /*isUndoRedo=*/true);
     }
   }
 
@@ -1113,7 +1124,7 @@ struct EditorConfig {
     file_location_history.right();
     if (prevIx != file_location_history.getIx()) {
       // state changed, so we must have a file of interest.
-      this->getOrOpenNewFile(*file_location_history.getFocus(), /*addToFileLocationHistory=*/false);
+      this->getOrOpenNewFile(*file_location_history.getFocus(), /*isUndoRedo=*/true);
     }
   }
 
@@ -1123,7 +1134,7 @@ struct EditorConfig {
   EditorConfig() { statusmsg[0] = '\0'; }
 private:
   std::vector<FileConfig> files;
-  int fileIx = 0;
+  int fileIx = -1;
 };
 
 extern EditorConfig g_editor; // global editor handle.
@@ -1165,8 +1176,10 @@ void fileConfigRowsToBuf(FileConfig *f, abuf *buf);
 void fileConfigDebugPrint(FileConfig *f, abuf *buf); 
 void fileConfigCursorMoveWordNext(FileConfig *f);
 void fileConfigCursorMoveWordPrevious(FileConfig *f);
-
 void fileConfigSave(FileConfig *f);
+std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *f);
+Position cursorToPosition(Cursor c);
+
 void editorDraw();
 void editorScroll();
 void editorDrawRows(abuf &ab);

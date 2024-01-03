@@ -83,55 +83,45 @@ json_object *lspCreateInitializeRequest();
 
 
 struct Uri {
-  char *uri = nullptr; // owned by uri;
+  std::string uri;
+
+  operator bool () const {
+    return uri.size() > 0;
+  }
 
   bool is_initialized() const {
-    return uri != nullptr;
-  }
-
-  Uri() = default;
-
-  // TODO: refactor to use std::string or abuf.
-  Uri &operator = (const Uri &other) {
-    if (!other.uri) {
-      this->uri = nullptr;
-    } else {
-      this->uri = strdup(other.uri);
-    }
-    return *this;
-  }
-  Uri(const Uri &other) {
-    *this = other;
-  }
-
-  Uri(Uri &&other) {
-    this->uri = other.uri;
-    other.uri = nullptr;
+    return bool(*this);
   }
 
 
-  ~Uri() { free(uri); }
+  void init_from_file_path(fs::path file_path) {
+    const std::string file_segment_uri = "file://";
+    const std::string file_uri_unencoded = file_segment_uri + std::string(file_path);
 
-  void init_from_file_path(fs::path file_path_cpp) {
-    const char *file_segment_uri = "file://";
-
-    const char *file_path = file_path_cpp.c_str();
-    const int file_uri_unencoded_len = strlen(file_segment_uri) + strlen(file_path) + 1;
-    char *file_uri_unencoded = (char *)calloc(sizeof(char), file_uri_unencoded_len);
-    sprintf(file_uri_unencoded, "%s%s", file_segment_uri, file_path);
-
-    const int file_uri_encoded_len = file_uri_unencoded_len *4 + 1;
-    char *out = (char *)calloc(sizeof(char), file_uri_encoded_len); // at most 8 -> 32 blowup.
-    uri_encode(file_uri_unencoded, file_uri_unencoded_len, out);
-    free(file_uri_unencoded); // song and dance...
+    std::string out;
+    out.resize(file_uri_unencoded.size() * 4 + 1);
+    uri_encode (file_uri_unencoded.c_str(), file_uri_unencoded.size(), 
+       &out[0]);
     this->uri = out;
   }
 
+  static fs::path parse(const char *uri_str) {
+    std::string decoded;
+    decoded.resize(strlen(uri_str) + 1);
+    uri_decode(uri_str, strlen(uri_str), &decoded[0]);
+
+    const char *FILE = "file://";
+    assert(decoded.size() > strlen(FILE));
+    for(int i = 0; i < strlen(FILE); ++i) {
+      assert(decoded[i] == FILE[i]);
+    };
+    return fs::path(decoded.substr(strlen(FILE), std::string::npos));
+  }
 
 };
 
 static json_object *json_object_new_uri(Uri uri) {
-  return json_object_new_string(uri.uri);
+  return json_object_new_string(uri.uri.c_str());
 }
 
 
@@ -224,6 +214,7 @@ static json_object *lspCreateInitializedNotification() {
 // }
 
 
+// TODO: rename to JsonPosition.
 struct Position {
   int row = -42; // zero indexed line number.
   int col = -42; // utf-8 offset for column.
@@ -238,8 +229,23 @@ static json_object *json_object_new_position(Position position) {
   return o;
 }
 
+static Position json_object_parse_position(json_object *o) {
+  assert(o != nullptr);
+  json_object *line = nullptr;
+  json_object_object_get_ex(o, "line", &line);
+  assert(line != nullptr);
+  const int linei = json_object_get_int(line);
+
+  json_object *character = nullptr;
+  json_object_object_get_ex(o, "character", &character);
+  assert(character != nullptr);
+  const int characteri = json_object_get_int(character);
+  return Position(linei, characteri);
+}
+
 // $/lean/plainTermGoal
 static json_object *lspCreateLeanPlainTermGoalRequest(Uri uri, const Position position) {
+  assert(uri);  
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
   json_object *textDocument = json_object_new_object();
@@ -253,6 +259,7 @@ static json_object *lspCreateLeanPlainTermGoalRequest(Uri uri, const Position po
 
 // $/lean/plainGoal
 static json_object *lspCreateLeanPlainGoalRequest(Uri uri, const Position position) {
+  assert(uri);    
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
   json_object *textDocument = json_object_new_object();
@@ -266,6 +273,7 @@ static json_object *lspCreateLeanPlainGoalRequest(Uri uri, const Position positi
 
 // textDocument/hover
 static json_object *lspCreateTextDocumentHoverRequest(Uri uri, const Position position) {
+  assert(uri);
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
   json_object *textDocument = json_object_new_object();
@@ -286,6 +294,7 @@ enum class CompletionTriggerKind {
 // textDocument/completion
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
 static json_object *lspCreateTextDocumentCompletionRequest(Uri uri, const Position position, CompletionTriggerKind triggerKind) {
+  assert(uri);  
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
   json_object *textDocument = json_object_new_object();
@@ -303,6 +312,7 @@ static json_object *lspCreateTextDocumentCompletionRequest(Uri uri, const Positi
 
 // textDocument/definition
 static json_object *lspCreateTextDocumentDefinitionRequest(Uri uri, const Position position) {
+  assert(uri);
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
   json_object *textDocument = json_object_new_object();
@@ -316,6 +326,7 @@ static json_object *lspCreateTextDocumentDefinitionRequest(Uri uri, const Positi
 
 // textDocument/declaration
 static json_object *lspCreateTextDocumentDeclarationRequest(Uri uri, const Position position) {
+    assert(uri);
   json_object *o = json_object_new_object();
   // textDocumentIdentifier
   json_object *textDocument = json_object_new_object();
