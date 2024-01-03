@@ -1039,8 +1039,10 @@ void fileConfigDraw(FileConfig *f) {
 
     // convert the line number into a string, and write it.
     {
+
+      if (filerow == f->cursor.row) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
       // code in view mode is renderered gray
-      if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr(ESCAPE_CODE_DULL); }
+      else if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr(ESCAPE_CODE_DULL); }
 
       char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
       int ix = write_int_to_str(line_number_str, filerow + 1);
@@ -1053,7 +1055,8 @@ void fileConfigDraw(FileConfig *f) {
       free(line_number_str);
 
       // code in view mode is renderered gray, so reset.
-      if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[0m"); }
+      if (filerow == f->cursor.row) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
+      else if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[0m"); }
 
     }
     // code in view mode is renderered gray
