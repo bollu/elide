@@ -13,5 +13,5 @@ def f (bar : Bar) : Int :=
   . cases bar  
     case mk a b =>
       exact b
-
+foo
 #eval f  

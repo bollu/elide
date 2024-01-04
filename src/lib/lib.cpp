@@ -1046,7 +1046,7 @@ void fileConfigDraw(FileConfig *f) {
     {
 
       char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
-      if (filerow <= f->progressbar.startRow) {
+      if (filerow <= f->progressbar.startRow || f->progressbar.finished) {
         ab.appendstr(ESCAPE_CODE_GREEN "▌" ESCAPE_CODE_UNSET);
       } else {
         ab.appendstr(ESCAPE_CODE_YELLOW "▌" ESCAPE_CODE_UNSET);
