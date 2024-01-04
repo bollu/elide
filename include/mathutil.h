@@ -87,7 +87,7 @@ struct Ix {
 
   bool operator <(const Size<T> &other) const;
 
-  bool operator == (const Ix<T> &other) {
+  bool operator == (const Ix<T> &other) const {
     return this->ix ==  other.ix;
   }
 
@@ -209,9 +209,7 @@ struct Size {
     return this->size >= other.size;
   }
 
-
-
-  bool operator == (const Size<T> &other) {
+  bool operator == (const Size<T> &other) const {
     return this->size ==  other.size;
   }
 

@@ -647,7 +647,11 @@ struct Cursor {
   Size<Codepoint> col = Size<Codepoint>(0); // number of graphemes to move past from the start of the row to get to the current one.
   int row = 0; // index of row. Must be within [0, file->nrows].
 
-  bool operator == (const Cursor &other) {
+  Cursor() = default;
+  Cursor(int row, int col) : 
+    row(row), col(Size<Codepoint>(col)) {};
+
+  bool operator == (const Cursor &other) const {
     return row == other.row && col == other.col;
   }
 };
@@ -933,11 +937,6 @@ void ctrlpHandleInput(CtrlPView *view, int c);
 void ctrlpDraw(CtrlPView *view);
 
 
-struct FileConfigMessageState {
-  int version;
-  std::vector<LspDiagnostic> diagnostics;
-};
-
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
 // Do I want a *global* undo/redo? Probably not, no?
 // TODO: think about just copying the sublime text API :)
@@ -960,6 +959,9 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
 
   // TextDocument for LSP
   TextDocumentItem text_document_item;
+
+  // diagonstics from LSP.
+  std::vector<LspDiagnostic> lspDiagnostics;
 
   // if 'b' is true, then mark the state as dirty.
   // if 'b' is false, then leave the dirty state as-is.
@@ -1001,7 +1003,7 @@ struct FileLocation {
     return *this;
   }
 
-  bool operator == (const FileLocation &other) {
+  bool operator == (const FileLocation &other) const {
     return cursor == other.cursor && absolute_filepath == other.absolute_filepath;
   }
 
@@ -1056,7 +1058,6 @@ public:
   }
 
 private:
-
   void _push_back_no_duplicates(const T &t) {
     if (_ts.size() > 0 && t == _ts[_ts.size() - 1]) {
       return;

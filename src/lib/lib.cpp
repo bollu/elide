@@ -1275,6 +1275,28 @@ void editorDrawInfoViewMessagesTab(FileConfig *f) {
   editorDrawInfoViewTacticsTabbar(IVT_Messages, f, &ab);
   ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
   ab.appendstr("\r\n");  // always append a space
+
+  for(int i = 0; i < f->lspDiagnostics.size(); ++i) {
+    const LspDiagnostic d = f->lspDiagnostics[i];
+    const int MAXCOLS = 100;
+    assert(d.version == f->text_document_item.version);
+    if (d.severity == LspDiagnosticSeverity::Error) {
+      ab.appendstr("ERR : ");
+    } else if (d.severity == LspDiagnosticSeverity::Warning) {
+      ab.appendstr("WARN: ");
+    } else if (d.severity == LspDiagnosticSeverity::Information) {
+      ab.appendstr("INFO: ");
+    } else {
+      assert(d.severity == LspDiagnosticSeverity::Hint);
+      ab.appendstr("HINT: ");
+    }
+    ab.appendfmtstr(120, "%d:%d: ", d.range.start.row, d.range.start.col);
+    ab.appendstr(d.message.substr(0, MAXCOLS - 10).c_str());
+    ab.appendstr("\r\n");
+  }
+
+  ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
+  ab.appendstr("\r\n");  // always append a space
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 
 }
@@ -1760,18 +1782,51 @@ void fileConfigOpenRowAbove(FileConfig *f) {
 void editorTickPostKeypress() {
   FileConfig *f  = g_editor.curFile();
   if (!f) { return; }
-  if (f->lean_server_state.unhandled_server_requests.size() > 0) {
-    json_object_ptr req = f->lean_server_state.unhandled_server_requests.back();
-    f->lean_server_state.unhandled_server_requests.pop_back();
-    tilde::tildeWrite(" [server/request] %s", json_object_to_json_string(req));
+  if (!f->text_document_item.is_initialized) { return; }
+  
+  if (f->lean_server_state.unhandled_server_requests.size() == 0) {
+    return;
+  }
 
-    // '{"params":{"version":0,"uri":"file%3A%2F%2F%2Fhome%2Fbollu%2Fsoftware%2Fedtr%2Fbuild%2Ftest%2Flake-testdir%2FMain.lean",
-    //   "diagnostics":[
-    //    {"source":"Lean 4","severity":1,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},
-    //     "message":"unknown package 'LakeTestdir'",
-    //     "fullRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}}
-    //    ]}, // End diagnostics.
-    //   "method":"textDocument/publishDiagnostics","jsonrpc":"2.0"}'
+  json_object_ptr req = f->lean_server_state.unhandled_server_requests.back();
+  f->lean_server_state.unhandled_server_requests.pop_back();
+
+  tilde::tildeWrite("%s: unhandled request is: %s", __PRETTY_FUNCTION__, json_object_to_json_string(req));
+  
+  json_object *methodo = NULL;
+  json_object_object_get_ex(req, "method", &methodo);
+  assert(methodo);
+  const char *method = json_object_get_string(methodo);
+  assert(method);
+
+  if (strcmp(method, "textDocument/publishDiagnostics") == 0) {
+    json_object *paramso =  NULL;
+    json_object_object_get_ex(req, "params", &paramso);
+    assert(paramso);
+
+    json_object *versiono = NULL;
+    json_object_object_get_ex(paramso, "version", &versiono);      
+    assert(versiono);
+    const int version = json_object_get_int(versiono);
+
+    assert (version <= f->text_document_item.version);
+    if (version < f->text_document_item.version) {
+      return; // skip, since it's older than what we want.
+    }
+    assert(version == f->text_document_item.version);
+
+    
+    json_object *ds = NULL;
+    json_object_object_get_ex(paramso, "diagnostics", &ds);
+    assert(ds);
+    f->lspDiagnostics.clear(); // fill in new diagnostics.
+    const int NDS = json_object_array_length(ds);
+    for(int i = 0; i < NDS; ++i) {
+      json_object *di = json_object_array_get_idx(ds, i);
+      LspDiagnostic d = json_parse_lsp_diagnostic(di, version);
+      f->lspDiagnostics.push_back(d);
+    }
+    tilde::tildeWrite("  textDocument/publishDiagnostics #messages: '%d'", f->lspDiagnostics.size());
   }
 };
 
@@ -1833,7 +1888,6 @@ void editorProcessKeypress() {
     }
     case 'l':
     case 'k': 
-    // case ' ':
     case '\t': {
       // TODO: this is not per file info? or is it?
       f->infoViewTab = infoViewTabCycleNext(f, f->infoViewTab);
@@ -1843,8 +1897,10 @@ void editorProcessKeypress() {
     case 'q':
     case 'g':
     case ' ':
+    case '\r':
     case '?': {
-      g_editor.vim_mode = VM_NORMAL; return;
+      g_editor.vim_mode = VM_NORMAL;
+      return;
     }
     default: {
       return;
@@ -1988,6 +2044,7 @@ void editorProcessKeypress() {
 
     case 'g':
     case ' ':
+    case '\r':
     case '?': {
       // TODO: dear god get right of this code duplication.
       if (f->absolute_filepath.extension() == ".lean") {
@@ -2360,7 +2417,7 @@ namespace tilde {
     char *buf = (char*)calloc(sizeof(char), ERROR_LEN);
     vsnprintf(buf, ERROR_LEN, fmt, args);
     va_end(args);
-    std::string str(buf, buf+ERROR_LEN);
+    std::string str(buf);
     free(buf);
     g_tilde.log.push_back(str);
     str += "\n";
@@ -2587,7 +2644,12 @@ void ctrlpHandleInput(CtrlPView *view, int c) {
       // quit and go back to previous state.
       view->quitPressed = true;
     } else if (c == '\r') {
-      view->selectPressed = true;
+      // pressing <ENTER> either selects if a choice is available, or quits if no choices are available.
+      if (view->rgProcess.lines.size() > 0) {
+        view->selectPressed = true;
+      } else {
+        view->quitPressed = true;
+      }
     }
  
   } else {

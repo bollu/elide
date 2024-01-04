@@ -366,7 +366,8 @@ enum LspDiagnosticSeverity {
   Error = 1,
   Warning = 2,
   Information = 3,
-  Hint = 4
+  Hint = 4,
+  MAX_DIAGNOSTIC_SEVERITY = 5
 };
 
 
@@ -374,11 +375,15 @@ struct LspDiagnostic {
   std::string message;
   LspDiagnosticSeverity severity;
   LspRange range;
+  int version;
 
-  LspDiagnostic(LspRange range, std::string message, int LspDiagnosticSeverity) : 
-    range(range), message(message), severity(severity) {};
+  LspDiagnostic(LspRange range, std::string message, LspDiagnosticSeverity severity, int version) : 
+    range(range), message(message), severity(severity), version(version){
+      assert(severity <= MAX_DIAGNOSTIC_SEVERITY);
+      assert(severity >= 1);
+    };
 };
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
-LspDiagnostic json_parse_lsp_diagnostic(json_object *diagnostic);
+LspDiagnostic json_parse_lsp_diagnostic(json_object *diagnostic, int version);
 

@@ -55,18 +55,32 @@ void TextDocumentItem::init_from_file_path(fs::path file_path) {
 }
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
-LspDiagnostic json_parse_lsp_diagnostic(json_object *diagnostic) {
+LspDiagnostic json_parse_lsp_diagnostic(json_object *diagnostic, int version) {
   json_object *rangeo = NULL;
   json_object_object_get_ex(diagnostic, "range", &rangeo);
+  assert(rangeo);
   LspRange range = json_object_parse_range(rangeo);
 
   json_object *messageo = NULL;
   json_object_object_get_ex(diagnostic, "message", &messageo);
+  assert(messageo);
   const char *message = json_object_get_string(messageo);
 
   json_object *severityo = NULL;
   json_object_object_get_ex(diagnostic, "severity", &severityo);
-  int severity = json_object_get_int(severityo);
+  assert(severityo);
+  assert(json_object_get_type(severityo) == json_type_int);
+  const int severity = json_object_get_int(severityo);
+
+  tilde::tildeWrite("%s: %s | message: %s | severity: %d", __PRETTY_FUNCTION__,
+      json_object_to_json_string(diagnostic),
+      message,
+      severity);
+
+  assert(severity >= 1);
+  assert(severity <= LspDiagnosticSeverity::MAX_DIAGNOSTIC_SEVERITY);
   
-  return LspDiagnostic(range, message, severity);
+  return LspDiagnostic(range, message, 
+      static_cast<LspDiagnosticSeverity>(severity),
+      version);
 }

@@ -48,12 +48,18 @@ void print_unhandled_requests(LeanServerState *state) {
       json_object_object_get_ex(paramso, "diagnostics", &ds);
       assert(ds);
 
+      json_object *versiono = NULL;
+      json_object_object_get_ex(paramso, "version", &versiono);      
+      assert(versiono);
+      const int version = json_object_get_int(versiono);
+
       for(int i = 0; i < json_object_array_length(ds); ++i) {
         json_object *di = json_object_array_get_idx(ds, i);
-        LspDiagnostic d = json_parse_lsp_diagnostic(di);
+        LspDiagnostic d = json_parse_lsp_diagnostic(di, version);
 
-        fprintf(stderr, "\t$ PARSED: i: %d, range: [(%d, %d)-(%d, %d)], message: \"%s\", severity: %d\n",
+        fprintf(stderr, "\t$ PARSED: i: %d, version: %d, range: [(%d, %d)-(%d, %d)], message: \"%s\", severity: %d\n",
             i + 1,
+            d.version,
             d.range.start.row,
             d.range.start.col,
             d.range.end.row,
@@ -101,6 +107,7 @@ int main() {
   state.write_notification_to_child_blocking("initialized", req);
 
   TextDocumentItem item; item.init_from_file_path(file_path);
+  item.version = 42; // check that this version is also used for notifications.
   req = lspCreateDidOpenTextDocumentNotifiation(item);
   fprintf(stderr, "### notification [textDocument/didOpen]\n");
   fprintf(stderr, " '%s'\n", json_object_to_json_string_ext(req, JSON_C_TO_STRING_NOSLASHESCAPE));
