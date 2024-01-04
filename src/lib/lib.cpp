@@ -1152,7 +1152,7 @@ bool isInfoViewTacticsTacticsTabEnabled(FileConfig *f) {
   return false;
 }
 
-void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, FileConfig *f, abuf *buf) {
+void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
     assert(tab >= 0 && tab < IVT_NumTabs);
     const char *str[IVT_NumTabs] = {"Tactics", "Hover","Messages"};    
     bool enabled[IVT_NumTabs] = {
@@ -1203,7 +1203,7 @@ void editorDrawInfoViewTacticsTab(FileConfig *f) {
 
   // always append a space, since we decrement a row from screen rows
   // to make space for status bar.
-  editorDrawInfoViewTacticsTabbar(IVT_Tactic, f, &ab);
+  editorDrawInfoViewTacticsTabbar(IVT_Tactic, &ab);
   assert(f->leanInfoViewPlainGoal != nullptr);
   assert(f->leanInfoViewPlainTermGoal!= nullptr);
 
@@ -1269,7 +1269,7 @@ void editorDrawInfoViewMessagesTab(FileConfig *f) {
   ab.appendstr("\x1b[?25l"); // hide cursor
   ab.appendstr("\x1b[2J");   // J: erase in display.
   ab.appendstr("\x1b[1;1H");  // H: cursor position
-  editorDrawInfoViewTacticsTabbar(IVT_Messages, f, &ab);
+  editorDrawInfoViewTacticsTabbar(IVT_Messages, &ab);
   ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
   ab.appendstr("\r\n");  // always append a space
 
@@ -1306,7 +1306,7 @@ void editorDrawInfoViewHoverTab(FileConfig *f) {
   ab.appendstr("\x1b[?25l"); // hide cursor
   ab.appendstr("\x1b[2J");   // J: erase in display.
   ab.appendstr("\x1b[1;1H");  // H: cursor position
-  editorDrawInfoViewTacticsTabbar(IVT_Hover, f, &ab);
+  editorDrawInfoViewTacticsTabbar(IVT_Hover, &ab);
   ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
   ab.appendstr("\r\n");  // always append a space
 

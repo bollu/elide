@@ -32,6 +32,7 @@ int main(int argc, char **argv){
   g_editor.original_cwd = fs::current_path(); 
   tilde::tildeWrite("original_cwd: '%s'", g_editor.original_cwd.c_str()); 
   if (path && fs::is_regular_file(*path)) {
+    path = fs::canonical(*path);
     g_editor.getOrOpenNewFile(FileLocation(*path, Cursor(0, 0)));
   }
   // look for lakefile.lean in directory parents. if available,
