@@ -24,6 +24,7 @@ install(TARGETS edtr DESTINATION lib)
 add_executable(elide src/main.cpp)
 target_link_libraries(elide PRIVATE edtr)
 install(TARGETS elide DESTINATION bin)
+install(FILES src/abbreviations.json DESTINATION bin)
 file(COPY src/abbreviations.json DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 add_subdirectory(test/)
