@@ -51,6 +51,6 @@ add_test(NAME rg COMMAND $<TARGET_FILE:edit>)
 file(COPY rg.txt DESTINATION .) # used to test rg.
 file(COPY rg2.txt DESTINATION .) # used to test rg.
 
-add_executable(uv uv.cpp)
-target_link_libraries(uv PRIVATE edtr)
-add_test(NAME uv COMMAND $<TARGET_FILE:uv>)
+# add_executable(uv uv.cpp)
+# target_link_libraries(uv PRIVATE edtr)
+# add_test(NAME uv COMMAND $<TARGET_FILE:uv>)

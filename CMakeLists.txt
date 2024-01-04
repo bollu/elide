@@ -11,15 +11,13 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always -O2")
 # https://github.com/facebook/folly/blob/main/CMake/FindLibUring.cmake
 # https://stackoverflow.com/a/29316084/5305365 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing)
-pkg_check_modules(UV REQUIRED IMPORTED_TARGET libuv)
 
 # libedtr
 add_library(edtr src/lib/lib.cpp src/lean_lsp.cpp src/lib/uri_encode.cpp)
 find_package(json-c CONFIG)
-target_include_directories(edtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)
+target_include_directories(edtr PUBLIC json-c::json-c)
 target_include_directories(edtr PUBLIC include/)
-target_link_libraries(edtr PUBLIC json-c::json-c PkgConfig::URING PkgConfig::UV)
+target_link_libraries(edtr PUBLIC json-c::json-c)
 install(TARGETS edtr DESTINATION lib)
 
 # edtr
