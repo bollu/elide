@@ -128,12 +128,9 @@ void _exec_lean_server_on_child(std::optional<fs::path> lakefile_dirpath) {
 
 // tries to find the lake for `file_path`,
 // and returns NULL if file_path is NULL.
-std::optional<fs::path> get_lakefile_path(const fs::path &absolute_lean_filepath) {
-  assert(absolute_lean_filepath.is_absolute());
-  // walk up directory tree of 'file_path' in a loop, printing parents,
-  // until we hit the root directory, then stop.
-  fs::path dirpath = absolute_lean_filepath;
-  dirpath.remove_filename();
+std::optional<fs::path> getFilePathAmongstParents(fs::path dirpath, const char *needle) {
+  std::cerr << "dirpath: '" << dirpath << "'\n";
+  assert(dirpath.is_absolute());
 
   // only iterate this loop a bounded number of times.
   int NITERS = 1000;
@@ -141,9 +138,8 @@ std::optional<fs::path> get_lakefile_path(const fs::path &absolute_lean_filepath
     assert(i != NITERS - 1 && 
       "ERROR: recursing when walking up parents to find `lakefile.lean`.");
     for (auto const &it : fs::directory_iterator{dirpath}) {
-      if (it.path().filename() == "lakefile.lean") {
-        fs::path lakefile_path = it.path();
-        std::optional<fs::path>(lakefile_path.remove_filename());
+      if (it.path().filename() == needle) {
+        return it.path();
       }
     }
     fs::path dirpath_parent = dirpath.parent_path();
@@ -174,8 +170,12 @@ LeanServerState LeanServerState::init(std::optional<fs::path> absolute_filepath)
 
   if (absolute_filepath) {
     assert(absolute_filepath->is_absolute());
-
-    state.lakefile_dirpath = get_lakefile_path(*absolute_filepath);
+    state.lakefile_dirpath = ([&absolute_filepath]() -> std::optional<fs::path> {
+      std::optional<fs::path> p = 
+      	getFilePathAmongstParents(absolute_filepath->remove_filename(), "lakefile.lean"); 
+      if (p) { return p->remove_filename(); }
+      else { return {}; }
+    })();
     std::cerr << "lakefile_dirpath: " << (state.lakefile_dirpath ? state.lakefile_dirpath->string() : "NO LAKEFILE") << "\n";
     if (state.lakefile_dirpath) {
       assert(state.lakefile_dirpath->is_absolute());
@@ -2593,6 +2593,25 @@ std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs ar
 
 };
 
+// compute a "good" path that Ctrlp should start from, based on heuristics. The heuristics are:
+// if we find a `lakefile.lean`, that is a good root dir.
+// if we find a `.git` folder, that is a good root dir.
+// if we find a `.gitignore` folder, that is a good root dir.
+// Consider grabbing the working directory with 'fs::absolute(fs::current_path())'
+//   if no good starting path is known.
+fs::path ctrlpGetGoodRootDirAbsolute(const fs::path absolute_startdir) {
+  assert(absolute_startdir.is_absolute());
+  std::optional<fs::path> out;
+  if ((out = getFilePathAmongstParents(absolute_startdir, "lakefile.lean"))) {
+    return out->parent_path();
+  } else if ((out = getFilePathAmongstParents(absolute_startdir, ".git"))) {
+    return out->parent_path();
+  } else if ((out = getFilePathAmongstParents(absolute_startdir, ".gitignore"))) {
+    return out->parent_path();
+  } else {
+    return absolute_startdir;
+  }
+}
 
 void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path absolute_cwd) {
   assert(absolute_cwd.is_absolute());

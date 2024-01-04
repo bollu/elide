@@ -936,6 +936,7 @@ FileLocation ctrlpGetSelectedFileLocation(const CtrlPView *view);
 void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd);
 void ctrlpHandleInput(CtrlPView *view, int c);
 void ctrlpDraw(CtrlPView *view);
+fs::path ctrlpGetGoodRootDirAbsolute(const fs::path absolute_startdir);
 
 
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.

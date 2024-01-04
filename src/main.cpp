@@ -31,9 +31,16 @@ int main(int argc, char **argv){
   if (argc >= 2) { path = fs::path(argv[1]); }
   g_editor.original_cwd = fs::current_path(); 
   tilde::tildeWrite("original_cwd: '%s'", g_editor.original_cwd.c_str()); 
-  if (path && fs::is_regular_file(*path)) {
+  if (path) { 
     path = fs::canonical(*path);
-    g_editor.getOrOpenNewFile(FileLocation(*path, Cursor(0, 0)));
+    if (fs::is_regular_file(*path)) {
+      g_editor.getOrOpenNewFile(FileLocation(*path, Cursor(0, 0)));
+    } else {
+      ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, *path);
+    }
+  } else {
+    ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, 
+      ctrlpGetGoodRootDirAbsolute(fs::absolute(fs::current_path())));
   }
   // look for lakefile.lean in directory parents. if available,
   // then start lean server there. 
