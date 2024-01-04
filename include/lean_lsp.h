@@ -372,9 +372,9 @@ enum LspDiagnosticSeverity {
 
 
 struct LspDiagnostic {
+  LspRange range;
   std::string message;
   LspDiagnosticSeverity severity;
-  LspRange range;
   int version;
 
   LspDiagnostic(LspRange range, std::string message, LspDiagnosticSeverity severity, int version) : 

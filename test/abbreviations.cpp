@@ -7,7 +7,7 @@ extern "C"
 const char* __asan_default_options() { return "detect_leaks=0"; }
 
 
-void test1(AbbreviationDict *dict) {
+void test1() {
   const char *unabbrev = "alpha";
   const int unabbrevlen = strlen(unabbrev);
 
@@ -20,7 +20,7 @@ void test1(AbbreviationDict *dict) {
   assert(kind == AMK_EXACT_MATCH);
 }
 
-void test2(AbbreviationDict *dict) {
+void test2() {
   const char *unabbrev = "alpha";
   const int unabbrevlen = strlen(unabbrev);
 
@@ -33,7 +33,7 @@ void test2(AbbreviationDict *dict) {
   assert(kind == AMK_PREFIX_MATCH);
 }
 
-void test3(AbbreviationDict *dict) {
+void test3() {
   const char *unabbrev = "alpha";
   const int unabbrevlen = strlen(unabbrev);
 
@@ -46,7 +46,7 @@ void test3(AbbreviationDict *dict) {
   assert(kind == AMK_NOMATCH);
 }
 
-void test4(AbbreviationDict *dict) {
+void test4() {
   const char *unabbrev = "alpha";
   const int unabbrevlen = strlen(unabbrev);
 
@@ -60,7 +60,7 @@ void test4(AbbreviationDict *dict) {
 }
 
 
-void test5(AbbreviationDict *dict) {
+void test5() {
   const char *unabbrev = "alpha";
   const int unabbrevlen = strlen(unabbrev);
 
@@ -73,7 +73,7 @@ void test5(AbbreviationDict *dict) {
   assert(kind == AMK_NOMATCH);
 }
 
-void test6(AbbreviationDict *dict) {
+void test6() {
   const char *unabbrev = "alpha";
   const int unabbrevlen = strlen(unabbrev);
 
@@ -156,12 +156,12 @@ int main() {
     assert(strlen(dict.unabbrevs[i]) == dict.unabbrevs_len[i]);
   }
 
-  test1(&dict);
-  test2(&dict);
-  test3(&dict);
-  test4(&dict);
-  test5(&dict);
-  test6(&dict);
+  test1();
+  test2();
+  test3();
+  test4();
+  test5();
+  test6();
 
   // test abbrev match.
   test7(&dict);

@@ -59,7 +59,7 @@ int main(int argc, char **argv){
     if (elapsed_sec > 0) { continue; }
 
     const long elapsed_microsec = elapsed_nanosec / 1000;
-    const long total_microsec = 1000000 / 60; // 30 FPS = 1s / 30 frames = 1000000 microsec / 30 frames 
+    const long total_microsec = 1000000 / 120; // 120 FPS = 1s / 120 frames = 1000000 microsec / 120 frames 
     usleep(clamp0(total_microsec - elapsed_microsec));
   };
   disableRawMode();

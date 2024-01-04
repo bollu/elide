@@ -375,10 +375,6 @@ json_object_ptr LeanServerState::read_json_response_from_child_blocking(LspReque
   }
 }
 
-/*** defines ***/
-
-void editorSetStatusMessage(const char *fmt, ...);
-
 
 /*** data ***/
 EditorConfig g_editor;
@@ -402,6 +398,7 @@ void disableRawMode() {
   const char *showCursor = "\x1b[?25h";
   // no point catching errors at this state, we are closing soon anyway.
   int _ = write(STDOUT_FILENO, showCursor, strlen(showCursor));
+  (void)_;
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_editor.orig_termios) == -1) {
     die("tcsetattr");
   }
@@ -842,7 +839,7 @@ void fileConfigSave(FileConfig *f) {
   // 0644: +r, +w
   int fd = open(f->absolute_filepath.c_str(), O_RDWR | O_CREAT, 0644);
   if (fd != -1) {
-    editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
+    // editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
   }
   assert(fd != -1 && "unable to open file");
   // | set file to len.
@@ -850,7 +847,7 @@ void fileConfigSave(FileConfig *f) {
   assert(err != -1 && "unable to truncate");
   int nwritten = write(fd, buf.buf(), buf.len());
   assert(nwritten == buf.len() && "wasn't able to write enough bytes");
-  editorSetStatusMessage("Saved file");
+  // editorSetStatusMessage("Saved file");
   close(fd);
 }
 
@@ -1276,7 +1273,8 @@ void editorDrawInfoViewMessagesTab(FileConfig *f) {
   ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
   ab.appendstr("\r\n");  // always append a space
 
-  for(int i = 0; i < f->lspDiagnostics.size(); ++i) {
+  const int MAXROWS = 20;
+  for(int i = 0; i < f->lspDiagnostics.size() && i < MAXROWS; ++i) {
     const LspDiagnostic d = f->lspDiagnostics[i];
     const int MAXCOLS = 100;
     assert(d.version == f->text_document_item.version);
@@ -1291,7 +1289,8 @@ void editorDrawInfoViewMessagesTab(FileConfig *f) {
       ab.appendstr("HINT: ");
     }
     ab.appendfmtstr(120, "%d:%d: ", d.range.start.row, d.range.start.col);
-    ab.appendstr(d.message.substr(0, MAXCOLS - 10).c_str());
+    std::string message_sub = d.message.substr(0, MAXCOLS - 10);
+    ab.appendstr(message_sub.c_str());
     ab.appendstr("\r\n");
   }
 
@@ -1357,8 +1356,8 @@ InfoViewTab _infoViewTabCycleDelta(FileConfig *f, InfoViewTab t, int delta) {
     isInfoViewTacticsHoverTabEnabled(f),
     true
   };
-  bool foundEnabled = false;
   t = InfoViewTab(((int) t + delta)  % IVT_NumTabs);
+  bool foundEnabled = false;
   for(int i = 0; i < IVT_NumTabs; ++i) {
     if (enabled[t]) {
       foundEnabled = true;
@@ -1367,7 +1366,7 @@ InfoViewTab _infoViewTabCycleDelta(FileConfig *f, InfoViewTab t, int delta) {
       t = InfoViewTab(((int) t + delta) % IVT_NumTabs);
     }
   }
-  // assert(foundEnabled && "unable to find any enabled tab on the info view.");
+  assert(foundEnabled && "unable to find any enabled tab on the info view.");
   return t;
 }
 
@@ -1466,14 +1465,6 @@ void editorDraw() {
     assert(g_editor.curFile() != NULL);
     editorDrawInfoView(g_editor.curFile());
   }
-}
-
-void editorSetStatusMessage(const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  vsnprintf(g_editor.statusmsg, sizeof(g_editor.statusmsg), fmt, ap);
-  va_end(ap);
-  g_editor.statusmsg_time = time(NULL);
 }
 
 /*** input ***/
@@ -1831,7 +1822,6 @@ void editorTickPostKeypress() {
 };
 
 void editorProcessKeypress() {
-  int nread;
   int c = editorReadRawEscapeSequence();
 
   if (g_editor.vim_mode == VM_COMPLETION) {
@@ -2289,6 +2279,7 @@ void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o) {
 
   json_object_object_foreach(o, key_, val_) {
     dict->nrecords++;
+    (void)key_;
   }
 
   dict->unabbrevs = (char **)calloc(sizeof(char*), dict->nrecords);
@@ -2312,7 +2303,7 @@ void load_abbreviation_dict_from_json(AbbreviationDict *dict, json_object *o) {
 void load_abbreviation_dict_from_file(AbbreviationDict *dict, fs::path abbrev_path) {
   json_object *o = json_object_from_file(abbrev_path.c_str());
   if (o == NULL) {
-    die("unable to load abbreviations from file '%s'.\n", abbrev_path);
+    die("unable to load abbreviations from file '%s'.\n", abbrev_path.c_str());
   }
   load_abbreviation_dict_from_json(dict, o);
 };
@@ -2405,12 +2396,14 @@ namespace tilde {
     });
   };
 
+
   void tildeWrite(const char *fmt, ...) {
     if (!g_tilde.logfile) {
       g_tilde.logfile = fopen("/tmp/edtr-stderr", "w");
     }
     assert(g_tilde.logfile);
 
+    // write arguments.
     va_list args;
     va_start(args, fmt);
     const int ERROR_LEN = 9000; 
@@ -2424,6 +2417,13 @@ namespace tilde {
     fwrite(str.c_str(), 1, str.size(), g_tilde.logfile);
     fflush(g_tilde.logfile);
 
+
+
+    // truncate log to `MAX_ENTRIES.
+    const int MAX_ENTRIES = 100;
+    const int nkeep = clampu<int>(MAX_ENTRIES, g_tilde.log.size());
+    g_tilde.log.erase(g_tilde.log.begin(), g_tilde.log.begin() + nkeep);
+    
     // scroll back upon writing.
     g_tilde.scrollback_ix = g_tilde.log.size() - 1;
 
@@ -2716,8 +2716,6 @@ void ctrlpDraw(CtrlPView *view) {
       view->rgProcess.lines.size());
     
     const int NELLIPSIS = 2; // ellipsis width;
-    const int NCOLS = g_editor.screencols - 5;
-    const int NROWS = g_editor.screenrows - 5;
     const int VIEWSIZE = 80;
     const int NCODEPOINTS = view->textArea.ncodepoints().size;
 
@@ -2763,7 +2761,6 @@ void ctrlpDraw(CtrlPView *view) {
   { // draw text from rg.
     const int VIEWSIZE = 80;
     const int NELLIPSIS = 3;
-    const int NCOLS = g_editor.screencols - 5;
     const int NROWS = g_editor.screenrows - 5;
 
     for(int i = 0; i < view->rgProcess.lines.size() && i < NROWS; ++i) {

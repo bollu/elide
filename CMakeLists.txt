@@ -5,6 +5,14 @@ project(ward C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if (MSVC)
+    add_compile_options(/W4) # warning level 4
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic 
+      -Wno-unused-const-variable -Wno-sign-compare -Wno-unused-function) # additional warnings
+endif()
+
+
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -fdiagnostics-color=always -fsanitize=address,undefined")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always -O2")
 

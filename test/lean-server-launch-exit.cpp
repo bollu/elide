@@ -13,8 +13,6 @@ int main() {
     // if (i == 0) { enableRawMode(); } 
     // else { disableRawMode(); }
 
-    static const int BUF_SIZE = 4096;
-    char BUF[BUF_SIZE];
     int nread = 0;
     LspRequestId request_id(-1);
     json_object_ptr response;

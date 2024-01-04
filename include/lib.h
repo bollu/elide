@@ -360,7 +360,7 @@ struct abuf {
 
   const char *getCodepointFromRight(Ix<Codepoint> ix) const {
     assert(ix < this->ncodepoints());
-    this->getCodepoint(this->ncodepoints().mirrorIx(ix));
+    return this->getCodepoint(this->ncodepoints().mirrorIx(ix));
   }
 
   bool operator == (const abuf &other) const {
@@ -546,7 +546,7 @@ struct LeanServerCursorInfo {
 // sequence ID of a LSP request. Used to get a matching response
 // when asking for responses.
 struct LspRequestId {
-  int id = -1;;
+  int id = -1;
   LspRequestId()  = default;
   LspRequestId(int id) : id(id) {};
 };
@@ -644,8 +644,8 @@ void tildeWrite(const abuf &buf);
 };
 
 struct Cursor {
-  Size<Codepoint> col = Size<Codepoint>(0); // number of graphemes to move past from the start of the row to get to the current one.
   int row = 0; // index of row. Must be within [0, file->nrows].
+  Size<Codepoint> col = Size<Codepoint>(0); // #graphemes to move past from the start of the row to get to the current one.
 
   Cursor() = default;
   Cursor(int row, int col) : 
@@ -769,6 +769,7 @@ public:
   }
 
   Undoer() {}
+  virtual ~Undoer() {}
 
 
 protected:
@@ -1330,7 +1331,6 @@ static int utf8_prev_code_point_len(const char *str, int ix) {
   const bool b2_6 = c2 & (1 << 6);
   const bool b2_5 = c2 & (1 << 5);
   const bool b2_4 = c2 & (1 << 4);
-  const bool b2_3 = c2 & (1 << 3);
   assert(b2_7);  
   // 1xxxxxx; 10xxxxxxx; 10xxxxxx
   //                     ^~~~~ix
