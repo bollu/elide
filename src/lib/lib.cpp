@@ -32,10 +32,12 @@
 #define ESCAPE_CODE_CURSOR_INSERT "\x1b[30;47m" // black foreground, white background
 #define ESCAPE_CODE_CURSOR_NORMAL "\x1b[30;100m" // black foreground, bright black background
 #define ESCAPE_CODE_CURSOR_SELECT "\x1b[30;46m" // black foreground, cyan background
-#define ESCAPE_CODE_ERROR "\x1b[30;41m" // black foreground, red background
-#define ESCAPE_CODE_WARN "\x1b[30;43m" // black foreground, yellow background
-#define ESCAPE_CODE_INFO "\x1b[30;44m" // black foreground, blue background
+#define ESCAPE_CODE_RED "\x1b[30;41m" // black foreground, red background
+#define ESCAPE_CODE_YELLOW "\x1b[30;43m" // black foreground, yellow background
+#define ESCAPE_CODE_GREEN "\x1b[30;42m" // black foreground, green background
+#define ESCAPE_CODE_BLUE "\x1b[30;44m" // black foreground, blue background
 #define ESCAPE_CODE_UNSET "\x1b[0m"
+
 #define CHECK_POSIX_CALL_0(x) { do { int success = x == 0; if(!success) { perror("POSIX call failed"); }; assert(success); } while(0); }
 // check that minus 1 is notreturned.
 #define CHECK_POSIX_CALL_M1(x) { do { int fail = x == -1; if(fail) { perror("POSIX call failed"); }; assert(!fail); } while(0); }
@@ -1033,12 +1035,22 @@ void fileConfigDraw(FileConfig *f) {
   // exception when we print our
   // "\r\n".
   // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
-  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + f->scroll_row_offset + 1) + 1;
+  // plus one more for the progress bar character
+  const int NCHARS_PIPE = 1;
+  const int NCHARS_PROGRESSBAR = 1;
+  const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + f->scroll_row_offset + NCHARS_PIPE + NCHARS_PROGRESSBAR) + 1;
   for (int row = 0; row < g_editor.screenrows; row++) {
     int filerow = row + f->scroll_row_offset;
 
     // convert the line number into a string, and write it.
     {
+
+      char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
+      if (filerow <= f->progressbar.startRow) {
+        ab.appendstr(ESCAPE_CODE_GREEN "▌" ESCAPE_CODE_UNSET);
+      } else {
+        ab.appendstr(ESCAPE_CODE_YELLOW "▌" ESCAPE_CODE_UNSET);
+      }
 
       bool row_needs_unset = false;
       if (filerow == f->cursor.row) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); row_needs_unset = true; }
@@ -1049,20 +1061,19 @@ void fileConfigDraw(FileConfig *f) {
         if (d.range.start.row >= filerow && d.range.end.row <= filerow) {
 	  row_needs_unset = true;
 	  if (d.severity == LspDiagnosticSeverity::Error) {
-	    ab.appendstr(ESCAPE_CODE_ERROR);
+	    ab.appendstr(ESCAPE_CODE_RED);
 	  }
 	  else if (d.severity == LspDiagnosticSeverity::Warning) {
-	    ab.appendstr(ESCAPE_CODE_WARN);
+	    ab.appendstr(ESCAPE_CODE_YELLOW);
 	  }
 	  else if (d.severity == LspDiagnosticSeverity::Hint || d.severity == LspDiagnosticSeverity::Information) {
-	    ab.appendstr(ESCAPE_CODE_INFO);
+	    ab.appendstr(ESCAPE_CODE_BLUE);
 	  } else {
 	    assert(false && "unhandled severity");
 	  }
 	}
       }
 
-      char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
       int ix = write_int_to_str(line_number_str, filerow + 1);
       while(ix < LINE_NUMBER_NUM_CHARS - 1) {
         line_number_str[ix] = ' ';
@@ -1118,6 +1129,35 @@ void fileConfigDraw(FileConfig *f) {
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
+void drawCallback(std::function<void(abuf &ab)> f) {
+  abuf ab;
+  ab.appendstr("\x1b[?25l"); // hide cursor
+  ab.appendstr("\x1b[2J");   // J: erase in display.
+  ab.appendstr("\x1b[1;1H");  // H: cursor position
+  f(ab);
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+}
+
+
+void editorDrawFileConfigPopup(FileConfig *f) {
+  if (!f->progressbar.finished) {
+    // draw progress info;
+    drawCallback([f](abuf &ab) {
+      const int CENTER_ROW = g_editor.screenrows;
+      const int POPUP_SIZE = g_editor.screencols - 10;;
+      const int POPUP_SIZE_L = POPUP_SIZE / 2;
+      const int POPUP_SIZE_R = POPUP_SIZE - POPUP_SIZE_L;
+
+      // ab.appendfmtstr(120, "\x1b[%d;%d", );
+      ab.appendstr("┏");
+      ab.appendstr("┃");
+      ab.appendstr("┓");
+      ab.appendstr("┗");
+      ab.appendstr("┗");
+      ab.appendstr("┛");        
+    });
+  }
+};
 
 void editorDrawInfoViewGoal(abuf *ab, const char *str) {
   const int NINDENT = 2;
@@ -1474,6 +1514,7 @@ void editorDraw() {
     } else {
       editorDrawNoFile();
     }
+    // editorDrawFileConfigPopup(); // draw file config mode popup, if it needs to be drawn.
   } else if (g_editor.vim_mode == VM_COMPLETION) {
     editorDrawCompletionMode();
   } else if (g_editor.vim_mode == VM_CTRLP) {
@@ -1810,6 +1851,7 @@ void editorTickPostKeypress() {
   const char *method = json_object_get_string(methodo);
   assert(method);
 
+
   if (strcmp(method, "textDocument/publishDiagnostics") == 0) {
     json_object *paramso =  NULL;
     json_object_object_get_ex(req, "params", &paramso);
@@ -1842,6 +1884,29 @@ void editorTickPostKeypress() {
       f->lspDiagnostics.push_back(d);
     }
     tilde::tildeWrite("  textDocument/publishDiagnostics #messages: '%d'", f->lspDiagnostics.size());
+  } else if (strcmp(method, "$/lean/fileProgress") == 0) {
+    json_object *paramso =  NULL;
+    json_object_object_get_ex(req, "params", &paramso);
+    assert(paramso);
+
+    json_object *processingo = NULL;
+    json_object_object_get_ex(paramso, "processing", &processingo);      
+    assert(processingo);
+    const int nrecords = json_object_array_length(processingo);
+    assert(nrecords <= 1 && "file progress should have at most 1 record");
+    if (nrecords == 0) {
+      f->progressbar.finished = true;
+      return;
+    }
+    assert(nrecords == 1);
+    f->progressbar.finished = false;
+
+    json_object *rangeo = NULL;
+    json_object_object_get_ex(processingo, "range", &rangeo);
+    assert(rangeo);
+    LspRange range = json_object_parse_range(rangeo);
+    f->progressbar.startRow = range.start.row;
+    f->progressbar.endRow = range.end.row;
   }
 };
 
@@ -2332,15 +2397,6 @@ void load_abbreviation_dict_from_file(AbbreviationDict *dict, fs::path abbrev_pa
   load_abbreviation_dict_from_json(dict, o);
 };
 
-
-void drawCallback(std::function<void(abuf &ab)> f) {
-  abuf ab;
-  ab.appendstr("\x1b[?25l"); // hide cursor
-  ab.appendstr("\x1b[2J");   // J: erase in display.
-  ab.appendstr("\x1b[1;1H");  // H: cursor position
-  f(ab);
-  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
-}
 
 /** tilde **/
 namespace tilde {

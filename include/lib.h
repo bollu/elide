@@ -1284,6 +1284,7 @@ static int utf8_next_code_point_len(const char *str) {
   } else {
     assert(false && "unknown UTF-8 width");
   }
+  assert(false && "unknown UTF-8 width");
 };
 
 // return the pointer to the next code point.
