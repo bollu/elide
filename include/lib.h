@@ -965,6 +965,15 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
   // diagonstics from LSP.
   std::vector<LspDiagnostic> lspDiagnostics;
 
+  // file progress from LSP.
+  // contains the start and end ranges, and whether the processing is finished.
+  struct ProgressBar {
+    int startRow = 0;
+    int endRow = 0;
+    bool finished = false;
+  };
+  ProgressBar progressbar;
+
   // if 'b' is true, then mark the state as dirty.
   // if 'b' is false, then leave the dirty state as-is.
   void makeDirty() {
@@ -1081,6 +1090,11 @@ struct EditorConfig {
   char statusmsg[80];
   time_t statusmsg_time = 0;
 
+  fs::path original_cwd; // cwd that the process starts in.
+  CtrlPView ctrlp;
+  AbbreviationDict abbrevDict;
+  EditorConfig() { statusmsg[0] = '\0'; }
+
   FileConfig *curFile() {
     if (files.size() == 0) { 
       return NULL;
@@ -1135,10 +1149,6 @@ struct EditorConfig {
     }
   }
 
-  fs::path original_cwd; // cwd that the process starts in.
-  CtrlPView ctrlp;
-  AbbreviationDict abbrevDict;
-  EditorConfig() { statusmsg[0] = '\0'; }
 private:
   std::vector<FileConfig> files;
   int fileIx = -1;

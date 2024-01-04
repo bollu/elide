@@ -27,28 +27,25 @@ int main(int argc, char **argv){
 
   disableRawMode();
 
-  std::optional<fs::path> path;
-  if (argc >= 2) { path = fs::path(argv[1]); }
-  g_editor.original_cwd = fs::current_path(); 
-  tilde::tildeWrite("original_cwd: '%s'", g_editor.original_cwd.c_str()); 
-  if (path) { 
-    path = fs::canonical(*path);
-    if (fs::is_regular_file(*path)) {
-      g_editor.getOrOpenNewFile(FileLocation(*path, Cursor(0, 0)));
-    } else {
-      ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, *path);
-    }
-  } else {
-    ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, 
-      ctrlpGetGoodRootDirAbsolute(fs::absolute(fs::current_path())));
-  }
-  // look for lakefile.lean in directory parents. if available,
-  // then start lean server there. 
-  // If unavailable, then start lean server with lean --server.
+  if (argc >= 2) { g_editor.original_cwd = fs::path(argv[1]); }
 
-  // fileConfigOpen(&g_editor.curFile, filepath); // TODO: refactor to use curFile.
-  // fileConfigLaunchLeanServer(&g_editor.curFile);
-  // fileConfigSyncLeanState(&g_editor.curFile);
+  if (argc >= 2) { 
+    g_editor.original_cwd = fs::canonical(fs::path(argv[1]));
+  } else {
+    g_editor.original_cwd = fs::absolute(fs::current_path());
+  }
+
+  if (fs::is_regular_file(g_editor.original_cwd)) {
+    const fs::path filepath = g_editor.original_cwd;
+    g_editor.original_cwd = g_editor.original_cwd.remove_filename();
+    g_editor.original_cwd = ctrlpGetGoodRootDirAbsolute(g_editor.original_cwd);
+    g_editor.getOrOpenNewFile(FileLocation(filepath, Cursor(0, 0)));
+  } else {
+    g_editor.original_cwd = ctrlpGetGoodRootDirAbsolute(g_editor.original_cwd);
+    ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
+  }
+
+  tilde::tildeWrite("original_cwd: '%s'", g_editor.original_cwd.c_str()); 
 
   enableRawMode();
   while (1) {

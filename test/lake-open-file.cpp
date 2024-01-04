@@ -19,14 +19,20 @@ void print_unhandled_requests(LeanServerState *state) {
   state->unhandled_server_requests.clear();
 
 }
-int main() {
+int main(int argc, char **argv) {
   static const int BUF_SIZE = 4096;
   char BUF[BUF_SIZE];
   int nread = 0;
   json_object *req = NULL; json_object_ptr response;
   LspRequestId request_id(-1);
 
-  const char *file_path = realpath("./lake-testdir/Main.lean", NULL);
+  char *file_path = NULL;
+  if (argc >= 2) {
+    file_path = realpath(argv[1], NULL);
+  } else {
+    file_path = realpath("./lake-testdir/Main.lean", NULL);
+  }
+  fprintf(stderr, "file_path: %s\n", file_path);
   LeanServerState state = LeanServerState::init(file_path);
 
   // lake is silent, does not write anything to stderr.
@@ -60,12 +66,17 @@ int main() {
   state.write_notification_to_child_blocking("textDocument/didOpen", req);
 
   print_unhandled_requests(&state);
-
+  assert(state.unhandled_server_requests.size() == 0);
+  
   // $/lean/plainGoal
   Uri uri;
   uri.init_from_file_path(strdup(file_path));
-  req = lspCreateLeanPlainGoalRequest(uri, LspPosition(4, 2));
-  fprintf(stderr, "### writing $/lean/plainGoal\n");
+  LspPosition pos = LspPosition(4, 2);
+  if (argc >= 3) {
+    sscanf(argv[2], "%d:%d", &pos.row, &pos.col);
+  }
+  req = lspCreateLeanPlainGoalRequest(uri, pos);
+  fprintf(stderr, "### writing $/lean/plainGoal @ (%d, %d)\n", pos.row, pos.col);
   fprintf(stderr, " '%s'\n", json_object_to_json_string(req));
   request_id = state.write_request_to_child_blocking("$/lean/plainGoal", req);
 
@@ -73,6 +84,22 @@ int main() {
   fprintf(stderr, "### [response] $/lean/plainGoal\n");
   fprintf(stderr, " '%s'\n", json_object_to_json_string(response));
   print_unhandled_requests(&state);
+
+
+  for(int i = 3; i < argc; ++i) {
+    assert(state.unhandled_server_requests.size() == 0);
+    LspPosition pos(0, 0);
+    sscanf(argv[i], "%d:%d", &pos.row, &pos.col);
+    req = lspCreateLeanPlainGoalRequest(uri, pos);
+    fprintf(stderr, "### writing $/lean/plainGoal @ (%d, %d)\n", pos.row, pos.col);
+    fprintf(stderr, " '%s'\n", json_object_to_json_string(req));
+    request_id = state.write_request_to_child_blocking("$/lean/plainGoal", req);
+
+    response = state.read_json_response_from_child_blocking(request_id);
+    fprintf(stderr, "### [response] $/lean/plainGoal\n");
+    fprintf(stderr, " '%s'\n", json_object_to_json_string(response));
+    print_unhandled_requests(&state);
+  }
 
   return 0;
 };

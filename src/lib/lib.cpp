@@ -1799,8 +1799,8 @@ void editorTickPostKeypress() {
     return;
   }
 
-  json_object_ptr req = f->lean_server_state.unhandled_server_requests.back();
-  f->lean_server_state.unhandled_server_requests.pop_back();
+  json_object_ptr req = f->lean_server_state.unhandled_server_requests.front();
+  f->lean_server_state.unhandled_server_requests.erase(f->lean_server_state.unhandled_server_requests.begin());
 
   tilde::tildeWrite("%s: unhandled request is: %s", __PRETTY_FUNCTION__, json_object_to_json_string(req));
   
@@ -1830,8 +1830,12 @@ void editorTickPostKeypress() {
     json_object *ds = NULL;
     json_object_object_get_ex(paramso, "diagnostics", &ds);
     assert(ds);
-    f->lspDiagnostics.clear(); // fill in new diagnostics.
     const int NDS = json_object_array_length(ds);
+
+    // https://github.com/microsoft/language-server-protocol/issues/228
+    // diagnostics are cleared when the server sends [], and are otherwise union'd.
+    f->lspDiagnostics.clear();
+
     for(int i = 0; i < NDS; ++i) {
       json_object *di = json_object_array_get_idx(ds, i);
       LspDiagnostic d = json_parse_lsp_diagnostic(di, version);
@@ -2732,10 +2736,10 @@ void ctrlpDraw(CtrlPView *view) {
   if (view->textArea.whenDirty()) {
     // nuke previous rg process, and clear all data it used to own.
     view->rgProcess.killSync();
-    view->rgProcess = RgProcess ();
+    view->rgProcess = RgProcess();
     // invoke the new rg process.
     CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea);
-    view->rgProcess.execpAsync(".", 
+    view->rgProcess.execpAsync(view->absolute_cwd.c_str(), 
       CtrlPView::rgArgsToCommandLineArgs(args));
   }
 
