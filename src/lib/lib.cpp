@@ -31,7 +31,10 @@
 #define ESCAPE_CODE_DULL "\x1b[90;40m" // briht black foreground, black background
 #define ESCAPE_CODE_CURSOR_INSERT "\x1b[30;47m" // black foreground, white background
 #define ESCAPE_CODE_CURSOR_NORMAL "\x1b[30;100m" // black foreground, bright black background
-#define ESCAPE_CODE_CURSOR_SELECT "\x1b[30;43m" // black foreground, yellow background
+#define ESCAPE_CODE_CURSOR_SELECT "\x1b[30;46m" // black foreground, cyan background
+#define ESCAPE_CODE_ERROR "\x1b[30;41m" // black foreground, red background
+#define ESCAPE_CODE_WARN "\x1b[30;43m" // black foreground, yellow background
+#define ESCAPE_CODE_INFO "\x1b[30;44m" // black foreground, blue background
 #define ESCAPE_CODE_UNSET "\x1b[0m"
 #define CHECK_POSIX_CALL_0(x) { do { int success = x == 0; if(!success) { perror("POSIX call failed"); }; assert(success); } while(0); }
 // check that minus 1 is notreturned.
@@ -1037,9 +1040,27 @@ void fileConfigDraw(FileConfig *f) {
     // convert the line number into a string, and write it.
     {
 
-      if (filerow == f->cursor.row) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
+      bool row_needs_unset = false;
+      if (filerow == f->cursor.row) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); row_needs_unset = true; }
       // code in view mode is renderered gray
-      else if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr(ESCAPE_CODE_DULL); }
+      else if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr(ESCAPE_CODE_DULL); row_needs_unset = true; }
+
+      for(const LspDiagnostic &d : f->lspDiagnostics) {
+        if (d.range.start.row >= filerow && d.range.end.row <= filerow) {
+	  row_needs_unset = true;
+	  if (d.severity == LspDiagnosticSeverity::Error) {
+	    ab.appendstr(ESCAPE_CODE_ERROR);
+	  }
+	  else if (d.severity == LspDiagnosticSeverity::Warning) {
+	    ab.appendstr(ESCAPE_CODE_WARN);
+	  }
+	  else if (d.severity == LspDiagnosticSeverity::Hint || d.severity == LspDiagnosticSeverity::Information) {
+	    ab.appendstr(ESCAPE_CODE_INFO);
+	  } else {
+	    assert(false && "unhandled severity");
+	  }
+	}
+      }
 
       char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
       int ix = write_int_to_str(line_number_str, filerow + 1);
@@ -1052,8 +1073,7 @@ void fileConfigDraw(FileConfig *f) {
       free(line_number_str);
 
       // code in view mode is renderered gray, so reset.
-      if (filerow == f->cursor.row) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
-      else if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr("\x1b[0m"); }
+      if (row_needs_unset) { ab.appendstr(ESCAPE_CODE_UNSET); }
 
     }
     // code in view mode is renderered gray
@@ -2371,8 +2391,8 @@ namespace tilde {
         .len_clampl_move_lr(NDRAWROWS)
         .clamp(0, tilde->log.size()-1);
 
-      assert(drawRect.l <= IX);
-      assert(IX <= drawRect.r);
+      // assert(drawRect.l <= IX);
+      // assert(IX <= drawRect.r);
       
       // TODO: draw per column.
       for(int r = drawRect.l; r <= drawRect.r; ++r) {
@@ -2729,10 +2749,13 @@ void ctrlpDraw(CtrlPView *view) {
     ab.appendstr("\x1b[1;1H");  // H: cursor position
 
     // append format string.
-    ab.appendfmtstr(120, "┎CTRLP MODE (%s |%s|%d matches)┓\x1b[K\r\n", 
+    ab.appendfmtstr(120, "┎ctrlp mode (%s|%s|%d matches)┓\x1b[k\r\n", 
       textAreaModeToString(view->textAreaMode),
       view->rgProcess.running ? "running" : "completed",
       view->rgProcess.lines.size());
+
+    const std::string cwd = std::string(view->absolute_cwd);
+    ab.appendfmtstr(120, "searching: '%s'\x1b[k\r\n", cwd.c_str());
     
     const int NELLIPSIS = 2; // ellipsis width;
     const int VIEWSIZE = 80;

@@ -4,10 +4,14 @@ structure Bar where
   a : Int
   b : Int
 
+
+#eval 10
+
+
 def f (bar : Bar) : Int := 
   by 
   . cases bar  
-    case mk =>
+    case mk a b =>
       exact b
 
 #eval f  
