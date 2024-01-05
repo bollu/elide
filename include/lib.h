@@ -853,15 +853,15 @@ private:
 };
 
 
-struct JsonNonblockingResponse {
+struct LspNonblockingResponse {
   LspRequestId request;
   json_object_ptr response;
-  JsonNonblockingResponse() : request(-1), response(NULL) {};
-  JsonNonblockingResponse(LspRequestId request) : request(request), response(NULL) {};
+  LspNonblockingResponse() : request(-1), response(NULL) {};
+  LspNonblockingResponse(LspRequestId request) : request(request), response(NULL) {};
 };
 
 // returns true if it was filled in this turn.
-static bool lspServerFillJsonNonblockingResponse(LeanServerState &state, JsonNonblockingResponse &o) {
+static bool whenFillLspNonblockingResponse(LeanServerState &state, LspNonblockingResponse &o) {
   if (o.response != NULL) { return false; }
   auto it = state.request2response.find(o.request);
   if (it != state.request2response.end()) {
@@ -901,18 +901,24 @@ static const char *textAreaModeToString(TextAreaMode mode) {
   assert(false && "unreachable: must handle all 'TextAreaMode's.");
 }
 
+struct SingleLineTextArea {
+  TextAreaMode mode = TextAreaMode::TAM_Normal;
+  abuf text;
+  Size<Codepoint> col = 0;
+  
+};
+
+void SingleLineTextAreaHandleInput(SingleLineTextArea *area, int c);
+
 // data associated to the per-file `CtrlP` view.
 struct CtrlPView {
   VimMode previous_state;
   // TODO: extract out the single line text area.
-  TextAreaMode textAreaMode;
   fs::path absolute_cwd; // default working directory for the search.
-  abuf textArea;
-  Size<Codepoint> textCol;
   RgProcess rgProcess;
   bool quitPressed = false;
   bool selectPressed = false;
-
+  SingleLineTextArea textArea;
 
   struct RgArgs {
     std::vector<std::string> pathGlobPatterns; // patterns to filter the search in, added with '-g'.
@@ -957,6 +963,7 @@ struct FileLocation;
 FileLocation ctrlpGetSelectedFileLocation(const CtrlPView *view);
 void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd);
 void ctrlpHandleInput(CtrlPView *view, int c);
+void ctrlpTickPostKeypress(CtrlPView *view);
 void ctrlpDraw(CtrlPView *view);
 fs::path ctrlpGetGoodRootDirAbsolute(const fs::path absolute_startdir);
 
@@ -984,14 +991,14 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
   // diagonstics from LSP.
   std::vector<LspDiagnostic> lspDiagnostics;
 
-  JsonNonblockingResponse leanInfoViewPlainGoal;
-  JsonNonblockingResponse leanInfoViewPlainTermGoal;
-  JsonNonblockingResponse leanHoverViewHover;
+  LspNonblockingResponse leanInfoViewPlainGoal;
+  LspNonblockingResponse leanInfoViewPlainTermGoal;
+  LspNonblockingResponse leanHoverViewHover;
   // TODO: implement definition
   InfoViewTab infoViewTab = IVT_Tactic;
-  JsonNonblockingResponse leanGotoRequest;
+  LspNonblockingResponse leanGotoRequest;
   // TODO: implement completion.
-  JsonNonblockingResponse leanCompletionViewCompletion;
+  LspNonblockingResponse leanCompletionViewCompletion;
 
 
 
@@ -1058,6 +1065,9 @@ struct FileLocation {
 };
 
 struct CompletionView {
+  // TODO: rename to LspNonblockingResponse
+  LspNonblockingResponse completionResponse;
+
   VimMode previous_state;
   FileLocation loc;
   struct Item {
@@ -1072,8 +1082,9 @@ struct CompletionView {
 
 bool completionWhenQuit(CompletionView *view);
 bool completionWhenSelected(CompletionView *view);
-void completionOpen(CompletionView *view, VimMode previous_state, FileLocation loc);
+void completionOpen(CompletionView *view, VimMode previous_state, FileConfig *f);
 void completionHandleInput(CompletionView *view, int c);
+void completionTickPostKeypress(CompletionView *view);
 void completionDraw(CompletionView *view);
 
 // unabbrevs[i] ASCII string maps to abbrevs[i] UTF-8 string.

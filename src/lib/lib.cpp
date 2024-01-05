@@ -46,6 +46,7 @@
 void disableRawMode();
 void enableRawMode();
 
+
 /** terminal rendering utils for consistent styling. **/
 
 // draw the text 'codepoint', plus the cursor backgrounding in text area mode 'tam' into
@@ -731,7 +732,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
     cursorToLspPosition(file_config->cursor));
   request_id = 
     file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
-  file_config->leanInfoViewPlainGoal = JsonNonblockingResponse(request_id);
+  file_config->leanInfoViewPlainGoal = LspNonblockingResponse(request_id);
   // file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // $/lean/plainTermGoal
@@ -739,7 +740,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
     cursorToLspPosition(file_config->cursor));
   request_id = 
     file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
-  file_config->leanInfoViewPlainTermGoal = JsonNonblockingResponse(request_id);
+  file_config->leanInfoViewPlainTermGoal = LspNonblockingResponse(request_id);
   // file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // textDocument/hover
@@ -747,7 +748,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   req = lspCreateTextDocumentHoverRequest(Uri(file_config->absolute_filepath),
     cursorToLspPosition(file_config->cursor));
   request_id = file_config->lean_server_state.write_request_to_child_blocking("textDocument/hover", req);
-  file_config->leanHoverViewHover = JsonNonblockingResponse(request_id);
+  file_config->leanHoverViewHover = LspNonblockingResponse(request_id);
   // file_config->leanHoverViewHover = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
 }
@@ -876,7 +877,7 @@ void fileConfigGotoDefinitionNonblocking(FileConfig *file_config, GotoKind kind)
   }
   assert(gotoKindStr != "");
   file_config->leanGotoRequest = 
-    JsonNonblockingResponse(file_config->lean_server_state.write_request_to_child_blocking(gotoKindStr.c_str(), req));
+    LspNonblockingResponse(file_config->lean_server_state.write_request_to_child_blocking(gotoKindStr.c_str(), req));
 }
 
 /*** append buffer ***/
@@ -1776,6 +1777,15 @@ void editorHandleGotoResponse(json_object_ptr response) {
 }
 
 void editorTickPostKeypress() {
+
+  if (g_editor.vim_mode == VM_CTRLP) {
+    ctrlpTickPostKeypress(&g_editor.ctrlp);
+  }
+
+  if (g_editor.vim_mode == VM_COMPLETION) {
+    completionTickPostKeypress(&g_editor.completion);
+  }
+  
   FileConfig *f = g_editor.curFile();
   if (!f) { return; }
 
@@ -1793,15 +1803,15 @@ void editorTickPostKeypress() {
 
   f->lean_server_state.tick_nonblocking();
 
-  if (lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanGotoRequest)) {
+  if (whenFillLspNonblockingResponse(f->lean_server_state, f->leanGotoRequest)) {
     assert(f->leanGotoRequest.response != NULL);
     editorHandleGotoResponse(f->leanGotoRequest.response);
     editorTickPostKeypress(); // process file again.
     return; 
   }
-  lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainGoal);
-  lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainTermGoal);
-  lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanHoverViewHover);
+  whenFillLspNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainGoal);
+  whenFillLspNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainTermGoal);
+  whenFillLspNonblockingResponse(f->lean_server_state, f->leanHoverViewHover);
 
   // handle unhandled requests
   if (f->lean_server_state.unhandled_server_requests.size() == 0) {
@@ -1896,12 +1906,17 @@ bool completionWhenSelected(CompletionView *view) {
   return out;
 };
 
-void completionOpen(CompletionView *view, VimMode previous_state, FileLocation loc) {
+void completionOpen(CompletionView *view, VimMode previous_state, FileConfig *f) {
   view->previous_state = previous_state;
-  view->loc = loc;
+  view->loc = FileLocation(*f);
   view->quitPressed = view->selectPressed = false;
   view->items.clear();
   view->itemIx = -1;
+  json_object *req = lspCreateTextDocumentCompletionRequest(Uri(f->absolute_filepath),
+    cursorToLspPosition(f->cursor),
+    CompletionTriggerKind::Invoked);
+  view->completionResponse = 
+    LspNonblockingResponse(f->lean_server_state.write_request_to_child_blocking("textDocument/completion", req));
   g_editor.vim_mode = VM_COMPLETION;
 }
 
@@ -1913,6 +1928,10 @@ void completionHandleInput(CompletionView *view, int c) {
   }
   // TODO: move the rest of the code into text area.
   assert(false && "unimplemented");
+}
+
+void completionTickPostKeypress(CompletionView *view) {
+
 }
 
 void completionDraw(CompletionView *view) {
@@ -2156,7 +2175,7 @@ void editorProcessKeypress() {
       return;
     }
     case CTRL_KEY('\\'): {
-      completionOpen(&g_editor.completion, VM_INSERT, FileLocation(*f));
+      completionOpen(&g_editor.completion, VM_INSERT, f);
       return;
     }
     // when switching to normal mode, sync the lean state. 
@@ -2670,50 +2689,91 @@ fs::path ctrlpGetGoodRootDirAbsolute(const fs::path absolute_startdir) {
 void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path absolute_cwd) {
   assert(absolute_cwd.is_absolute());
   view->absolute_cwd = absolute_cwd;
-  view->textAreaMode = TAM_Insert;
+  view->textArea.mode = TAM_Insert;
   view->previous_state = previous_state;
   g_editor.vim_mode = VM_CTRLP;
 }
 
-void ctrlpHandleInput(CtrlPView *view, int c) {
-  assert(view->textCol <= view->textArea.ncodepoints());
-  if (view->textAreaMode == TAM_Normal) {
-    if (c == 'j' || c == CTRL_KEY('n')) {
-      view->rgProcess.selectedLine = 
-      clamp0u<int>(view->rgProcess.selectedLine+1, view->rgProcess.lines.size()-1);
-    } else if (c == 'k' || c == CTRL_KEY('p')) {
-      view->rgProcess.selectedLine = 
-          clamp0(view->rgProcess.selectedLine-1);
-    } else if (c == 'h' || c == KEYEVENT_ARROW_LEFT) {
-      view->textCol = view->textCol.sub0(1);
+
+void singleLineTextAreaHandleInput(SingleLineTextArea *textArea, int c) {
+  assert(textArea->col <= textArea->text.ncodepoints());
+  if (textArea->mode == TAM_Normal) {
+    if (c == 'h' || c == KEYEVENT_ARROW_LEFT) {
+      textArea->col = textArea->col.sub0(1);
     } else if (c == 'l' || c == KEYEVENT_ARROW_RIGHT) {
-      view->textCol = 
-        clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
+      textArea->col = 
+        clampu<Size<Codepoint>>(textArea->col + 1, textArea->text.ncodepoints());
     } else if (c == '$' || c == CTRL_KEY('e')) {
-      view->textCol = view->textArea.ncodepoints();
+      textArea->col = textArea->text.ncodepoints();
     } else if (c == '0' || c == CTRL_KEY('a')) {
-      view->textCol = 0;
+      textArea->col = 0;
     } else if (c == 'd' || c == CTRL_KEY('k')) {
-      view->textArea.truncateNCodepoints(view->textCol);
+      textArea->text.truncateNCodepoints(textArea->col);
     } else if (c == 'w') {
         // TODO: move word.
-      view->textCol = 
-        clampu<Size<Codepoint>>(view->textCol + 4, view->textArea.ncodepoints());
+      textArea->col = 
+        clampu<Size<Codepoint>>(textArea->col + 4, textArea->text.ncodepoints());
     } else if (c == 'x') {
-      if (view->textCol < view->textArea.ncodepoints()) {
-        view->textArea.delCodepointAt(view->textCol.toIx());
+      if (textArea->col < textArea->text.ncodepoints()) {
+        textArea->text.delCodepointAt(textArea->col.toIx());
       }
     } 
     else if (c == 'b') {
-      view->textCol = view->textCol.sub0(4);
+      textArea->col = textArea->col.sub0(4);
       // TODO: move word back.
     } else if (c == 'i') {
-      view->textAreaMode = TAM_Insert;
-    }  else if (c == 'a') {
-      view->textCol = 
-        clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
-      view->textAreaMode = TAM_Insert;
-    } else if (c == CTRL_KEY('c') || c == 'q') {
+      textArea->mode = TAM_Insert;
+    } else if (c == 'a') {
+      textArea->col = 
+        clampu<Size<Codepoint>>(textArea->col + 1, textArea->text.ncodepoints());
+      textArea->mode = TAM_Insert;
+    } 
+  } else {
+    assert(textArea->mode == TAM_Insert);
+    if (c == CTRL_KEY('c')) {
+      textArea->mode = TAM_Normal;
+      // quit and go back to previous state.
+    } else if (c == KEYEVENT_ARROW_LEFT || c == CTRL_KEY('b')) {
+      textArea->col = textArea->col.sub0(1);
+    } else if (c == KEYEVENT_ARROW_RIGHT || c == CTRL_KEY('f')) {
+      textArea->col = 
+        clampu<Size<Codepoint>>(textArea->col + 1, textArea->text.ncodepoints());
+    } else if (c == KEYEVENT_BACKSPACE) {
+      if (textArea->col > 0) {
+        textArea->text.delCodepointAt(textArea->col.largestIx());
+        textArea->col = textArea->col.sub0(1);
+      } 
+    } else if (c == CTRL_KEY('e')) { // readline
+      textArea->col = textArea->text.ncodepoints();
+    } else if (c == CTRL_KEY('a')) {
+      textArea->col = 0;
+    } else if (c == CTRL_KEY('k')) {
+      textArea->text.truncateNCodepoints(textArea->col);
+    } else if (isprint(c) && c != ' ' && c != '\t') {
+      textArea->text.insertCodepointBefore(textArea->col, (const char *)&c);
+      textArea->col += 1;
+    }
+  } 
+}
+
+
+void ctrlpHandleInput(CtrlPView *view, int c) {
+  singleLineTextAreaHandleInput(&view->textArea, c);
+  assert(view->textArea.col <= view->textArea.text.ncodepoints());
+  
+  if (c == 'j' || c == CTRL_KEY('n')) {
+      view->rgProcess.selectedLine = 
+      clamp0u<int>(view->rgProcess.selectedLine+1, view->rgProcess.lines.size()-1);
+  } else if (c == 'k' || c == CTRL_KEY('p')) {
+    view->rgProcess.selectedLine = 
+        clamp0(view->rgProcess.selectedLine-1);
+  }; 
+
+  if (view->textArea.mode == TAM_Normal) {
+    if (c == CTRL_KEY('j') || c == CTRL_KEY('n')) {
+      view->rgProcess.selectedLine = 
+      clamp0u<int>(view->rgProcess.selectedLine+1, view->rgProcess.lines.size()-1);
+    }  else if (c == CTRL_KEY('c') || c == 'q') {
       // quit and go back to previous state.
       view->quitPressed = true;
     } else if (c == '\r') {
@@ -2724,59 +2784,31 @@ void ctrlpHandleInput(CtrlPView *view, int c) {
         view->quitPressed = true;
       }
     }
- 
   } else {
-    assert(view->textAreaMode == TAM_Insert);
-    if (c == CTRL_KEY('c')) {
-      view->textAreaMode = TAM_Normal;
-      // quit and go back to previous state.
-    } else if (c == KEYEVENT_ARROW_LEFT || c == CTRL_KEY('b')) {
-      view->textCol = view->textCol.sub0(1);
-    } else if (c == KEYEVENT_ARROW_RIGHT || c == CTRL_KEY('f')) {
-      view->textCol = 
-        clampu<Size<Codepoint>>(view->textCol + 1, view->textArea.ncodepoints());
-    } else if (c == KEYEVENT_BACKSPACE) {
-      if (view->textCol > 0) {
-        view->textArea.delCodepointAt(view->textCol.largestIx());
-        view->textCol = view->textCol.sub0(1);
-      } 
-    } else if (c == CTRL_KEY('e')) { // readline
-      view->textCol = view->textArea.ncodepoints();
-    } else if (c == CTRL_KEY('a')) {
-      view->textCol = 0;
-    } else if (c == CTRL_KEY('k')) {
-      view->textArea.truncateNCodepoints(view->textCol);
-    } else if (c == CTRL_KEY('j') || c == CTRL_KEY('n')) {
-      view->rgProcess.selectedLine = 
-      clamp0u<int>(view->rgProcess.selectedLine+1, view->rgProcess.lines.size()-1);
-    } else if (c == CTRL_KEY('k') || c == CTRL_KEY('p')) {
-      view->rgProcess.selectedLine = 
-          clamp0(view->rgProcess.selectedLine-1);
-    } else if (isprint(c) && c != ' ' && c != '\t') {
-      view->textArea.insertCodepointBefore(view->textCol, (const char *)&c);
-      view->textCol += 1;
-    }    else if (c == '\r') {
-      view->selectPressed = true;
+    assert(view->textArea.mode == TAM_Insert);
+    if (c == '\r') {
+      if (view->rgProcess.lines.size() > 0) { view->selectPressed = true;
+      } else { view->quitPressed = true; }
     }
-  } 
+  }
 }
 
-void ctrlpDraw(CtrlPView *view) {
-  abuf ab;
-  if (view->textArea.whenDirty()) {
+void ctrlpTickPostKeypress(CtrlPView *view) {
+  if (view->textArea.text.whenDirty()) {
     // nuke previous rg process, and clear all data it used to own.
     view->rgProcess.killSync();
     view->rgProcess = RgProcess();
     // invoke the new rg process.
-    CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea);
+    CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea.text);
     view->rgProcess.execpAsync(view->absolute_cwd.c_str(), 
       CtrlPView::rgArgsToCommandLineArgs(args));
   }
-
-
   // we need a function that is called each time x(.
   view->rgProcess.readLinesNonBlocking();
+}
 
+void ctrlpDraw(CtrlPView *view) {
+  abuf ab;
   { // draw text of the search.
     ab.appendstr("\x1b[?25l"); // hide cursor
     ab.appendstr("\x1b[2J");   // J: erase in display.
@@ -2784,7 +2816,7 @@ void ctrlpDraw(CtrlPView *view) {
 
     // append format string.
     ab.appendfmtstr(120, "┎ctrlp mode (%s|%s|%d matches)┓\x1b[k\r\n", 
-      textAreaModeToString(view->textAreaMode),
+      textAreaModeToString(view->textArea.mode),
       view->rgProcess.running ? "running" : "completed",
       view->rgProcess.lines.size());
 
@@ -2793,14 +2825,14 @@ void ctrlpDraw(CtrlPView *view) {
     
     const int NELLIPSIS = 2; // ellipsis width;
     const int VIEWSIZE = 80;
-    const int NCODEPOINTS = view->textArea.ncodepoints().size;
+    const int NCODEPOINTS = view->textArea.text.ncodepoints().size;
 
     // interesting, see that the left and right actually appears to be well-typed.
     // NCODEPOINTS = 40. VIEWSIZE = 10
     // [0, 0] -> [-10, 10] -> [0, 10] -> [0, 10]
     // [1, 1] -> [-9, 11] -> [0, 11] -> [0, 10]?
     const auto intervalText = 
-      interval(view->textCol.size)
+      interval(view->textArea.col.size)
       .ldl(VIEWSIZE)
       .clamp(0, NCODEPOINTS) // clamp length to be inbounds.
       .len_clampl_move_r(VIEWSIZE) // move right hand side point to be inbounds
@@ -2816,7 +2848,11 @@ void ctrlpDraw(CtrlPView *view) {
 
     // TODO: why does the right hand size computation not work?
     for(int i = intervalText.l; i <= intervalText.r; ++i) {
-      appendColWithCursor(&ab, &view->textArea, i, view->textCol, view->textAreaMode);
+      appendColWithCursor(&ab, 
+        &view->textArea.text,
+        i,
+        view->textArea.col,
+        view->textArea.mode);
     }
 
     ab.appendstr(" ");

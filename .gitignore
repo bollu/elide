@@ -3,3 +3,5 @@ playground/*.out
 *.sublime-*
 build/
 .cache/
+compile_commands.json
+.vs
