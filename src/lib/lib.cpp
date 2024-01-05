@@ -1979,6 +1979,8 @@ void editorProcessKeypress() {
       return;
     }
     case CTRL_KEY('c'):
+    case CTRL_KEY('j'):
+    case CTRL_KEY('k'):
     case ' ':
     case '\r': {
       g_editor.vim_mode = VM_NORMAL;
@@ -2009,22 +2011,11 @@ void editorProcessKeypress() {
     case CTRL_KEY(']'): {
       // goto definition.
       // TODO: refactor this code. to force initialization first.
-      if (!f->lean_server_state.initialized) {
-        fileConfigLaunchLeanServer(f);
-      }
-      assert(f->lean_server_state.initialized);
-      fileConfigSyncLeanState(f);
       fileConfigGotoDefinitionNonblocking(g_editor.curFile(), GotoKind::Definition);
       return;
     }
     case CTRL_KEY('['): { // is this a good choice of key? I am genuinely unsure.
       // goto definition.
-      // TODO: refactor this code. to force initialization first.
-      if (!f->lean_server_state.initialized) {
-        fileConfigLaunchLeanServer(f);
-      }
-      assert(f->lean_server_state.initialized);
-      fileConfigSyncLeanState(f);
       fileConfigGotoDefinitionNonblocking(g_editor.curFile(), GotoKind::TypeDefiition);
       return;
     }
@@ -2114,27 +2105,20 @@ void editorProcessKeypress() {
       return;
     }
 
+    case CTRL_KEY('j'):
+    case CTRL_KEY('k'):
     case ' ':
+    // case '\t': How do I get this to work?
     case '\r': {
-      // TODO: dear god get right of this code duplication.
-      if (f->absolute_filepath.extension() == ".lean") {
-        if (!f->lean_server_state.initialized) {
-          // TODO: switch to `std::optional`
-          fileConfigLaunchLeanServer(f);
-        }
-        assert(f->lean_server_state.initialized);
-        fileConfigSyncLeanState(f);
-        // TODO: make this more local.
-        fileConfigRequestGoalState(f);
-        g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL;
-      }
+      fileConfigRequestGoalState(f);
+      g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL;
       return;
-
     }
-    case 'i':
+    case 'i': {
       f->mkUndoMemento();
       g_editor.vim_mode = VM_INSERT;
       return;
+    }
     } // end switch over key.
   } // end mode == VM_NORMAL
   else {
