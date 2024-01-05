@@ -48,10 +48,10 @@ void TextDocumentItem::init_from_file_path(fs::path file_path) {
   fclose(fp);
 
   this->uri.init_from_file_path(file_path);
-  this->languageId = strdup("lean");
+  this->languageId = "lean";
   this->version = 0;
   this->text = text;
-  this->is_initialized = true;
+  free(text);
 }
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic

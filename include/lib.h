@@ -881,15 +881,6 @@ struct FileConfigUndoState {
   int scroll_row_offset = 0;
   int scroll_col_offset = 0;
 
-  JsonNonblockingResponse leanInfoViewPlainGoal;
-  JsonNonblockingResponse leanInfoViewPlainTermGoal;
-  JsonNonblockingResponse leanHoverViewHover;
-  // TODO: implement definition
-  InfoViewTab infoViewTab = IVT_Tactic;
-  JsonNonblockingResponse leanGotoRequest;
-  // TODO: implement completion.
-  JsonNonblockingResponse leanCompletionViewCompletion;
-
   // TODO: should we use a different fn rather than `==`?
   bool operator == (const FileConfigUndoState &other) const {
     return rows == other.rows; // only file state is part of undo state for debouncing.
@@ -977,8 +968,6 @@ struct FileLocation;
 struct FileConfig : public Undoer<FileConfigUndoState> {
   FileConfig(FileLocation loc);
 
-  bool is_initialized = false;
-
   // offset for scrolling.
   int scroll_row_offset = 0;
   // column offset for scrolling. will render from col_offset till endof row.
@@ -991,10 +980,20 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
   LeanServerState lean_server_state;
 
   // TextDocument for LSP
-  TextDocumentItem text_document_item;
+  int lsp_file_version = -1;
 
   // diagonstics from LSP.
   std::vector<LspDiagnostic> lspDiagnostics;
+
+  JsonNonblockingResponse leanInfoViewPlainGoal;
+  JsonNonblockingResponse leanInfoViewPlainTermGoal;
+  JsonNonblockingResponse leanHoverViewHover;
+  // TODO: implement definition
+  InfoViewTab infoViewTab = IVT_Tactic;
+  JsonNonblockingResponse leanGotoRequest;
+  // TODO: implement completion.
+  JsonNonblockingResponse leanCompletionViewCompletion;
+
 
 
   // file progress from LSP.
@@ -1021,8 +1020,8 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
     bool out = _is_dirty_info_view; _is_dirty_info_view = false; return out;
   }
 private:
-  bool _is_dirty_save = false;
-  bool _is_dirty_info_view = false;
+  bool _is_dirty_save = true;
+  bool _is_dirty_info_view = true;
 };
 
 void fileConfigSyncLeanState(FileConfig *file_config);
@@ -1140,8 +1139,6 @@ struct EditorConfig {
     }
   };
 
-
-
   void getOrOpenNewFile(FileLocation file_loc, bool isUndoRedo=false) {
     assert(file_loc.absolute_filepath.is_absolute());
 
@@ -1156,8 +1153,9 @@ struct EditorConfig {
     // look if file exists.
     for(int i = 0; i < this->files.size(); ++i) {
       if (this->files[i].absolute_filepath == file_loc.absolute_filepath) {
+	assert(false && "found an existing file");
         fileIx = i;
-        // TODO: this separation is kinda jank, fix it.
+	// this->files[fileIx] = FileConfig(file_loc);
         this->files[fileIx].cursor = file_loc.cursor;
         return;
       }
@@ -1166,17 +1164,6 @@ struct EditorConfig {
     fileIx = this->files.size();
     this->files.push_back(FileConfig(file_loc));
     this->files[fileIx].cursor = file_loc.cursor;
-
-    // start lean.
-    FileConfig *f = &this->files[fileIx];
-    if (f->absolute_filepath.extension() == "lean") {
-      if (!f->lean_server_state.initialized) {
-        // TODO: switch to `std::optional`
-        fileConfigLaunchLeanServer(f);
-      }
-      assert(f->lean_server_state.initialized);
-      fileConfigSyncLeanState(f);
-    }
   }
 
   void undoFileMove() {
@@ -1237,6 +1224,7 @@ bool is_space_or_tab(char c);
 void fileConfigInsertEnterKey(FileConfig *f);
 void fileConfigInsertCharBeforeCursor(FileConfig *f, int c); // 32 bit.
 void fileConfigDelChar(FileConfig *f);
+std::string fileConfigRowsToCppString(FileConfig *file);
 void fileConfigRowsToBuf(FileConfig *f, abuf *buf);
 void fileConfigDebugPrint(FileConfig *f, abuf *buf); 
 void fileConfigCursorMoveWordNext(FileConfig *f);

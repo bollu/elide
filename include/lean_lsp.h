@@ -93,6 +93,8 @@ struct Uri {
     return bool(*this);
   }
 
+  Uri() { this->uri = ""; }
+  Uri(fs::path file_path) { this->init_from_file_path(file_path); }
 
   void init_from_file_path(fs::path file_path) {
     const std::string file_segment_uri = "file://";
@@ -128,22 +130,20 @@ static json_object *json_object_new_uri(Uri uri) {
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
 struct TextDocumentItem {
   Uri uri;
-  // TODO: move to `abuf` or `std::string`. 
-  char *languageId = nullptr;
+  std::string languageId;
   int version = -1; // version of the document. (it will increase after each change, including undo/redo).
-  char *text = nullptr; // owned pointer of the text of the document
-  bool is_initialized = false;
+  std::string text;
 
-  TextDocumentItem() = default;
-  TextDocumentItem(Uri uri, char *languageId, int version, char *text) : 
-    uri(uri), languageId(languageId), version(version), text(text), is_initialized(true) {};
+  // TextDocumentItem() = default;
+
+  TextDocumentItem(Uri uri, std::string languageId, int version, std::string text) : 
+    uri(uri), languageId(languageId), version(version), text(text) {};
 
   TextDocumentItem &operator =(const TextDocumentItem &other) {
     uri = other.uri;
-    languageId = other.languageId ? strdup(other.languageId) : NULL;
+    languageId = other.languageId;
     version = other.version;
-    text = other.text ? strdup(other.text) : NULL;;
-    is_initialized = other.is_initialized;
+    text = other.text;
     return *this;
   }
   
@@ -152,20 +152,15 @@ struct TextDocumentItem {
   }
 
   void init_from_file_path(fs::path file_path);
-
-  ~TextDocumentItem() {
-    free(text);
-    free(languageId);
-  }
 };
 
 
 static json_object *json_object_new_text_document_item(TextDocumentItem item) {
   json_object *o = json_object_new_object();
   json_object_object_add(o, "uri", json_object_new_uri(item.uri));
-  json_object_object_add(o, "languageId", json_object_new_string(item.languageId));
+  json_object_object_add(o, "languageId", json_object_new_string(item.languageId.c_str()));
   json_object_object_add(o, "version", json_object_new_int(item.version));
-  json_object_object_add(o, "text", json_object_new_string(item.text));
+  json_object_object_add(o, "text", json_object_new_string(item.text.c_str()));
   return o;
 }
 
@@ -190,7 +185,7 @@ static json_object *lspCreateDidChangeTextDocumentRequest(TextDocumentItem item)
   json_object *contentChanges = json_object_new_array();
   
   json_object *contentChangeEvent = json_object_new_object();
-  json_object_object_add(contentChangeEvent, "text", json_object_new_string(item.text));
+  json_object_object_add(contentChangeEvent, "text", json_object_new_string(item.text.c_str()));
 
   json_object_array_add(contentChanges, contentChangeEvent);
   json_object_object_add(o, "contentChanges", contentChanges);

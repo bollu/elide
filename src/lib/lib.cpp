@@ -717,44 +717,34 @@ void fileConfigLaunchLeanServer(FileConfig *file_config) {
   file_config->lean_server_state.write_notification_to_child_blocking("initialized", req);
 }
 
+TextDocumentItem fileConfigToTextDocumentItem(FileConfig *file_config) {
+  return TextDocumentItem(Uri(file_config->absolute_filepath),
+    "lean",
+    file_config->lsp_file_version,
+    fileConfigRowsToCppString(file_config));
+}
 
 void fileConfigSyncLeanState(FileConfig *file_config) {
   json_object *req = nullptr;
-  assert(file_config->is_initialized);
-  if (file_config->text_document_item.is_initialized && 
-      !file_config->whenDirtyInfoView()) {
+  if (!file_config->whenDirtyInfoView()) {
     return; // no point syncing state if it isn't dirty, and the state has been initalized before.
   }
 
   assert(file_config->lean_server_state.initialized == true);
-  if (!file_config->text_document_item.is_initialized) {
-    file_config->text_document_item.init_from_file_path(file_config->absolute_filepath);
-  } else {
-    file_config->text_document_item.version += 1;
-    free(file_config->text_document_item.text);
-    abuf buf;
-    fileConfigRowsToBuf(file_config, &buf);
-    // assert(buf.len() > 0);
-    // assert(buf.buf()[buf.len() - 1] == 0); // must be null-termianted.
-    file_config->text_document_item.text = buf.to_string();
-  }
-  assert(file_config->text_document_item.is_initialized);
+  file_config->lsp_file_version += 1;
   // textDocument/didOpen
-  req = lspCreateDidOpenTextDocumentNotifiation(file_config->text_document_item);
+  req = lspCreateDidOpenTextDocumentNotifiation(fileConfigToTextDocumentItem(file_config));
   file_config->lean_server_state.write_notification_to_child_blocking("textDocument/didOpen", req);
 }
 
 void fileConfigRequestGoalState(FileConfig *file_config) {
-  assert(file_config->is_initialized);
-  assert(file_config->text_document_item.is_initialized);
-
   json_object *req = nullptr;
   LspRequestId  request_id;
 
   // $/lean/plainGoal
 
   // TODO: need to convert col to 'bytes'
-  req = lspCreateLeanPlainGoalRequest(file_config->text_document_item.uri, 
+  req = lspCreateLeanPlainGoalRequest(Uri(file_config->absolute_filepath),
     cursorToLspPosition(file_config->cursor));
   request_id = 
     file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
@@ -762,7 +752,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
   // file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // $/lean/plainTermGoal
-  req = lspCreateLeanPlainTermGoalRequest(file_config->text_document_item.uri, 
+  req = lspCreateLeanPlainTermGoalRequest(Uri(file_config->absolute_filepath),
     cursorToLspPosition(file_config->cursor));
   request_id = 
     file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
@@ -771,7 +761,7 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
 
   // textDocument/hover
 
-  req = lspCreateTextDocumentHoverRequest(file_config->text_document_item.uri, 
+  req = lspCreateTextDocumentHoverRequest(Uri(file_config->absolute_filepath),
     cursorToLspPosition(file_config->cursor));
   request_id = file_config->lean_server_state.write_request_to_child_blocking("textDocument/hover", req);
   file_config->leanHoverViewHover = JsonNonblockingResponse(request_id);
@@ -803,7 +793,6 @@ FileConfig::FileConfig(FileLocation loc) {
   }
   free(line);
   fclose(fp);
-  this->is_initialized = true;
 }
 
 
@@ -812,6 +801,17 @@ void fileConfigRowsToBuf(FileConfig *file, abuf *buf) {
     if (r > 0) { buf->appendChar('\n'); }
     buf->appendbuf(file->rows[r].getRawBytesPtrUnsafe(), file->rows[r].nbytes().size);
   }
+}
+
+std::string fileConfigRowsToCppString(FileConfig *file) {
+  std::string out;
+  for (int r = 0; r < file->rows.size(); r++) {
+    if (r > 0) { out += '\n'; }
+    const char *bytes = file->rows[r].getRawBytesPtrUnsafe();
+    const int len = file->rows[r].nbytes().size;
+    out += std::string(bytes, bytes+len); 
+  }
+  return out;
 }
 
 void fileConfigDebugPrint(FileConfig *file, abuf *buf) {
@@ -878,11 +878,8 @@ enum GotoKind {
 };
 
 void fileConfigGotoDefinitionNonblocking(FileConfig *file_config, GotoKind kind) {
-  assert(file_config->is_initialized);
-  assert(file_config->text_document_item.is_initialized);
-
   json_object *req = 
-      lspCreateTextDocumentDefinitionRequest(file_config->text_document_item.uri,
+      lspCreateTextDocumentDefinitionRequest(Uri(file_config->absolute_filepath),
           cursorToLspPosition(file_config->cursor));
   tilde::tildeWrite("Request [textDocument/definition] %s", json_object_to_json_string(req));
 
@@ -895,9 +892,8 @@ void fileConfigGotoDefinitionNonblocking(FileConfig *file_config, GotoKind kind)
     assert(false && "unknown GotoKind");
   }
   assert(gotoKindStr != "");
-  file_config->leanGotoRequest.request = file_config->lean_server_state.write_request_to_child_blocking(gotoKindStr.c_str(), req);
-  return;
-
+  file_config->leanGotoRequest = 
+    JsonNonblockingResponse(file_config->lean_server_state.write_request_to_child_blocking(gotoKindStr.c_str(), req));
 }
 
 /*** append buffer ***/
@@ -1290,7 +1286,7 @@ void editorDrawInfoViewMessagesTab(FileConfig *f) {
   for(int i = 0; i < f->lspDiagnostics.size() && i < MAXROWS; ++i) {
     const LspDiagnostic d = f->lspDiagnostics[i];
     const int MAXCOLS = 100;
-    assert(d.version == f->text_document_item.version);
+    assert(d.version == f->lsp_file_version);
     ab.appendfmtstr(120, "%s▶ %s:%d:%d:" ESCAPE_CODE_UNSET,
       LspDiagnosticSeverityToColor(d.severity),
       LspDiagnosticSeverityToStr(d.severity), 
@@ -1803,7 +1799,8 @@ void editorHandleGotoResponse(json_object_ptr response) {
     tilde::tildeWrite("response [textDocument/gotoDefinition] position: (%d, %d)", p.row, p.col);
 
     FileLocation loc(absolute_filepath, LspPositionToCursor(p));
-    tilde::tildeWrite("goto definition file location cursor (%d, %d)", 
+    tilde::tildeWrite("goto definition file location file '%s' cursor (%d, %d)", 
+	loc.absolute_filepath.c_str(),
         loc.cursor.row, loc.cursor.col.size);
     g_editor.getOrOpenNewFile(loc);
 }
@@ -1812,25 +1809,24 @@ void editorTickPostKeypress() {
   FileConfig *f = g_editor.curFile();
   if (!f) { return; }
 
-
   tilde::tildeWrite("editorTick() | nresps: %d | nunhandled: %d",
-    f->lean_server_state.request2response.size(), f->lean_server_state.unhandled_server_requests.size());
+    f->lean_server_state.request2response.size(),
+    f->lean_server_state.unhandled_server_requests.size());
 
-  if (f->absolute_filepath.extension() != ".lean") {
-    return;
-  }
+  if (f->absolute_filepath.extension() != ".lean") { return; }
   assert(f->absolute_filepath.extension() == ".lean");
   if (!f->lean_server_state.initialized) {
     fileConfigLaunchLeanServer(f);
   }
   assert(f->lean_server_state.initialized);
   fileConfigSyncLeanState(f);
-  assert (f->text_document_item.is_initialized);
 
   f->lean_server_state.tick_nonblocking();
 
   if (lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanGotoRequest)) {
+    assert(f->leanGotoRequest.response != NULL);
     editorHandleGotoResponse(f->leanGotoRequest.response);
+    return; 
   }
   lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainGoal);
   lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainTermGoal);
@@ -1863,11 +1859,11 @@ void editorTickPostKeypress() {
     assert(versiono);
     const int version = json_object_get_int(versiono);
 
-    assert (version <= f->text_document_item.version);
-    if (version < f->text_document_item.version) {
+    assert (version <= f->lsp_file_version);
+    if (version < f->lsp_file_version) {
       return; // skip, since it's older than what we want.
     }
-    assert(version == f->text_document_item.version);
+    assert(version == f->lsp_file_version);
 
     
     json_object *ds = NULL;
