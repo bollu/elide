@@ -933,6 +933,34 @@ int write_int_to_str(char *s, int num) {
 }
 
 
+const char *LspDiagnosticSeverityToStr(LspDiagnosticSeverity s) {
+  if (s == LspDiagnosticSeverity::Error) {
+    return "ERR";
+  }
+  else if (s == LspDiagnosticSeverity::Warning) {
+    return "WARN";
+  }
+  else if (s == LspDiagnosticSeverity::Hint || s == LspDiagnosticSeverity::Information) {
+    return "INFO";
+  }
+  assert(false && "unknown severity");
+  return NULL;
+}
+
+const char *LspDiagnosticSeverityToColor(LspDiagnosticSeverity s) {
+  if (s == LspDiagnosticSeverity::Error) {
+    return ESCAPE_CODE_RED;
+  }
+  else if (s == LspDiagnosticSeverity::Warning) {
+    return ESCAPE_CODE_YELLOW;
+  }
+  else if (s == LspDiagnosticSeverity::Hint || s == LspDiagnosticSeverity::Information) {
+    return ESCAPE_CODE_BLUE;
+  }
+  assert(false && "unknown severity");
+  return NULL;
+}
+
 
 void fileConfigDraw(FileConfig *f) {
   f->cursor_render_col = 0;
@@ -1002,17 +1030,7 @@ void fileConfigDraw(FileConfig *f) {
       for(const LspDiagnostic &d : f->lspDiagnostics) {
         if (d.range.start.row >= filerow && d.range.end.row <= filerow) {
 	  row_needs_unset = true;
-	  if (d.severity == LspDiagnosticSeverity::Error) {
-	    ab.appendstr(ESCAPE_CODE_RED);
-	  }
-	  else if (d.severity == LspDiagnosticSeverity::Warning) {
-	    ab.appendstr(ESCAPE_CODE_YELLOW);
-	  }
-	  else if (d.severity == LspDiagnosticSeverity::Hint || d.severity == LspDiagnosticSeverity::Information) {
-	    ab.appendstr(ESCAPE_CODE_BLUE);
-	  } else {
-	    assert(false && "unhandled severity");
-	  }
+	  ab.appendstr(LspDiagnosticSeverityToColor(d.severity));
 	}
       }
 
@@ -1184,6 +1202,19 @@ void editorDrawInfoViewTacticsTab(FileConfig *f) {
   // to make space for status bar.
   editorDrawInfoViewTacticsTabbar(IVT_Tactic, &ab);
 
+
+  // draw diagnostics on the line.
+  do {
+    for(LspDiagnostic &d : f->lspDiagnostics) {
+      if (d.range.start.row != f->cursor.row) { continue; }
+      ab.appendfmtstr(120, "%s ▼ %s: " ESCAPE_CODE_UNSET "\x1b[K \r\n",
+        LspDiagnosticSeverityToColor(d.severity),
+        LspDiagnosticSeverityToStr(d.severity));
+      const int MAXCOLS = 120;
+      ab.appendfmtstr(120, "  %s \r\n", d.message.substr(0,MAXCOLS - 10).c_str());
+    }
+  } while(0);
+
   do {
     json_object  *result = nullptr;
     if (f->leanInfoViewPlainGoal.response) {
@@ -1260,17 +1291,10 @@ void editorDrawInfoViewMessagesTab(FileConfig *f) {
     const LspDiagnostic d = f->lspDiagnostics[i];
     const int MAXCOLS = 100;
     assert(d.version == f->text_document_item.version);
-    if (d.severity == LspDiagnosticSeverity::Error) {
-      ab.appendstr("ERR : ");
-    } else if (d.severity == LspDiagnosticSeverity::Warning) {
-      ab.appendstr("WARN: ");
-    } else if (d.severity == LspDiagnosticSeverity::Information) {
-      ab.appendstr("INFO: ");
-    } else {
-      assert(d.severity == LspDiagnosticSeverity::Hint);
-      ab.appendstr("HINT: ");
-    }
-    ab.appendfmtstr(120, "%d:%d: ", d.range.start.row, d.range.start.col);
+    ab.appendfmtstr(120, "%s▶ %s:%d:%d:" ESCAPE_CODE_UNSET,
+      LspDiagnosticSeverityToColor(d.severity),
+      LspDiagnosticSeverityToStr(d.severity), 
+      d.range.start.row, d.range.start.col);
     std::string message_sub = d.message.substr(0, MAXCOLS - 10);
     ab.appendstr(message_sub.c_str());
     ab.appendstr("\r\n");
