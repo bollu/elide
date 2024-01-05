@@ -312,7 +312,7 @@ json_object_ptr LeanServerState::_read_next_json_record_from_buffer_nonblocking(
 
   // we don't have enough data in the buffer to read the content length
   const int header_line_end_ix = header_line_begin_ix + strlen(DOUBLE_NEWLINE_STR);
-  if (child_stdout_buffer.len() < header_line_end_ix + content_length) {
+  if (child_stdout_buffer.len() <= header_line_end_ix + content_length) {
     return NULL;
   }
 
@@ -1782,10 +1782,6 @@ void editorTickPostKeypress() {
     ctrlpTickPostKeypress(&g_editor.ctrlp);
   }
 
-  if (g_editor.vim_mode == VM_COMPLETION) {
-    completionTickPostKeypress(&g_editor.completion);
-  }
-  
   FileConfig *f = g_editor.curFile();
   if (!f) { return; }
 
@@ -1802,6 +1798,11 @@ void editorTickPostKeypress() {
   fileConfigSyncLeanState(f);
 
   f->lean_server_state.tick_nonblocking();
+  
+  if (g_editor.vim_mode == VM_COMPLETION) {
+    completionTickPostKeypress(f, &g_editor.completion);
+  }
+  
 
   if (whenFillLspNonblockingResponse(f->lean_server_state, f->leanGotoRequest)) {
     assert(f->leanGotoRequest.response != NULL);
@@ -1908,13 +1909,14 @@ bool completionWhenSelected(CompletionView *view) {
 
 void completionOpen(CompletionView *view, VimMode previous_state, FileConfig *f) {
   view->previous_state = previous_state;
-  view->loc = FileLocation(*f);
   view->quitPressed = view->selectPressed = false;
   view->items.clear();
   view->itemIx = -1;
   json_object *req = lspCreateTextDocumentCompletionRequest(Uri(f->absolute_filepath),
     cursorToLspPosition(f->cursor),
     CompletionTriggerKind::Invoked);
+  // TODO: need to ask LSP server to ignore request?
+  // I must think about this carefully in terms of semantics.
   view->completionResponse = 
     LspNonblockingResponse(f->lean_server_state.write_request_to_child_blocking("textDocument/completion", req));
   g_editor.vim_mode = VM_COMPLETION;
@@ -1930,8 +1932,55 @@ void completionHandleInput(CompletionView *view, int c) {
   assert(false && "unimplemented");
 }
 
-void completionTickPostKeypress(CompletionView *view) {
+void completionTickPostKeypress(FileConfig *f, CompletionView *view) {
+  if(whenFillLspNonblockingResponse(f->lean_server_state, view->completionResponse)) {
+    tilde::tildeWrite("response [textDocument/completion] %s", 
+      json_object_to_json_string(view->completionResponse.response));
 
+    json_object  *oresult = nullptr;
+    json_object_object_get_ex(view->completionResponse.response, "result", &oresult);
+    assert(oresult);
+    assert(json_object_get_type(oresult) == json_type_object);
+
+    json_object *items = NULL;
+    json_object_object_get_ex(oresult, "items", &items);
+    assert(items);
+    assert(json_object_get_type(items) == json_type_array);
+
+    for(int i = 0; i < json_object_array_length(items); ++i) {
+      json_object *oitem = json_object_array_get_idx(items, i);
+      assert(json_object_get_type(oitem) == json_type_object);
+      assert(oitem);
+
+      json_object *odetail = NULL;
+      json_object_object_get_ex(oitem, "detail", &odetail);
+      assert(odetail);
+      assert(json_object_get_type(odetail) == json_type_string);
+      const std::string detail = json_object_get_string(odetail);
+
+      json_object *odoc = NULL;
+      json_object_object_get_ex(oitem, "doc", &odoc);
+      std::string doc;
+      if (odoc) {
+        assert(json_object_get_type(odoc) == json_type_string);
+        doc = json_object_get_string(odoc);
+      }
+
+      json_object *okind = NULL;
+      json_object_object_get_ex(oitem, "kind", &okind);
+      assert(okind);
+      assert(json_object_get_type(okind) == json_type_int);
+      const int kind = json_object_get_int(okind);
+
+      json_object *olabel = NULL;
+      json_object_object_get_ex(oitem, "label", &olabel);
+      assert(olabel);
+      assert(json_object_get_type(olabel) == json_type_string);
+      const std::string label = json_object_get_string(olabel);
+
+      view->items.push_back(CompletionView::Item(detail, doc, kind, label));
+    }
+  };
 }
 
 void completionDraw(CompletionView *view) {
@@ -1942,7 +1991,21 @@ void completionDraw(CompletionView *view) {
   // H: cursor position. [<row>;<col>H   (args separated by ;).
   // Default arguments for H is 1, so it's as if we had sent [1;1H
   ab.appendstr("\x1b[1;1H");
-  ab.appendstr("@@@ COMPLETION MODE \r\n");
+  ab.appendfmtstr(120, "┎Completion (%10s | %4d matches)┓ \r\n",
+    view->completionResponse.response ? "loaded!" : "loading...",
+    view->items.size());
+
+  int row = 0; 
+  int NROWS = 20;
+  int NCOLS = 100;
+  for(int i = 0; i < view->items.size() && row < NROWS; ++i, ++row) {
+    if (i == view->itemIx) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
+    CompletionView::Item item(view->items[i]);
+    // doc, kind?
+    ab.appendfmtstr(NCOLS, "%s : %s", item.label.c_str(), item.detail.c_str());
+    // TODO: show these for
+    if (i == view->itemIx) { ab.appendstr(ESCAPE_CODE_UNSET); }
+  }
   CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
 }
 
@@ -2815,7 +2878,7 @@ void ctrlpDraw(CtrlPView *view) {
     ab.appendstr("\x1b[1;1H");  // H: cursor position
 
     // append format string.
-    ab.appendfmtstr(120, "┎ctrlp mode (%s|%s|%d matches)┓\x1b[k\r\n", 
+    ab.appendfmtstr(120, "┎ctrlp mode (%10s|%10s|%5d matches)┓\x1b[k\r\n", 
       textAreaModeToString(view->textArea.mode),
       view->rgProcess.running ? "running" : "completed",
       view->rgProcess.lines.size());

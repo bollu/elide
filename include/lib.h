@@ -905,7 +905,7 @@ struct SingleLineTextArea {
   TextAreaMode mode = TextAreaMode::TAM_Normal;
   abuf text;
   Size<Codepoint> col = 0;
-  
+
 };
 
 void SingleLineTextAreaHandleInput(SingleLineTextArea *area, int c);
@@ -1067,12 +1067,17 @@ struct FileLocation {
 struct CompletionView {
   // TODO: rename to LspNonblockingResponse
   LspNonblockingResponse completionResponse;
-
+  SingleLineTextArea textArea;
   VimMode previous_state;
-  FileLocation loc;
+  
   struct Item {
-    std::string completion;
-    std::string help;
+    std::string detail;
+    std::string doc;
+    int kind;
+    std::string label;
+
+    Item(std::string detail, std::string doc, int kind, std::string label) :
+      detail(detail), doc(doc), kind(kind), label(label) {}
   };
   std::vector<Item> items;
   int itemIx = -1;
@@ -1084,7 +1089,7 @@ bool completionWhenQuit(CompletionView *view);
 bool completionWhenSelected(CompletionView *view);
 void completionOpen(CompletionView *view, VimMode previous_state, FileConfig *f);
 void completionHandleInput(CompletionView *view, int c);
-void completionTickPostKeypress(CompletionView *view);
+void completionTickPostKeypress(FileConfig *f, CompletionView *view);
 void completionDraw(CompletionView *view);
 
 // unabbrevs[i] ASCII string maps to abbrevs[i] UTF-8 string.
