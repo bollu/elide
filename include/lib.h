@@ -1140,30 +1140,33 @@ struct EditorConfig {
   };
 
   void getOrOpenNewFile(FileLocation file_loc, bool isUndoRedo=false) {
+    tilde::tildeWrite("%s %s:%d:%d", __PRETTY_FUNCTION__, file_loc.absolute_filepath.c_str(),
+      file_loc.cursor.row,
+      file_loc.cursor.col.size);
     assert(file_loc.absolute_filepath.is_absolute());
 
     if (!isUndoRedo) {
       if (this->fileIx != -1) {
+	assert(this->fileIx >= 0);
         assert(this->fileIx < this->files.size());
-        file_location_history.push_back(FileLocation(this->files[fileIx]));
+        file_location_history.push_back(FileLocation(this->files[this->fileIx]));
       }
       file_location_history.push_back(file_loc);
     }
 
     // look if file exists.
-    for(int i = 0; i < this->files.size(); ++i) {
-      if (this->files[i].absolute_filepath == file_loc.absolute_filepath) {
-	assert(false && "found an existing file");
-        fileIx = i;
-	// this->files[fileIx] = FileConfig(file_loc);
-        this->files[fileIx].cursor = file_loc.cursor;
-        return;
-      }
-    }
+    // for(int i = 0; i < this->files.size(); ++i) {
+    //   if (this->files[i].absolute_filepath == file_loc.absolute_filepath) {
+    //     assert(false && "found an existing file");
+    //     this->fileIx = i;
+    //     this->files[this->fileIx].cursor = file_loc.cursor;
+    //     return;
+    //   }
+    // }
     // we were unable to find an already open file, so make a new file.
-    fileIx = this->files.size();
     this->files.push_back(FileConfig(file_loc));
-    this->files[fileIx].cursor = file_loc.cursor;
+    this->fileIx = this->files.size() - 1;
+    this->files[this->fileIx].cursor = file_loc.cursor;
   }
 
   void undoFileMove() {

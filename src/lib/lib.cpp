@@ -164,15 +164,6 @@ LeanServerState LeanServerState::init(std::optional<fs::path> absolute_filepath)
   CHECK_POSIX_CALL_0(pipe2(state.child_stdout_to_parent_buffer, O_NONBLOCK));
   CHECK_POSIX_CALL_0(pipe(state.child_stderr_to_parent_buffer));
 
-  // open debug logging files.
-  state.child_stdin_log_file = fopen("/tmp/edtr-child-stdin", "a+");
-  state.child_stdout_log_file = fopen("/tmp/edtr-child-stdout", "a+");
-  state.child_stderr_log_file = fopen("/tmp/edtr-child-stderr", "a+");
-
-  fputs("\n===\n", state.child_stdin_log_file);  
-  fputs("\n===\n", state.child_stdout_log_file);
-  fputs("\n===\n", state.child_stderr_log_file);
-
   if (absolute_filepath) {
     assert(absolute_filepath->is_absolute());
     state.lakefile_dirpath = ([&absolute_filepath]() -> std::optional<fs::path> {
@@ -232,9 +223,6 @@ struct LspResponse {
 
 int LeanServerState::_write_str_to_child(const char *buf, int len) const {
   int nwritten = write(this->parent_buffer_to_child_stdin[PIPE_WRITE_IX], buf, len);
-
-  (void)fwrite(buf, len, 1, this->child_stdin_log_file);
-  fflush(this->child_stdin_log_file);
   return nwritten;
 };
 
@@ -252,8 +240,6 @@ int LeanServerState::_read_stdout_str_from_child_nonblocking() {
   }
   this->child_stdout_buffer.appendbuf(buf, nread);
 
-  (void)fwrite(buf, nread, 1, this->child_stdout_log_file);
-  fflush(this->child_stdout_log_file);
   return nread;
 };
 
@@ -262,9 +248,6 @@ int LeanServerState::_read_stderr_str_from_child_blocking() {
   char buf[BUFSIZE];
   int nread = read(this->child_stderr_to_parent_buffer[PIPE_READ_IX], buf, BUFSIZE);
   this->child_stderr_buffer.appendbuf(buf, nread);
-
-  (void)fwrite(buf, nread, 1, this->child_stderr_log_file);
-  fflush(this->child_stderr_log_file);
   return nread;
 };
 
@@ -1826,6 +1809,7 @@ void editorTickPostKeypress() {
   if (lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanGotoRequest)) {
     assert(f->leanGotoRequest.response != NULL);
     editorHandleGotoResponse(f->leanGotoRequest.response);
+    editorTickPostKeypress(); // process file again.
     return; 
   }
   lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainGoal);

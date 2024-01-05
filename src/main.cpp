@@ -40,6 +40,7 @@ int main(int argc, char **argv){
     g_editor.original_cwd = g_editor.original_cwd.remove_filename();
     g_editor.original_cwd = ctrlpGetGoodRootDirAbsolute(g_editor.original_cwd);
     g_editor.getOrOpenNewFile(FileLocation(filepath, Cursor(0, 0)));
+    g_editor.getOrOpenNewFile(FileLocation(filepath, Cursor(0, 0)));
   } else {
     g_editor.original_cwd = ctrlpGetGoodRootDirAbsolute(g_editor.original_cwd);
     ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
