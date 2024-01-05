@@ -1364,19 +1364,6 @@ void editorDrawInfoView(FileConfig *f) {
   assert(false && "unreachable, should not reach here in drawInfoView.");
 }
 
-void editorDrawCompletionMode() {
-  abuf ab;
-  // VT100 escapes.
-  // \x1b: escape. J: erase in display. [2J: clear entire screen
-  ab.appendstr("\x1b[2J");
-  // H: cursor position. [<row>;<col>H   (args separated by ;).
-  // Default arguments for H is 1, so it's as if we had sent [1;1H
-  ab.appendstr("\x1b[1;1H");
-  
-  ab.appendstr("@@@ COMPLETION MODE \r\n");
-  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
-}
-
 void editorDrawNoFile() {
   abuf ab;
   ab.appendstr("\x1b[?25l"); // hide cursor
@@ -1405,7 +1392,7 @@ void editorDraw() {
     }
     // editorDrawFileConfigPopup(); // draw file config mode popup, if it needs to be drawn.
   } else if (g_editor.vim_mode == VM_COMPLETION) {
-    editorDrawCompletionMode();
+    completionDraw(&g_editor.completion);
   } else if (g_editor.vim_mode == VM_CTRLP) {
     ctrlpDraw(&g_editor.ctrlp);
   } else if (g_editor.vim_mode == VM_TILDE) {
@@ -1896,6 +1883,50 @@ void editorTickPostKeypress() {
   }
 };
 
+
+bool completionWhenQuit(CompletionView *view) {
+  bool out = view->quitPressed;
+  view->quitPressed = false;
+  return out;
+};
+
+bool completionWhenSelected(CompletionView *view) {
+  bool out = view->selectPressed;
+  view->selectPressed = false;
+  return out;
+};
+
+void completionOpen(CompletionView *view, VimMode previous_state, FileLocation loc) {
+  view->previous_state = previous_state;
+  view->loc = loc;
+  view->quitPressed = view->selectPressed = false;
+  view->items.clear();
+  view->itemIx = -1;
+  g_editor.vim_mode = VM_COMPLETION;
+}
+
+void completionHandleInput(CompletionView *view, int c) {
+  if (c == CTRL_KEY('c') || c == '\\') {
+    view->quitPressed = false;
+  } else if (c == CTRL_KEY('\r')) {
+    view->selectPressed = false;
+  }
+  // TODO: move the rest of the code into text area.
+  assert(false && "unimplemented");
+}
+
+void completionDraw(CompletionView *view) {
+  abuf ab;
+  // VT100 escapes.
+  // \x1b: escape. J: erase in display. [2J: clear entire screen
+  ab.appendstr("\x1b[2J");
+  // H: cursor position. [<row>;<col>H   (args separated by ;).
+  // Default arguments for H is 1, so it's as if we had sent [1;1H
+  ab.appendstr("\x1b[1;1H");
+  ab.appendstr("@@@ COMPLETION MODE \r\n");
+  CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+}
+
 void editorProcessKeypress() {
   int c = editorReadRawEscapeSequence();
 
@@ -1920,27 +1951,28 @@ void editorProcessKeypress() {
       }
   }
   else if (g_editor.vim_mode == VM_CTRLP) {
-    // if lakefile is available, use it as the path.
-    // if not, use the file path as the base path.
-    // TODO: search for `.git` and use it as the base path.
-    // TODO: |g_editor basePath, refactor into separate file.|
-    // char *default_basepath = strdup(
-    //   f->lean_server_state.lakefile_dirpath ?
-    //   f->lean_server_state.lakefile_dirpath :
-    //   dirname(f->absolute_filepath));
     ctrlpHandleInput(&g_editor.ctrlp, c);
-    // free(default_basepath);
     if (ctrlpWhenQuit(&g_editor.ctrlp)) {
       g_editor.vim_mode = g_editor.ctrlp.previous_state;
       return;
     }
-
     if (ctrlpWhenSelected(&g_editor.ctrlp)) {
       g_editor.getOrOpenNewFile(ctrlpGetSelectedFileLocation(&g_editor.ctrlp));
       g_editor.vim_mode = g_editor.ctrlp.previous_state;
       return;
     }
-
+  }
+  else if (g_editor.vim_mode == VM_COMPLETION) {
+    completionHandleInput(&g_editor.completion, c);
+    if (completionWhenQuit(&g_editor.completion)) {
+      g_editor.vim_mode = g_editor.completion.previous_state; 
+      return;
+    }
+    if (completionWhenSelected(&g_editor.completion)) {
+      // g_editor.getOrOpenNewFile(ctrlpGetSelectedFileLocation(&g_editor.ctrlp));
+      g_editor.vim_mode = g_editor.ctrlp.previous_state;
+      return;
+    }
   }
   else if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
     assert(g_editor.curFile());
@@ -2112,10 +2144,6 @@ void editorProcessKeypress() {
     f->mkUndoMementoRecent();
 
     switch (c) { // behaviors only in edit mode.
-    // case CTRL_KEY('\\'): {
-    //   ctrlpOpen(&g_editor.ctrlp, VM_COMPLETION, g_editor.original_cwd);
-    //   return;
-    // }
     case CTRL_KEY('p'): {
       ctrlpOpen(&g_editor.ctrlp, VM_INSERT, g_editor.original_cwd);
       return;
@@ -2125,6 +2153,10 @@ void editorProcessKeypress() {
       return;
     case KEYEVENT_BACKSPACE: { // this is backspace, apparently
       fileConfigBackspace(f);
+      return;
+    }
+    case CTRL_KEY('\\'): {
+      completionOpen(&g_editor.completion, VM_INSERT, FileLocation(*f));
       return;
     }
     // when switching to normal mode, sync the lean state. 

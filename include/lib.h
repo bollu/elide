@@ -904,6 +904,7 @@ static const char *textAreaModeToString(TextAreaMode mode) {
 // data associated to the per-file `CtrlP` view.
 struct CtrlPView {
   VimMode previous_state;
+  // TODO: extract out the single line text area.
   TextAreaMode textAreaMode;
   fs::path absolute_cwd; // default working directory for the search.
   abuf textArea;
@@ -958,8 +959,6 @@ void ctrlpOpen(CtrlPView *view, VimMode previous_state, fs::path cwd);
 void ctrlpHandleInput(CtrlPView *view, int c);
 void ctrlpDraw(CtrlPView *view);
 fs::path ctrlpGetGoodRootDirAbsolute(const fs::path absolute_startdir);
-
-
 
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
 // Do I want a *global* undo/redo? Probably not, no?
@@ -1032,6 +1031,10 @@ struct FileLocation {
   fs::path absolute_filepath;
   Cursor cursor;
 
+  // completion view needs this default ctor :( 
+  // TODO: ask sebastian how to avoid this.
+  FileLocation() {}
+
   FileLocation(const FileConfig &file) : 
     absolute_filepath(file.absolute_filepath), cursor(file.cursor) {}
 
@@ -1054,7 +1057,24 @@ struct FileLocation {
 
 };
 
+struct CompletionView {
+  VimMode previous_state;
+  FileLocation loc;
+  struct Item {
+    std::string completion;
+    std::string help;
+  };
+  std::vector<Item> items;
+  int itemIx = -1;
+  bool quitPressed = false;
+  bool selectPressed = false;
+};
 
+bool completionWhenQuit(CompletionView *view);
+bool completionWhenSelected(CompletionView *view);
+void completionOpen(CompletionView *view, VimMode previous_state, FileLocation loc);
+void completionHandleInput(CompletionView *view, int c);
+void completionDraw(CompletionView *view);
 
 // unabbrevs[i] ASCII string maps to abbrevs[i] UTF-8 string.
 struct AbbreviationDict {
@@ -1126,6 +1146,7 @@ struct EditorConfig {
 
   fs::path original_cwd; // cwd that the process starts in.
   CtrlPView ctrlp;
+  CompletionView completion;
   AbbreviationDict abbrevDict;
 
   EditorConfig() { statusmsg[0] = '\0'; }
