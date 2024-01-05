@@ -1960,9 +1960,7 @@ void editorProcessKeypress() {
     }
     case CTRL_KEY('c'):
     case CTRL_KEY('j'):
-    case CTRL_KEY('k'):
-    case ' ':
-    case '\r': {
+    case CTRL_KEY('k'): {
       g_editor.vim_mode = VM_NORMAL;
       return;
     }
@@ -2086,10 +2084,7 @@ void editorProcessKeypress() {
     }
 
     case CTRL_KEY('j'):
-    case CTRL_KEY('k'):
-    case ' ':
-    // case '\t': How do I get this to work?
-    case '\r': {
+    case CTRL_KEY('k'): {
       fileConfigRequestGoalState(f);
       g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL;
       return;
