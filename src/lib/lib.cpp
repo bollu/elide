@@ -1713,7 +1713,8 @@ void fileConfigOpenRowBelow(FileConfig *f) {
 
 // open row above ('O');
 void fileConfigOpenRowAbove(FileConfig *f) {
-  fileConfigInsertRowBefore(f, 0, nullptr, 0);
+    fileConfigInsertRowBefore(f, f->cursor.row, nullptr, 0);
+    f->cursor.col = Size<Codepoint>(0);
 }
 
 void editorHandleGotoResponse(json_object_ptr response) {
