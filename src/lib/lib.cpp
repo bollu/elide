@@ -522,6 +522,7 @@ void fileConfigDeleteCurrentRow(FileConfig *f) {
       f->rows[i] = f->rows[i + 1];   
     }
     f->rows.pop_back();
+    f->makeDirty();
   }
   if (f->cursor.row == f->rows.size()) {
     f->cursor.col = Size<Codepoint>(0);
@@ -1702,6 +1703,7 @@ int editorReadRawEscapeSequence() {
 
 // open row below ('o'.)
 void fileConfigOpenRowBelow(FileConfig *f) {
+  f->makeDirty();
   if (f->cursor.row == f->rows.size()) {
     fileConfigInsertRowBefore(f, f->cursor.row, nullptr, 0);
   } else {
@@ -1713,8 +1715,9 @@ void fileConfigOpenRowBelow(FileConfig *f) {
 
 // open row above ('O');
 void fileConfigOpenRowAbove(FileConfig *f) {
-    fileConfigInsertRowBefore(f, f->cursor.row, nullptr, 0);
-    f->cursor.col = Size<Codepoint>(0);
+  f->makeDirty();
+  fileConfigInsertRowBefore(f, f->cursor.row, nullptr, 0);
+  f->cursor.col = Size<Codepoint>(0);
 }
 
 void editorHandleGotoResponse(json_object_ptr response) {
@@ -1952,11 +1955,8 @@ void editorProcessKeypress() {
       return;
     }
     case CTRL_KEY('c'):
-    case 'q':
-    case 'g':
     case ' ':
-    case '\r':
-    case '?': {
+    case '\r': {
       g_editor.vim_mode = VM_NORMAL;
       return;
     }
@@ -2090,10 +2090,8 @@ void editorProcessKeypress() {
       return;
     }
 
-    case 'g':
     case ' ':
-    case '\r':
-    case '?': {
+    case '\r': {
       // TODO: dear god get right of this code duplication.
       if (f->absolute_filepath.extension() == ".lean") {
         if (!f->lean_server_state.initialized) {
