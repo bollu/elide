@@ -700,7 +700,7 @@ void fileConfigLaunchLeanServer(FileConfig *file_config) {
 
   // busy wait.
   // TODO: cleanup the busy wait for LSP state.
-  const int NBUSYROUNDS = 5;
+  const int NBUSYROUNDS = 10;
   std::optional<json_object_ptr> response;
   for(int i = 0; i < NBUSYROUNDS; ++i) {
     file_config->lean_server_state.tick_nonblocking();
@@ -1206,11 +1206,12 @@ void editorDrawInfoViewTacticsTab(FileConfig *f) {
   do {
     json_object  *result = nullptr;
     if (f->leanInfoViewPlainTermGoal.response) {
-      json_object_object_get_ex(f->leanInfoViewPlainTermGoal.response, "result", &result);
+      json_object_object_get_ex(f->leanInfoViewPlainGoal.response, "result", &result);
     }
     if (result == nullptr) {
       ab.appendstr("▶ Tactic State: --- \x1b[K \r\n");
     } else {
+      tilde::tildeWrite("%s result: %s", __PRETTY_FUNCTION__, json_object_to_json_string(result));
       json_object *result_goals = nullptr;
       json_object_object_get_ex(result, "goals", &result_goals);
       assert(result_goals != nullptr);
@@ -1346,12 +1347,15 @@ InfoViewTab infoViewTabCyclePrevious(FileConfig *f, InfoViewTab t) {
 
 void editorDrawInfoView(FileConfig *f) {
   if(f->infoViewTab == IVT_Tactic) {
-      editorDrawInfoViewTacticsTab(f);
+    editorDrawInfoViewTacticsTab(f);
+    return;
   } else if(f->infoViewTab == IVT_Hover) {
-      editorDrawInfoViewHoverTab(f);
+    editorDrawInfoViewHoverTab(f);
+    return;
   } else if (f->infoViewTab == IVT_Messages) {
     editorDrawInfoViewMessagesTab(f);
-  }
+    return;
+  } 
 
   assert(false && "unreachable, should not reach here in drawInfoView.");
 }
