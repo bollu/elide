@@ -6,12 +6,10 @@ structure Bar where
 
 
 #eval 10
-
-
 def f (bar : Bar) : Int := 
   by 
   . cases bar  
     case mk a b =>
-      exact b
+          exact b
 foo
 #eval f  

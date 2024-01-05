@@ -15,6 +15,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <vector>
+#include <map>
 #include <algorithm>
 #include <stack>
 #include <unordered_map>
@@ -549,6 +550,12 @@ struct LspRequestId {
   int id = -1;
   LspRequestId()  = default;
   LspRequestId(int id) : id(id) {};
+  bool operator < (const LspRequestId &other) const {
+    return this->id < other.id;
+  }
+  bool operator == (const LspRequestId &other) const {
+    return this->id == other.id;
+  }
 };
 
 
@@ -577,6 +584,9 @@ struct LeanServerState {
   // server-response to a client-request
   std::vector<json_object_ptr> unhandled_server_requests;
 
+  // vector of LSP requests to responses.
+  std::map<LspRequestId, json_object_ptr> request2response;
+
   // low-level API to write strings directly.
   int _write_str_to_child(const char *buf, int len) const;
   // low-level API: read from stdout and write into buffer
@@ -589,7 +599,7 @@ struct LeanServerState {
   // read the next json record from the buffer, and if the buffer is not full,
   // then read in more data until successful read. Will either hang indefinitely
   // or return a `json_object*`. Will never return NULL.
-  json_object_ptr _read_next_json_record_from_buffer_blocking();
+  // json_object_ptr _read_next_json_record_from_buffer_blocking();
 
   // high level APIs to write strutured requests and read responses.
   // write a request, and return the request sequence number.
@@ -599,7 +609,10 @@ struct LeanServerState {
   // this CONSUMES params.
   void write_notification_to_child_blocking(const char *method,
                                             json_object *params);
-  json_object_ptr read_json_response_from_child_blocking(LspRequestId request_id);
+  // performs a tick of processing.
+  void tick_nonblocking(); 
+
+  std::optional<json_object_ptr> read_json_response_from_child_nonblocking(LspRequestId request_id);
 
   // high level APIs
   void get_tactic_mode_goal_state(LeanServerState state,
@@ -840,6 +853,24 @@ private:
 };
 
 
+struct JsonNonblockingResponse {
+  LspRequestId request;
+  json_object_ptr response;
+  JsonNonblockingResponse() : request(-1), response(NULL) {};
+  JsonNonblockingResponse(LspRequestId request) : request(request), response(NULL) {};
+};
+
+// returns true if it was filled in this turn.
+static bool lspServerFillJsonNonblockingResponse(LeanServerState &state, JsonNonblockingResponse &o) {
+  if (o.response != NULL) { return false; }
+  auto it = state.request2response.find(o.request);
+  if (it != state.request2response.end()) {
+    o.response = it->second;
+    return true;
+  }
+  return false;
+}
+
 // NOTE: 
 // TextDocument for LSP does not need to be cached, as its value monotonically increases,
 // even during undo/redo.
@@ -850,15 +881,14 @@ struct FileConfigUndoState {
   int scroll_row_offset = 0;
   int scroll_col_offset = 0;
 
-  json_object_ptr leanInfoViewPlainGoal;
-  json_object_ptr leanInfoViewPlainTermGoal;
-  json_object_ptr leanHoverViewHover;
+  JsonNonblockingResponse leanInfoViewPlainGoal;
+  JsonNonblockingResponse leanInfoViewPlainTermGoal;
+  JsonNonblockingResponse leanHoverViewHover;
   // TODO: implement definition
   InfoViewTab infoViewTab = IVT_Tactic;
-  json_object_ptr leanGotoViewDefinition;
-  json_object_ptr leanGotoViewDeclaration;
+  JsonNonblockingResponse leanGotoRequest;
   // TODO: implement completion.
-  json_object_ptr leanCompletionViewCompletion;
+  JsonNonblockingResponse leanCompletionViewCompletion;
 
   // TODO: should we use a different fn rather than `==`?
   bool operator == (const FileConfigUndoState &other) const {
@@ -939,6 +969,7 @@ void ctrlpDraw(CtrlPView *view);
 fs::path ctrlpGetGoodRootDirAbsolute(const fs::path absolute_startdir);
 
 
+
 // NOTE: in sublime text, undo/redo is a purely *file local* idea.
 // Do I want a *global* undo/redo? Probably not, no?
 // TODO: think about just copying the sublime text API :)
@@ -964,6 +995,7 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
 
   // diagonstics from LSP.
   std::vector<LspDiagnostic> lspDiagnostics;
+
 
   // file progress from LSP.
   // contains the start and end ranges, and whether the processing is finished.
@@ -992,6 +1024,9 @@ private:
   bool _is_dirty_save = false;
   bool _is_dirty_info_view = false;
 };
+
+void fileConfigSyncLeanState(FileConfig *file_config);
+void fileConfigLaunchLeanServer(FileConfig *file_config);
 
 // represents a file plus a location, used to save history of file opening/closing.
 struct FileLocation {
@@ -1093,6 +1128,7 @@ struct EditorConfig {
   fs::path original_cwd; // cwd that the process starts in.
   CtrlPView ctrlp;
   AbbreviationDict abbrevDict;
+
   EditorConfig() { statusmsg[0] = '\0'; }
 
   FileConfig *curFile() {
@@ -1103,6 +1139,7 @@ struct EditorConfig {
       return &files[fileIx];
     }
   };
+
 
 
   void getOrOpenNewFile(FileLocation file_loc, bool isUndoRedo=false) {
@@ -1129,6 +1166,17 @@ struct EditorConfig {
     fileIx = this->files.size();
     this->files.push_back(FileConfig(file_loc));
     this->files[fileIx].cursor = file_loc.cursor;
+
+    // start lean.
+    FileConfig *f = &this->files[fileIx];
+    if (f->absolute_filepath.extension() == "lean") {
+      if (!f->lean_server_state.initialized) {
+        // TODO: switch to `std::optional`
+        fileConfigLaunchLeanServer(f);
+      }
+      assert(f->lean_server_state.initialized);
+      fileConfigSyncLeanState(f);
+    }
   }
 
   void undoFileMove() {
@@ -1194,7 +1242,7 @@ void fileConfigDebugPrint(FileConfig *f, abuf *buf);
 void fileConfigCursorMoveWordNext(FileConfig *f);
 void fileConfigCursorMoveWordPrevious(FileConfig *f);
 void fileConfigSave(FileConfig *f);
-std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *f);
+void fileConfigGotoDefinitionNonblocking(FileConfig *f);
 LspPosition cursorToLspPosition(Cursor c);
 
 void editorDraw();
@@ -1207,8 +1255,6 @@ void editorMoveCursor(int key);
 void editorProcessKeypress();
 char *editorPrompt(const char *prompt);
 void initEditor();
-void fileConfigSyncLeanState(FileConfig *file_config);
-void fileConfigLaunchLeanServer(FileConfig *file_config);
 
 
 
@@ -1285,6 +1331,7 @@ static int utf8_next_code_point_len(const char *str) {
     assert(false && "unknown UTF-8 width");
   }
   assert(false && "unknown UTF-8 width");
+  return 0;
 };
 
 // return the pointer to the next code point.

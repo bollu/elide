@@ -311,7 +311,7 @@ void LeanServerState::write_notification_to_child_blocking(const char * method, 
 
 // tries to read the next JSON record from the buffer, in a nonblocking fashion.
 json_object_ptr LeanServerState::_read_next_json_record_from_buffer_nonblocking() {
-
+  this->_read_stdout_str_from_child_nonblocking();
   const char *CONTENT_LENGTH_STR = "Content-Length:";
   const char *DOUBLE_NEWLINE_STR = "\r\n\r\n";
 
@@ -345,39 +345,31 @@ json_object_ptr LeanServerState::_read_next_json_record_from_buffer_nonblocking(
   return o;
 }
 
-// tries to read the next JSON record from the buffer, in a blocking fashion.
-// It busy waits on the nonblocking version.
-json_object_ptr LeanServerState::_read_next_json_record_from_buffer_blocking() {
-  while(1) {
-    json_object_ptr o = _read_next_json_record_from_buffer_nonblocking();
-    if (o) { return o; }
-    _read_stdout_str_from_child_nonblocking(); // consume input to read.
+void LeanServerState::tick_nonblocking() {
+  // TODO: convert to std::optional.
+  json_object_ptr o_optional = _read_next_json_record_from_buffer_nonblocking();
+  if (o_optional == NULL) { return; }
+  json_object *response_ido = NULL;
+  if (json_object_object_get_ex(o_optional, "id", &response_ido) && 
+      json_object_get_type(response_ido) == json_type_int) {
+      const int response_id = json_object_get_int(response_ido);
+      auto it = this->request2response.find(response_id);
+      assert(it == this->request2response.end());
+      this->request2response[response_id] = o_optional;
+      this->nresponses_read++;
+  } else {
+      this->unhandled_server_requests.push_back(o_optional);
   }
 }
 
-json_object_ptr LeanServerState::read_json_response_from_child_blocking(LspRequestId request_id) {
-  assert(request_id.id < this->next_request_id); // check that it is a valid request ID.
-
-  // TODO: the request needs to be looked for in the vector of unprocessed requests.
-  while(1) {
-    assert(this->nresponses_read < this->next_request_id);
-    json_object_ptr o = _read_next_json_record_from_buffer_blocking();
-    // only records with a key called "id" are responses.
-    // other records are status messages which we silently discard
-    // TODO: do not silently discard!
-    json_object *response_id = NULL;
-    if (json_object_object_get_ex(o, "id", &response_id) && 
-        json_object_get_type(response_id) == json_type_int) {
-        if (json_object_get_int(response_id) != request_id.id) {
-          // TODO: store responses in a queue.
-          assert(false && "unexpected response, got a non-matching response to the ID we wanted.");
-        }
-        this->nresponses_read++;
-        return o;
-    } else {
-        this->unhandled_server_requests.push_back(o);
-    }
+std::optional<json_object_ptr> LeanServerState::read_json_response_from_child_nonblocking(LspRequestId request_id) {
+  this->tick_nonblocking();
+  auto it = this->request2response.find(request_id);
+  if (it == this->request2response.end()) {
+    return {};
   }
+  assert(it->second != NULL);
+  return std::optional(it->second);
 }
 
 
@@ -706,7 +698,18 @@ void fileConfigLaunchLeanServer(FileConfig *file_config) {
   LspRequestId request_id = 
     file_config->lean_server_state.write_request_to_child_blocking("initialize", req);
 
-  json_object_ptr _ = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
+  // busy wait.
+  // TODO: cleanup the busy wait for LSP state.
+  const int NBUSYROUNDS = 5;
+  std::optional<json_object_ptr> response;
+  for(int i = 0; i < NBUSYROUNDS; ++i) {
+    file_config->lean_server_state.tick_nonblocking();
+    response = 
+    	file_config->lean_server_state.read_json_response_from_child_nonblocking(request_id);
+    if (response) { break; }
+    sleep(1);
+  }
+  assert(bool(response) && "launching lean server");
 
   // initialize: send initialized
   req = lspCreateInitializedNotification();
@@ -738,7 +741,6 @@ void fileConfigSyncLeanState(FileConfig *file_config) {
   // textDocument/didOpen
   req = lspCreateDidOpenTextDocumentNotifiation(file_config->text_document_item);
   file_config->lean_server_state.write_notification_to_child_blocking("textDocument/didOpen", req);
-
 }
 
 void fileConfigRequestGoalState(FileConfig *file_config) {
@@ -755,22 +757,24 @@ void fileConfigRequestGoalState(FileConfig *file_config) {
     cursorToLspPosition(file_config->cursor));
   request_id = 
     file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
-  file_config->leanInfoViewPlainGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
+  file_config->leanInfoViewPlainGoal = JsonNonblockingResponse(request_id);
+  // file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // $/lean/plainTermGoal
-
   req = lspCreateLeanPlainTermGoalRequest(file_config->text_document_item.uri, 
     cursorToLspPosition(file_config->cursor));
   request_id = 
     file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
-  file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
+  file_config->leanInfoViewPlainTermGoal = JsonNonblockingResponse(request_id);
+  // file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // textDocument/hover
 
   req = lspCreateTextDocumentHoverRequest(file_config->text_document_item.uri, 
     cursorToLspPosition(file_config->cursor));
   request_id = file_config->lean_server_state.write_request_to_child_blocking("textDocument/hover", req);
-  file_config->leanHoverViewHover = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
+  file_config->leanHoverViewHover = JsonNonblockingResponse(request_id);
+  // file_config->leanHoverViewHover = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
 }
 
@@ -799,8 +803,6 @@ FileConfig::FileConfig(FileLocation loc) {
   free(line);
   fclose(fp);
   this->is_initialized = true;
-  // fileConfigLaunchLeanServer(this);
-  // fileConfigSyncLeanState(this);
 }
 
 
@@ -874,7 +876,7 @@ enum GotoKind {
   TypeDefiition
 };
 
-std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *file_config, GotoKind kind) {
+void fileConfigGotoDefinitionNonblocking(FileConfig *file_config, GotoKind kind) {
   assert(file_config->is_initialized);
   assert(file_config->text_document_item.is_initialized);
 
@@ -892,70 +894,9 @@ std::optional<FileLocation> fileConfigGotoDefinition(FileConfig *file_config, Go
     assert(false && "unknown GotoKind");
   }
   assert(gotoKindStr != "");
-  LspRequestId request_id = 
-    file_config->lean_server_state.write_request_to_child_blocking(gotoKindStr.c_str(), req);
+  file_config->leanGotoRequest.request = file_config->lean_server_state.write_request_to_child_blocking(gotoKindStr.c_str(), req);
+  return;
 
-  json_object_ptr response = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
-  tilde::tildeWrite("Response [textDocument/definition] %s", json_object_to_json_string(response));
-
-// Response [textDocument/definition] { "result": [ { "targetUri": 
-//     "file://path/to/file.lean", 
-//     "targetSelectionRange": { "start": { "line": 39, "character": 10 }, "end": { "line": 39, "character": 13 } },
-//     "targetRange": { "start": { "line": 39, "character": 0 }, "end": { "line": 44, "character": 23 } },
-//     "originSelectionRange": { "start": { "line": 3, "character": 6 }, "end": { "line": 3, "character": 9 } } } ],
-// "jsonrpc": "2.0", "id": 10 }  
-// targetSelectionRange: range to be highlighted within editor.
-// targetRange: full range of defn.
-
-  json_object *result = nullptr;
-  json_object_object_get_ex(response, "result", &result);
-  if (result == nullptr) { return {}; }; 
-  assert(json_object_get_type(result) == json_type_array);
-  assert(result);
-  tilde::tildeWrite("response [textDocument/gotoDefinition] result: '%s'", 
-    json_object_to_json_string(result));
-
-  assert(json_object_get_type(result) == json_type_array);
-  if (json_object_array_length(result) == 0) {
-    tilde::tildeWrite("response [textDocument/gotoDefinition]: length 0 :(");
-    return {};
-  }
-
-  json_object *result0 = json_object_array_get_idx(result, 0);
-  if (result == nullptr) { return {}; }; 
-  assert(json_object_get_type(result0) == json_type_object);
-  assert(result0);
-
-  tilde::tildeWrite("response [textDocument/gotoDefinition] result0: '%s'", 
-    json_object_to_json_string(result0));
-
-  json_object *result0_uri = nullptr;
-  json_object_object_get_ex(result0, "targetUri", &result0_uri);
-  tilde::tildeWrite("response [textDocument/gotoDefinition] result0_uri[raw]: '%s'", 
-    json_object_to_json_string(result0_uri));
-  assert(result0_uri);
-  assert(json_object_get_type(result0_uri) == json_type_string);
-  const char *uri = json_object_get_string(result0_uri);
-  assert(result0_uri);
-  const fs::path absolute_filepath = Uri::parse(uri);
-  tilde::tildeWrite("response [textDocument/gotoDefinition] result0_uri[filepath]: '%s'", std::string(absolute_filepath).c_str());
-  assert(absolute_filepath.is_absolute()); 
-
-
-  json_object *result0_targetSelectionRange = nullptr;
-  json_object_object_get_ex(result0, "targetSelectionRange", &result0_targetSelectionRange);
-
-  json_object *result0_targetSelectionRange_start = nullptr;
-  json_object_object_get_ex(result0_targetSelectionRange, "start", &result0_targetSelectionRange_start);
-  assert(result0_targetSelectionRange_start);
-  tilde::tildeWrite("response [textDocument/gotoDefinition] result.0.targetSelectionRange.start: '%s'", 
-      json_object_to_json_string(result0_targetSelectionRange_start));
-
-  LspPosition p = json_object_parse_position(result0_targetSelectionRange_start);
-  tilde::tildeWrite("response [textDocument/gotoDefinition] position: (%d, %d)", 
-      p.row, p.col);
-
-  return FileLocation(absolute_filepath, LspPositionToCursor(p));
 }
 
 /*** append buffer ***/
@@ -1196,30 +1137,9 @@ void editorDrawInfoViewGoal(abuf *ab, const char *str) {
 
 }
 
-bool isInfoViewTacticsHoverTabEnabled(FileConfig *f) {
-  json_object  *result = nullptr;
-  json_object_object_get_ex(f->leanHoverViewHover, "result", &result);
-  return result != nullptr; 
-}
-
-bool isInfoViewTacticsTacticsTabEnabled(FileConfig *f) {
-  json_object  *result = nullptr;
-  json_object_object_get_ex(f->leanInfoViewPlainTermGoal, "result", &result);
-  if (result != nullptr) { return true; }; 
-  
-  json_object_object_get_ex(f->leanInfoViewPlainGoal, "result", &result);
-  if (result != nullptr) { return true; }; 
-  return false;
-}
-
 void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
     assert(tab >= 0 && tab < IVT_NumTabs);
     const char *str[IVT_NumTabs] = {"Tactics", "Hover","Messages"};    
-    bool enabled[IVT_NumTabs] = {
-      isInfoViewTacticsTacticsTabEnabled(g_editor.curFile()),
-      isInfoViewTacticsHoverTabEnabled(g_editor.curFile()),
-      true
-    };
 
     for(int i = 0; i < IVT_NumTabs; ++i) {
       if (i == (int) tab) {
@@ -1230,8 +1150,6 @@ void editorDrawInfoViewTacticsTabbar(InfoViewTab tab, abuf *buf) {
       buf->appendstr("┎");
       if (i == (int) tab) {
         buf->appendstr("■ ");
-      } else if (!enabled[i]) {
-        buf->appendstr("♯ "); // disabled.
       } else {
         buf->appendstr("□ ");
       }
@@ -1264,12 +1182,12 @@ void editorDrawInfoViewTacticsTab(FileConfig *f) {
   // always append a space, since we decrement a row from screen rows
   // to make space for status bar.
   editorDrawInfoViewTacticsTabbar(IVT_Tactic, &ab);
-  assert(f->leanInfoViewPlainGoal != nullptr);
-  assert(f->leanInfoViewPlainTermGoal!= nullptr);
 
   do {
     json_object  *result = nullptr;
-    json_object_object_get_ex(f->leanInfoViewPlainTermGoal, "result", &result);
+    if (f->leanInfoViewPlainGoal.response) {
+      json_object_object_get_ex(f->leanInfoViewPlainTermGoal.response, "result", &result);
+    }
     if (result == nullptr) {
       ab.appendstr("▶ Expected Type: --- \x1b[K \r\n");
     } else {
@@ -1287,7 +1205,9 @@ void editorDrawInfoViewTacticsTab(FileConfig *f) {
 
   do {
     json_object  *result = nullptr;
-    json_object_object_get_ex(f->leanInfoViewPlainGoal, "result", &result);
+    if (f->leanInfoViewPlainTermGoal.response) {
+      json_object_object_get_ex(f->leanInfoViewPlainTermGoal.response, "result", &result);
+    }
     if (result == nullptr) {
       ab.appendstr("▶ Tactic State: --- \x1b[K \r\n");
     } else {
@@ -1372,7 +1292,9 @@ void editorDrawInfoViewHoverTab(FileConfig *f) {
 
   do {
     json_object  *result = nullptr;
-    json_object_object_get_ex(f->leanHoverViewHover, "result", &result);
+    if (f->leanHoverViewHover.response) {
+      json_object_object_get_ex(f->leanHoverViewHover.response, "result", &result);
+    }
     if (result == nullptr) {
       ab.appendstr("▶ Hover: --- \x1b[K \r\n");
     } else {
@@ -1411,23 +1333,7 @@ void editorDrawInfoViewHoverTab(FileConfig *f) {
 }
 
 InfoViewTab _infoViewTabCycleDelta(FileConfig *f, InfoViewTab t, int delta) {
-  bool enabled[IVT_NumTabs] = {
-    isInfoViewTacticsTacticsTabEnabled(f),
-    isInfoViewTacticsHoverTabEnabled(f),
-    true
-  };
-  t = InfoViewTab(((int) t + delta)  % IVT_NumTabs);
-  bool foundEnabled = false;
-  for(int i = 0; i < IVT_NumTabs; ++i) {
-    if (enabled[t]) {
-      foundEnabled = true;
-      break;
-    } else {
-      t = InfoViewTab(((int) t + delta) % IVT_NumTabs);
-    }
-  }
-  assert(foundEnabled && "unable to find any enabled tab on the info view.");
-  return t;
+  return InfoViewTab(((int) t + delta) % IVT_NumTabs);
 }
 
 InfoViewTab infoViewTabCycleNext(FileConfig *f, InfoViewTab t) {
@@ -1439,37 +1345,12 @@ InfoViewTab infoViewTabCyclePrevious(FileConfig *f, InfoViewTab t) {
 }
 
 void editorDrawInfoView(FileConfig *f) {
-  bool enabled[IVT_NumTabs] = {
-    isInfoViewTacticsTacticsTabEnabled(f),
-    isInfoViewTacticsHoverTabEnabled(f),
-    true
-  };
-  bool foundEnabled = false;
-  for(int i = 0; i < IVT_NumTabs; ++i) {
-    if (enabled[f->infoViewTab]) {
-      foundEnabled = true;
-      break;
-    } else {
-      f->infoViewTab = InfoViewTab((int(f->infoViewTab) + 1) % IVT_NumTabs);
-    }
-  }
-  assert(foundEnabled && "unable to find any enabled tab on the info view.");
-
-  if(f->infoViewTab <= IVT_Tactic && 
-        isInfoViewTacticsTacticsTabEnabled(f)) {
+  if(f->infoViewTab == IVT_Tactic) {
       editorDrawInfoViewTacticsTab(f);
-    return;
-  }
-
-  if(f->infoViewTab <= IVT_Hover &&
-        isInfoViewTacticsHoverTabEnabled(f)) {
+  } else if(f->infoViewTab == IVT_Hover) {
       editorDrawInfoViewHoverTab(f);
-      return;
-  }
-
-  if (f->infoViewTab <= IVT_Messages) {
+  } else if (f->infoViewTab == IVT_Messages) {
     editorDrawInfoViewMessagesTab(f);
-    return;
   }
 
   assert(false && "unreachable, should not reach here in drawInfoView.");
@@ -1831,11 +1712,99 @@ void fileConfigOpenRowAbove(FileConfig *f) {
   fileConfigInsertRowBefore(f, 0, nullptr, 0);
 }
 
+void editorHandleGotoResponse(json_object_ptr response) {
+   tilde::tildeWrite("Response [textDocument/definition] %s", json_object_to_json_string(response));
+   // Response [textDocument/definition] { "result": [ { "targetUri": 
+   //     "file://path/to/file.lean", 
+   //     "targetSelectionRange": { "start": { "line": 39, "character": 10 }, "end": { "line": 39, "character": 13 } },
+   //     "targetRange": { "start": { "line": 39, "character": 0 }, "end": { "line": 44, "character": 23 } },
+   //     "originSelectionRange": { "start": { "line": 3, "character": 6 }, "end": { "line": 3, "character": 9 } } } ],
+   // "jsonrpc": "2.0", "id": 10 }  
+   // targetSelectionRange: range to be highlighted within editor.
+   // targetRange: full range of defn.
+
+    json_object *result = nullptr;
+    json_object_object_get_ex(response, "result", &result);
+    if (result == nullptr) { return ; }; 
+    assert(json_object_get_type(result) == json_type_array);
+    assert(result);
+    tilde::tildeWrite("response [textDocument/gotoDefinition] result: '%s'", 
+      json_object_to_json_string(result));
+
+    assert(json_object_get_type(result) == json_type_array);
+    if (json_object_array_length(result) == 0) {
+      tilde::tildeWrite("response [textDocument/gotoDefinition]: length 0 :(");
+      return;
+    }
+
+    json_object *result0 = json_object_array_get_idx(result, 0);
+    if (result == nullptr) { return; }
+    assert(json_object_get_type(result0) == json_type_object);
+    assert(result0);
+
+    tilde::tildeWrite("response [textDocument/gotoDefinition] result0: '%s'", 
+      json_object_to_json_string(result0));
+
+    json_object *result0_uri = nullptr;
+    json_object_object_get_ex(result0, "targetUri", &result0_uri);
+    tilde::tildeWrite("response [textDocument/gotoDefinition] result0_uri[raw]: '%s'", 
+      json_object_to_json_string(result0_uri));
+    assert(result0_uri);
+    assert(json_object_get_type(result0_uri) == json_type_string);
+    const char *uri = json_object_get_string(result0_uri);
+    assert(result0_uri);
+    const fs::path absolute_filepath = Uri::parse(uri);
+    tilde::tildeWrite("response [textDocument/gotoDefinition] result0_uri[filepath]: '%s'", std::string(absolute_filepath).c_str());
+    assert(absolute_filepath.is_absolute()); 
+
+
+    json_object *result0_targetSelectionRange = nullptr;
+    json_object_object_get_ex(result0, "targetSelectionRange", &result0_targetSelectionRange);
+
+    json_object *result0_targetSelectionRange_start = nullptr;
+    json_object_object_get_ex(result0_targetSelectionRange, "start", &result0_targetSelectionRange_start);
+    assert(result0_targetSelectionRange_start);
+    tilde::tildeWrite("response [textDocument/gotoDefinition] result.0.targetSelectionRange.start: '%s'", 
+        json_object_to_json_string(result0_targetSelectionRange_start));
+
+    LspPosition p = json_object_parse_position(result0_targetSelectionRange_start);
+    tilde::tildeWrite("response [textDocument/gotoDefinition] position: (%d, %d)", p.row, p.col);
+
+    FileLocation loc(absolute_filepath, LspPositionToCursor(p));
+    tilde::tildeWrite("goto definition file location cursor (%d, %d)", 
+        loc.cursor.row, loc.cursor.col.size);
+    g_editor.getOrOpenNewFile(loc);
+}
+
 void editorTickPostKeypress() {
-  FileConfig *f  = g_editor.curFile();
+  FileConfig *f = g_editor.curFile();
   if (!f) { return; }
-  if (!f->text_document_item.is_initialized) { return; }
-  
+
+
+  tilde::tildeWrite("editorTick() | nresps: %d | nunhandled: %d",
+    f->lean_server_state.request2response.size(), f->lean_server_state.unhandled_server_requests.size());
+
+  if (f->absolute_filepath.extension() != ".lean") {
+    return;
+  }
+  assert(f->absolute_filepath.extension() == ".lean");
+  if (!f->lean_server_state.initialized) {
+    fileConfigLaunchLeanServer(f);
+  }
+  assert(f->lean_server_state.initialized);
+  fileConfigSyncLeanState(f);
+  assert (f->text_document_item.is_initialized);
+
+  f->lean_server_state.tick_nonblocking();
+
+  if (lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanGotoRequest)) {
+    editorHandleGotoResponse(f->leanGotoRequest.response);
+  }
+  lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainGoal);
+  lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainTermGoal);
+  lspServerFillJsonNonblockingResponse(f->lean_server_state, f->leanHoverViewHover);
+
+  // handle unhandled requests
   if (f->lean_server_state.unhandled_server_requests.size() == 0) {
     return;
   }
@@ -1893,16 +1862,21 @@ void editorTickPostKeypress() {
     json_object_object_get_ex(paramso, "processing", &processingo);      
     assert(processingo);
     const int nrecords = json_object_array_length(processingo);
+
     assert(nrecords <= 1 && "file progress should have at most 1 record");
     if (nrecords == 0) {
       f->progressbar.finished = true;
       return;
     }
+
     assert(nrecords == 1);
     f->progressbar.finished = false;
 
+    json_object *processingo_recordo = json_object_array_get_idx(processingo, 0);
+    assert(processingo_recordo);
+
     json_object *rangeo = NULL;
-    json_object_object_get_ex(processingo, "range", &rangeo);
+    json_object_object_get_ex(processingo_recordo, "range", &rangeo);
     assert(rangeo);
     LspRange range = json_object_parse_range(rangeo);
     f->progressbar.startRow = range.start.row;
@@ -2011,12 +1985,7 @@ void editorProcessKeypress() {
       }
       assert(f->lean_server_state.initialized);
       fileConfigSyncLeanState(f);
-      std::optional<FileLocation> loc = fileConfigGotoDefinition(g_editor.curFile(), GotoKind::Definition);
-      if (loc) {
-        tilde::tildeWrite("goto definition file location cursor (%d, %d)", 
-          loc->cursor.row, loc->cursor.col.size);
-        g_editor.getOrOpenNewFile(*loc);
-      } 
+      fileConfigGotoDefinitionNonblocking(g_editor.curFile(), GotoKind::Definition);
       return;
     }
     case CTRL_KEY('['): { // is this a good choice of key? I am genuinely unsure.
@@ -2027,12 +1996,7 @@ void editorProcessKeypress() {
       }
       assert(f->lean_server_state.initialized);
       fileConfigSyncLeanState(f);
-      std::optional<FileLocation> loc = fileConfigGotoDefinition(g_editor.curFile(), GotoKind::TypeDefiition);
-      if (loc) {
-        tilde::tildeWrite("goto definition file location cursor (%d, %d)", 
-          loc->cursor.row, loc->cursor.col.size);
-        g_editor.getOrOpenNewFile(*loc);
-      } 
+      fileConfigGotoDefinitionNonblocking(g_editor.curFile(), GotoKind::TypeDefiition);
       return;
     }
     case CTRL_KEY('o'): {
@@ -2181,14 +2145,6 @@ void editorProcessKeypress() {
     case CTRL_KEY('c'): { // escape key
       g_editor.vim_mode = VM_NORMAL;
       fileConfigSave(f);
-      if (f->absolute_filepath.extension() == "lean") {
-        if (!f->lean_server_state.initialized) {
-          // TODO: switch to `std::optional`
-          fileConfigLaunchLeanServer(f);
-      }
-        assert(f->lean_server_state.initialized);
-        fileConfigSyncLeanState(f);
-      }
       return;
    }
     default:
