@@ -26,6 +26,9 @@
 #include "lean_lsp.h"
 #include <algorithm>
 
+// TODO: show lake path in messages tab.
+// TODO: add a new view for running `lake build`.
+
 // https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 // [(<accent>;)?<forground>;<background>;
 #define ESCAPE_CODE_DULL "\x1b[90;40m" // briht black foreground, black background
@@ -253,8 +256,9 @@ int LeanServerState::_read_stderr_str_from_child_blocking() {
 };
 
 LspRequestId LeanServerState::write_request_to_child_blocking(const char * method, json_object *params) {
+  tilde::tildeWrite("LSP request [%s] %s", method, json_object_to_json_string(params));
   const int id = this->next_request_id++;
-json_object *o = json_object_new_object();
+  json_object *o = json_object_new_object();
   json_object_object_add(o, "jsonrpc", json_object_new_string("2.0"));
   json_object_object_add(o, "id", json_object_new_int(id));
   json_object_object_add(o, "method", json_object_new_string(method));
@@ -1797,7 +1801,9 @@ void editorTickPostKeypress() {
   assert(f->lean_server_state.initialized);
   fileConfigSyncLeanState(f);
 
-  f->lean_server_state.tick_nonblocking();
+  if (g_editor.vim_mode != VM_INSERT) {
+    f->lean_server_state.tick_nonblocking();
+  }
   
   if (g_editor.vim_mode == VM_COMPLETION) {
     completionTickPostKeypress(f, &g_editor.completion);

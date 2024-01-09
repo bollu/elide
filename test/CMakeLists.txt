@@ -27,9 +27,13 @@ add_test(NAME utf8 COMMAND $<TARGET_FILE:utf8>)
 
 file(COPY lake-testdir  DESTINATION .)
 
-add_executable(lake_open_file lake-open-file.cpp)
-target_link_libraries(lake_open_file PRIVATE edtr)
-add_test(NAME lake_open_file COMMAND $<TARGET_FILE:lake_open_file>)
+add_executable(lake_hover_cli lake-hover-cli.cpp)
+target_link_libraries(lake_hover_cli PRIVATE edtr)
+add_test(NAME lake_hover_cli COMMAND $<TARGET_FILE:lake_hover_cli>)
+
+add_executable(lake_completion_cli lake-completion-cli.cpp)
+target_link_libraries(lake_completion_cli PRIVATE edtr)
+add_test(NAME lake_completion_cli COMMAND $<TARGET_FILE:lake_completion_cli>)
 
 add_executable(lake_get_messages lake-get-messages.cpp)
 target_link_libraries(lake_get_messages PRIVATE edtr)

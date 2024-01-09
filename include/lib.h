@@ -633,6 +633,7 @@ enum VimMode {
   VM_COMPLETION, // mode where code completion results show up.
   VM_CTRLP, // mode where control-p search anything results show up.
   VM_TILDE, // mode where the editor logs its info, like the infamous quake `~`.
+  VM_COMPILE, // mode where `lake build` is called.
 };
 
 namespace tilde {
