@@ -2106,6 +2106,12 @@ void editorProcessKeypress() {
 
     assert(f != nullptr);
     switch (c) {
+    case '9':
+    case CTRL_KEY('9'): {
+      compileView::compileViewOpen(&g_editor.compileView);
+      g_editor.vim_mode = VM_COMPILE;
+      
+    }
     case CTRL_KEY(']'): {
       // goto definition.
       // TODO: refactor this code. to force initialization first.
@@ -2459,6 +2465,84 @@ void load_abbreviation_dict_from_file(AbbreviationDict *dict, fs::path abbrev_pa
   load_abbreviation_dict_from_json(dict, o);
 };
 
+
+
+namespace compileView {
+  bool compileViewWhenQuit(CompileView *view) {
+    bool out = view->quitPressed;
+    view->quitPressed = false;
+    return out;
+  };
+
+  void compileViewOpen(CompileView *view) {
+    view->quitPressed = false;
+    view->scrollback_ix = {};
+  };
+
+  void compileViewHandleInput(CompileView *view, int c) {
+    const int NSCREENROWS = 20;
+
+    if (c == CTRL_KEY('c') || c == CTRL_KEY('q') || c == 'q' || c == '`' || c == '~') {
+      view->quitPressed = true;
+    } else if (c == CTRL_KEY('d')) {
+        view->scrollback_ix = 
+        clamp0u<int>(view->scrollback_ix + NSCREENROWS, view->log.size() - 1);;
+    } else if (c == CTRL_KEY('u')) {
+        view->scrollback_ix = clamp0(view->scrollback_ix - NSCREENROWS);
+    } else if (c == CTRL_KEY('p') || c == 'k') {
+        view->scrollback_ix = clamp0(view->scrollback_ix - 1);
+    } else if (c == CTRL_KEY('n') || c == 'j') {
+        view->scrollback_ix = clampu<int>(view->scrollback_ix + 1, view->log.size() - 1);
+    } else if (c == 'g') {
+      view->scrollback_ix = 0;
+    } else if (c == 'G') {
+      view->scrollback_ix = view->log.size() - 1;
+    }
+  }
+
+  void compileViewDraw(CompileView *view) {
+    drawCallback([&](abuf &ab) {
+      const int IX = view->scrollback_ix;
+      assert(IX >= 0);
+      if (view->log.size() > 0) {
+        assert(IX < view->log.size());
+      }
+      ab.appendstr("~CONSOLE\x1b[K \r\n");
+
+      static const int NDRAWCOLS = 118;
+      static const int NDRAWROWS = 12;
+
+      const interval drawRect = 
+        interval(IX)
+        .len_clampl_move_lr(NDRAWROWS)
+        .clamp(0, view->log.size()-1);
+
+      // assert(drawRect.l <= IX);
+      // assert(IX <= drawRect.r);
+      
+      // TODO: draw per column.
+      for(int r = drawRect.l; r <= drawRect.r; ++r) {
+        ab.appendstr("\x1b[K \r\n");
+        if (r == IX) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
+        ab.appendstr("▶  ");
+        if (r == IX) { ab.appendstr(ESCAPE_CODE_UNSET); }
+
+        abuf rowbuf = abuf::from_copy_str(view->log[r].c_str());
+        for(int c = 0; c < rowbuf.ncodepoints().size; ++c) {
+          if (c % NDRAWCOLS == NDRAWCOLS - 1) {
+            ab.appendstr("\x1b[K \r\n");
+            if (r == IX) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
+            ab.appendstr("   ┃");
+            if (r == IX) { ab.appendstr(ESCAPE_CODE_UNSET); }
+          }
+          ab.appendCodepoint(rowbuf.getCodepoint(c));
+        }
+      }
+
+    });
+  };
+
+} // end namespace compileView
 
 /** tilde **/
 namespace tilde {

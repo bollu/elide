@@ -657,6 +657,31 @@ void tildeWrite(const std::string &str);
 void tildeWrite(const abuf &buf);
 };
 
+namespace compileView {
+struct CompileView {
+  int scrollback_ix = 0;
+  bool quitPressed = false;
+  struct Item {
+    fs::path filepath;
+    int row;
+    int col;
+    std::string info;
+  };
+  // log
+  std::vector<std::string> log;
+};
+
+bool compileViewWhenQuit(CompileView *view);
+void compileViewOpen(CompileView *view);
+void compileViewHandleInput(CompileView *view, int c);
+void compileViewDraw(CompileView *view);
+// this sucks, global state.
+// void compileViewWrite(std::string str);
+void compileViewWrite(const char *fmt, ...);
+void compileViewWrite(const std::string &str);
+void compileViewWrite(const abuf &buf);
+};
+
 struct Cursor {
   int row = 0; // index of row. Must be within [0, file->nrows].
   Size<Codepoint> col = Size<Codepoint>(0); // #graphemes to move past from the start of the row to get to the current one.
@@ -1164,6 +1189,7 @@ struct EditorConfig {
   fs::path original_cwd; // cwd that the process starts in.
   CtrlPView ctrlp;
   CompletionView completion;
+  compileView::CompileView compileView;
   AbbreviationDict abbrevDict;
 
   EditorConfig() { statusmsg[0] = '\0'; }
