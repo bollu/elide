@@ -1402,6 +1402,8 @@ void editorDraw() {
     ctrlpDraw(&g_editor.ctrlp);
   } else if (g_editor.vim_mode == VM_TILDE) {
     tilde::tildeDraw(&tilde::g_tilde);
+  } else if (g_editor.vim_mode == VM_COMPILE) {
+    compileView::compileViewDraw(&g_editor.compileView);
   }else {
     assert(g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL);
     assert(g_editor.curFile() != NULL);
@@ -2034,6 +2036,13 @@ void editorProcessKeypress() {
   else if (g_editor.vim_mode == VM_TILDE) {
       tilde::tildeHandleInput(&tilde::g_tilde, c);
       if (tilde::tildeWhenQuit(&tilde::g_tilde)) {
+        g_editor.vim_mode = VM_NORMAL;
+        return;
+      }
+  }
+  else if (g_editor.vim_mode == VM_COMPILE) {
+      compileView::compileViewHandleInput(&g_editor.compileView, c);
+      if (compileView::compileViewWhenQuit(&g_editor.compileView)) {
         g_editor.vim_mode = VM_NORMAL;
         return;
       }

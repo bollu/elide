@@ -675,11 +675,6 @@ bool compileViewWhenQuit(CompileView *view);
 void compileViewOpen(CompileView *view);
 void compileViewHandleInput(CompileView *view, int c);
 void compileViewDraw(CompileView *view);
-// this sucks, global state.
-// void compileViewWrite(std::string str);
-void compileViewWrite(const char *fmt, ...);
-void compileViewWrite(const std::string &str);
-void compileViewWrite(const abuf &buf);
 };
 
 struct Cursor {
