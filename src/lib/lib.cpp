@@ -161,24 +161,25 @@ std::optional<fs::path> getFilePathAmongstParents(fs::path dirpath, const char *
 
 // create a new lean server.
 // if file_path == NULL, then create `lean --server`.
-LeanServerState LeanServerState::init(std::optional<fs::path> absolute_filepath) {
-  LeanServerState state;
+void LeanServerState::init(std::optional<fs::path> absolute_filepath) {
+  assert(this->initialized == LeanServerInitializedKind::NotInitialized);
+  this->initialized = LeanServerInitializedKind::Initializing;
 
-  CHECK_POSIX_CALL_0(pipe(state.parent_buffer_to_child_stdin));
-  CHECK_POSIX_CALL_0(pipe2(state.child_stdout_to_parent_buffer, O_NONBLOCK));
-  CHECK_POSIX_CALL_0(pipe(state.child_stderr_to_parent_buffer));
+  CHECK_POSIX_CALL_0(pipe(this->parent_buffer_to_child_stdin));
+  CHECK_POSIX_CALL_0(pipe2(this->child_stdout_to_parent_buffer, O_NONBLOCK));
+  CHECK_POSIX_CALL_0(pipe(this->child_stderr_to_parent_buffer));
 
   if (absolute_filepath) {
     assert(absolute_filepath->is_absolute());
-    state.lakefile_dirpath = ([&absolute_filepath]() -> std::optional<fs::path> {
+    this->lakefile_dirpath = ([&absolute_filepath]() -> std::optional<fs::path> {
       std::optional<fs::path> p = 
       	getFilePathAmongstParents(absolute_filepath->remove_filename(), "lakefile.lean"); 
       if (p) { return p->remove_filename(); }
       else { return {}; }
     })();
-    std::cerr << "lakefile_dirpath: " << (state.lakefile_dirpath ? state.lakefile_dirpath->string() : "NO LAKEFILE") << "\n";
-    if (state.lakefile_dirpath) {
-      assert(state.lakefile_dirpath->is_absolute());
+    tilde::tildeWrite("lakefile_dirpath: " +  (this->lakefile_dirpath ? this->lakefile_dirpath->string() : "NO LAKEFILE"));
+    if (this->lakefile_dirpath) {
+      assert(this->lakefile_dirpath->is_absolute());
     }
   }
 
@@ -190,33 +191,33 @@ LeanServerState LeanServerState::init(std::optional<fs::path> absolute_filepath)
 
   if(childpid == 0) {
     // child->parent, child will only write to this pipe, so close read end.
-    close(state.child_stdout_to_parent_buffer[PIPE_READ_IX]);
+    close(this->child_stdout_to_parent_buffer[PIPE_READ_IX]);
     // child->parent, child will only write to this pipe, so close read end.
-    close(state.child_stderr_to_parent_buffer[PIPE_READ_IX]);
+    close(this->child_stderr_to_parent_buffer[PIPE_READ_IX]);
 
     // parent->child, child will only read from this end, so close write end.
-    close(state.parent_buffer_to_child_stdin[PIPE_WRITE_IX]);
+    close(this->parent_buffer_to_child_stdin[PIPE_WRITE_IX]);
 
     // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDOUT`
-    dup2(state.child_stderr_to_parent_buffer[PIPE_WRITE_IX], STDERR_FILENO);
+    dup2(this->child_stderr_to_parent_buffer[PIPE_WRITE_IX], STDERR_FILENO);
     // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDOUT`
-    dup2(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
+    dup2(this->child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
     // it is only legal to call `read()` on stdin. So we tie the `PIPE_READ_IX` to `STDIN`
-    dup2(state.parent_buffer_to_child_stdin[PIPE_READ_IX], STDIN_FILENO);
+    dup2(this->parent_buffer_to_child_stdin[PIPE_READ_IX], STDIN_FILENO);
     // execute lakefile. 
-    _exec_lean_server_on_child(state.lakefile_dirpath);
+    _exec_lean_server_on_child(this->lakefile_dirpath);
   } else {
     // parent will only write into this pipe, so close the read end.
-    close(state.parent_buffer_to_child_stdin[PIPE_READ_IX]);
+    close(this->parent_buffer_to_child_stdin[PIPE_READ_IX]);
     // parent will only read from this pipe so close the wite end.
-    close(state.child_stdout_to_parent_buffer[PIPE_WRITE_IX]);
+    close(this->child_stdout_to_parent_buffer[PIPE_WRITE_IX]);
     // parent will only read from this pipe so close the wite end.
-    close(state.child_stderr_to_parent_buffer[PIPE_WRITE_IX]);
-
+    close(this->child_stderr_to_parent_buffer[PIPE_WRITE_IX]);
   }
-  // return lean server state to the parent process.
-  state.initialized = true; 
-  return state;
+
+  json_object *req = lspCreateInitializeRequest();
+  this->initialize_request_id = write_request_to_child_blocking("initialize", req);
+  
 };
 
 
@@ -256,6 +257,7 @@ int LeanServerState::_read_stderr_str_from_child_blocking() {
 };
 
 LspRequestId LeanServerState::write_request_to_child_blocking(const char * method, json_object *params) {
+  assert(this->initialized == LeanServerInitializedKind::Initialized);
   tilde::tildeWrite("LSP request [%s] %s", method, json_object_to_json_string(params));
   const int id = this->next_request_id++;
   json_object *o = json_object_new_object();
@@ -279,6 +281,7 @@ LspRequestId LeanServerState::write_request_to_child_blocking(const char * metho
 }
 
 void LeanServerState::write_notification_to_child_blocking(const char * method, json_object *params) {
+  assert(this->initialized == LeanServerInitializedKind::Initialized);
   json_object *o = json_object_new_object();
   json_object_object_add(o, "jsonrpc", json_object_new_string("2.0"));
   json_object_object_add(o, "method", json_object_new_string(method));
@@ -334,6 +337,7 @@ json_object_ptr LeanServerState::_read_next_json_record_from_buffer_nonblocking(
 }
 
 void LeanServerState::tick_nonblocking() {
+    
   // TODO: convert to std::optional.
   json_object_ptr o_optional = _read_next_json_record_from_buffer_nonblocking();
   if (o_optional == NULL) { return; }
@@ -348,6 +352,15 @@ void LeanServerState::tick_nonblocking() {
   } else {
       this->unhandled_server_requests.push_back(o_optional);
   }
+
+  if (this->initialized == LeanServerInitializedKind::Initializing) {
+     std::optional<json_object_ptr> r = read_json_response_from_child_nonblocking(this->initialize_request_id);
+     if (!r) { return; }
+     // initialize: send initialized
+     write_notification_to_child_blocking("initialized", lspCreateInitializedNotification());
+     this->initialized = LeanServerInitializedKind::Initialized;
+  }
+
 }
 
 std::optional<json_object_ptr> LeanServerState::read_json_response_from_child_nonblocking(LspRequestId request_id) {
@@ -679,29 +692,8 @@ void fileConfigBackspace(FileConfig *f) {
 // The annoying thing is that this needs to be initialized
 void fileConfigLaunchLeanServer(FileConfig *file_config) {
   // TODO: find some neat way to maintain this state.
-  assert(file_config->lean_server_state.initialized == false);
-  file_config->lean_server_state = LeanServerState::init(file_config->absolute_filepath); // start lean --server.
-
-  json_object *req = lspCreateInitializeRequest();
-  LspRequestId request_id =
-    file_config->lean_server_state.write_request_to_child_blocking("initialize", req);
-
-  // busy wait.
-  // TODO: cleanup the busy wait for LSP state.
-  const int NBUSYROUNDS = 100; // wait for 100 seconds.
-  std::optional<json_object_ptr> response;
-  for(int i = 0; i < NBUSYROUNDS; ++i) {
-    file_config->lean_server_state.tick_nonblocking();
-    response =
-    	file_config->lean_server_state.read_json_response_from_child_nonblocking(request_id);
-    if (response) { break; }
-    sleep(1);
-  }
-  assert(bool(response) && "launching lean server");
-
-  // initialize: send initialized
-  req = lspCreateInitializedNotification();
-  file_config->lean_server_state.write_notification_to_child_blocking("initialized", req);
+  assert(file_config->lean_server_state.initialized == LeanServerInitializedKind::NotInitialized);
+  file_config->lean_server_state.init(file_config->absolute_filepath); // start coro for lean --server.
 }
 
 TextDocumentItem fileConfigToTextDocumentItem(FileConfig *file_config) {
@@ -713,11 +705,10 @@ TextDocumentItem fileConfigToTextDocumentItem(FileConfig *file_config) {
 
 void fileConfigSyncLeanState(FileConfig *file_config) {
   json_object *req = nullptr;
-  if (!file_config->whenDirtyInfoView()) {
-    return; // no point syncing state if it isn't dirty, and the state has been initalized before.
-  }
+ 
+  // if server is not yet initialized, then don't sync state.
+  if (file_config->lean_server_state.initialized != LeanServerInitializedKind::Initialized) { return; }
 
-  assert(file_config->lean_server_state.initialized == true);
   file_config->lsp_file_version += 1;
   // textDocument/didOpen
   req = lspCreateDidOpenTextDocumentNotifiation(fileConfigToTextDocumentItem(file_config));
@@ -1085,7 +1076,7 @@ void drawCallback(std::function<void(abuf &ab)> f) {
 void editorDrawFileConfigPopup(FileConfig *f) {
   if (!f->progressbar.finished) {
     // draw progress info;
-    drawCallback([f](abuf &ab) {
+    drawCallback([](abuf &ab) {
       const int CENTER_ROW = g_editor.screenrows;
       const int POPUP_SIZE = g_editor.screencols - 10;;
       const int POPUP_SIZE_L = POPUP_SIZE / 2;
@@ -1796,7 +1787,7 @@ void editorTickPostKeypress() {
 
   if (f->absolute_filepath.extension() != ".lean") { return; }
   assert(f->absolute_filepath.extension() == ".lean");
-  if (!f->lean_server_state.initialized) {
+  if (f->lean_server_state.initialized == LeanServerInitializedKind::NotInitialized) {
     fileConfigLaunchLeanServer(f);
   }
   assert(f->lean_server_state.initialized);

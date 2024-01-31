@@ -558,10 +558,16 @@ struct LspRequestId {
   }
 };
 
+enum class LeanServerInitializedKind {
+  NotInitialized,
+  Initializing,
+  Initialized
+};
 
 // https://tldp.org/LDP/lpg/node11.html
 struct LeanServerState {
-  bool initialized = false; // whether this lean server has been initalized.
+  LeanServerInitializedKind initialized = LeanServerInitializedKind::NotInitialized; // whether this lean server has been initalized.
+  LspRequestId initialize_request_id;
   // path to the lakefile associated to this lean server, if it uses one.
   std::optional<fs::path> lakefile_dirpath;
   int parent_buffer_to_child_stdin[2];  // pipe.
@@ -621,8 +627,9 @@ struct LeanServerState {
                                 LeanServerCursorInfo cinfo);
   void get_completion_at_point(LeanServerState state,
                                LeanServerCursorInfo cinfo);
-
-  static LeanServerState init(std::optional<fs::path> file_path);
+  LeanServerState() {};
+   
+  void init(std::optional<fs::path> file_path);
 private:
 };
 
