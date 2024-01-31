@@ -677,23 +677,22 @@ void fileConfigBackspace(FileConfig *f) {
 
 // TODO: find some neat way to maintain this state.
 // The annoying thing is that this needs to be initialized
-// 
 void fileConfigLaunchLeanServer(FileConfig *file_config) {
   // TODO: find some neat way to maintain this state.
   assert(file_config->lean_server_state.initialized == false);
-  file_config->lean_server_state = LeanServerState::init(file_config->absolute_filepath); // start lean --server.  
+  file_config->lean_server_state = LeanServerState::init(file_config->absolute_filepath); // start lean --server.
 
   json_object *req = lspCreateInitializeRequest();
-  LspRequestId request_id = 
+  LspRequestId request_id =
     file_config->lean_server_state.write_request_to_child_blocking("initialize", req);
 
   // busy wait.
   // TODO: cleanup the busy wait for LSP state.
-  const int NBUSYROUNDS = 10;
+  const int NBUSYROUNDS = 100; // wait for 100 seconds.
   std::optional<json_object_ptr> response;
   for(int i = 0; i < NBUSYROUNDS; ++i) {
     file_config->lean_server_state.tick_nonblocking();
-    response = 
+    response =
     	file_config->lean_server_state.read_json_response_from_child_nonblocking(request_id);
     if (response) { break; }
     sleep(1);
