@@ -17,7 +17,7 @@ This is my Christmas 2023 effort to fill this unfilled niche in the market.
 
 #### Features
 
-- [x] Modal infoview, hover, and lean message list.
+- [x] Modal infoview, hover, goto definition, and lean message list.
 - [x] built-in Ripgrep for fast, fuzzy file and pattern search.
 - [x] Vim keybindings.
 
@@ -25,7 +25,6 @@ This is my Christmas 2023 effort to fill this unfilled niche in the market.
 
 - No syntax highlighting.
 - Sits in at ~4000 LoC of C/C++.
-- No multi-file editing support. To edit another file, just open it in another instance of `elide`.
 
 #### Building
 
