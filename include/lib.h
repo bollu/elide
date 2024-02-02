@@ -72,6 +72,23 @@ struct json_object_ptr
     json_object_put(m_obj);
     m_obj = nullptr;
   }
+  
+  operator bool () {
+    return m_obj != NULL;
+  }
+
+  bool operator == (const json_object_ptr &other) const {
+    return this->m_obj == other.m_obj;
+  }
+
+  bool operator != (const json_object_ptr &other) const {
+    return this->m_obj != other.m_obj;
+  }
+
+
+  bool operator < (const json_object_ptr &other) const {
+    return this->m_obj < other.m_obj;
+  }
 
   operator json_object * () {
     return m_obj;
@@ -550,6 +567,12 @@ struct LspRequestId {
   int id = -1;
   LspRequestId()  = default;
   LspRequestId(int id) : id(id) {};
+  
+  LspRequestId& operator = (const LspRequestId &other) {
+    this->id = other.id;
+    return *this;
+  }
+
   bool operator < (const LspRequestId &other) const {
     return this->id < other.id;
   }
@@ -559,14 +582,14 @@ struct LspRequestId {
 };
 
 enum class LeanServerInitializedKind {
-  NotInitialized,
+  Uninitialized,
   Initializing,
   Initialized
 };
 
 // https://tldp.org/LDP/lpg/node11.html
 struct LeanServerState {
-  LeanServerInitializedKind initialized = LeanServerInitializedKind::NotInitialized; // whether this lean server has been initalized.
+  LeanServerInitializedKind initialized = LeanServerInitializedKind::Uninitialized; // whether this lean server has been initalized.
   LspRequestId initialize_request_id;
   // path to the lakefile associated to this lean server, if it uses one.
   std::optional<fs::path> lakefile_dirpath;
@@ -883,14 +906,15 @@ private:
 
 struct LspNonblockingResponse {
   LspRequestId request;
-  json_object_ptr response;
-  LspNonblockingResponse() : request(-1), response(NULL) {};
-  LspNonblockingResponse(LspRequestId request) : request(request), response(NULL) {};
+  std::optional<json_object_ptr> response;
+  LspNonblockingResponse() : request(-1), response(std::nullopt) {};
+  LspNonblockingResponse(LspRequestId request) : request(request), response(std::nullopt) {};
 };
 
 // returns true if it was filled in this turn.
 static bool whenFillLspNonblockingResponse(LeanServerState &state, LspNonblockingResponse &o) {
-  if (o.response != NULL) { return false; }
+  if (o.response.has_value()) { return false; }
+
   auto it = state.request2response.find(o.request);
   if (it != state.request2response.end()) {
     o.response = it->second;
@@ -1039,23 +1063,31 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
   };
   ProgressBar progressbar;
 
+  bool isSaveDirty() const {
+    return this->_is_dirty_save;
+  }
+
+  bool isLeanSyncDirty() const {
+    return this->_is_dirty_lean_sync;
+  }
+
+  void undirtyLeanSync() {
+    this->_is_dirty_lean_sync = false;
+  }
   // if 'b' is true, then mark the state as dirty.
   // if 'b' is false, then leave the dirty state as-is.
   void makeDirty() {
     this->_is_dirty_save = true;
-    this->_is_dirty_info_view = true;
+    this->_is_dirty_lean_sync = true;
   }
 
   bool whenDirtySave() { 
     bool out = _is_dirty_save; _is_dirty_save = false; return out;
   }
   
-  bool whenDirtyInfoView() { 
-    bool out = _is_dirty_info_view; _is_dirty_info_view = false; return out;
-  }
 private:
   bool _is_dirty_save = true;
-  bool _is_dirty_info_view = true;
+  bool _is_dirty_lean_sync = true;
 };
 
 void fileConfigSyncLeanState(FileConfig *file_config);

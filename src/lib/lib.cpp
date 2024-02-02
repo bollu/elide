@@ -38,6 +38,8 @@
 #define ESCAPE_CODE_RED "\x1b[30;41m" // black foreground, red background
 #define ESCAPE_CODE_YELLOW "\x1b[30;43m" // black foreground, yellow background
 #define ESCAPE_CODE_GREEN "\x1b[30;42m" // black foreground, green background
+#define ESCAPE_CODE_WHITE "\x1b[30;47m" // black foreground, white background
+#define ESCAPE_CODE_GRAY "\x1b[30;40m" // black foreground, black background
 #define ESCAPE_CODE_BLUE "\x1b[30;44m" // black foreground, blue background
 #define ESCAPE_CODE_UNSET "\x1b[0m"
 
@@ -162,7 +164,7 @@ std::optional<fs::path> getFilePathAmongstParents(fs::path dirpath, const char *
 // create a new lean server.
 // if file_path == NULL, then create `lean --server`.
 void LeanServerState::init(std::optional<fs::path> absolute_filepath) {
-  assert(this->initialized == LeanServerInitializedKind::NotInitialized);
+  assert(this->initialized == LeanServerInitializedKind::Uninitialized);
   this->initialized = LeanServerInitializedKind::Initializing;
 
   CHECK_POSIX_CALL_0(pipe(this->parent_buffer_to_child_stdin));
@@ -257,9 +259,10 @@ int LeanServerState::_read_stderr_str_from_child_blocking() {
 };
 
 LspRequestId LeanServerState::write_request_to_child_blocking(const char * method, json_object *params) {
-  assert(this->initialized == LeanServerInitializedKind::Initialized);
-  tilde::tildeWrite("LSP request [%s] %s", method, json_object_to_json_string(params));
+  // note: the first request is written before the lean server is fully initialized!
+  assert(this->initialized != LeanServerInitializedKind::Uninitialized);
   const int id = this->next_request_id++;
+  tilde::tildeWrite("LSP request (id=%d), [%s] %s", id, method, json_object_to_json_string(params));
   json_object *o = json_object_new_object();
   json_object_object_add(o, "jsonrpc", json_object_new_string("2.0"));
   json_object_object_add(o, "id", json_object_new_int(id));
@@ -281,7 +284,7 @@ LspRequestId LeanServerState::write_request_to_child_blocking(const char * metho
 }
 
 void LeanServerState::write_notification_to_child_blocking(const char * method, json_object *params) {
-  assert(this->initialized == LeanServerInitializedKind::Initialized);
+  assert(this->initialized != LeanServerInitializedKind::Uninitialized);
   json_object *o = json_object_new_object();
   json_object_object_add(o, "jsonrpc", json_object_new_string("2.0"));
   json_object_object_add(o, "method", json_object_new_string(method));
@@ -332,7 +335,6 @@ json_object_ptr LeanServerState::_read_next_json_record_from_buffer_nonblocking(
 
   // drop the response from the buffer, now that we have correctly consumes the json request.
   child_stdout_buffer.dropNBytesMut(header_line_end_ix + content_length);
-
   return o;
 }
 
@@ -340,11 +342,13 @@ void LeanServerState::tick_nonblocking() {
     
   // TODO: convert to std::optional.
   json_object_ptr o_optional = _read_next_json_record_from_buffer_nonblocking();
-  if (o_optional == NULL) { return; }
+  if (!o_optional) { return; }
   json_object *response_ido = NULL;
   if (json_object_object_get_ex(o_optional, "id", &response_ido) && 
       json_object_get_type(response_ido) == json_type_int) {
       const int response_id = json_object_get_int(response_ido);
+      tilde::tildeWrite("LSP response to '%d': '%s'", response_id, 
+        json_object_to_json_string(o_optional));
       auto it = this->request2response.find(response_id);
       assert(it == this->request2response.end());
       this->request2response[response_id] = o_optional;
@@ -364,12 +368,10 @@ void LeanServerState::tick_nonblocking() {
 }
 
 std::optional<json_object_ptr> LeanServerState::read_json_response_from_child_nonblocking(LspRequestId request_id) {
-  this->tick_nonblocking();
   auto it = this->request2response.find(request_id);
   if (it == this->request2response.end()) {
     return {};
   }
-  assert(it->second != NULL);
   return std::optional(it->second);
 }
 
@@ -692,7 +694,7 @@ void fileConfigBackspace(FileConfig *f) {
 // The annoying thing is that this needs to be initialized
 void fileConfigLaunchLeanServer(FileConfig *file_config) {
   // TODO: find some neat way to maintain this state.
-  assert(file_config->lean_server_state.initialized == LeanServerInitializedKind::NotInitialized);
+  assert(file_config->lean_server_state.initialized == LeanServerInitializedKind::Uninitialized);
   file_config->lean_server_state.init(file_config->absolute_filepath); // start coro for lean --server.
 }
 
@@ -708,6 +710,8 @@ void fileConfigSyncLeanState(FileConfig *file_config) {
  
   // if server is not yet initialized, then don't sync state.
   if (file_config->lean_server_state.initialized != LeanServerInitializedKind::Initialized) { return; }
+
+  file_config->undirtyLeanSync(); 
 
   file_config->lsp_file_version += 1;
   // textDocument/didOpen
@@ -990,23 +994,30 @@ void fileConfigDraw(FileConfig *f) {
     {
 
       char *line_number_str = (char *)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
-      if (filerow <= f->progressbar.startRow || f->progressbar.finished) {
-        ab.appendstr(ESCAPE_CODE_GREEN "▌" ESCAPE_CODE_UNSET);
+      if (f->lean_server_state.initialized != LeanServerInitializedKind::Initialized) {
+          ab.appendstr(ESCAPE_CODE_GRAY "▌" ESCAPE_CODE_UNSET);
+      } else if (f->isLeanSyncDirty()) {
+          ab.appendstr(ESCAPE_CODE_WHITE "▌" ESCAPE_CODE_UNSET);
       } else {
-        ab.appendstr(ESCAPE_CODE_YELLOW "▌" ESCAPE_CODE_UNSET);
+        if (filerow < f->progressbar.startRow || f->progressbar.finished) {
+          ab.appendstr(ESCAPE_CODE_GREEN "▌" ESCAPE_CODE_UNSET);
+        } else {
+          ab.appendstr(ESCAPE_CODE_YELLOW "▌" ESCAPE_CODE_UNSET);
+        }
       }
-
       bool row_needs_unset = false;
       if (filerow == f->cursor.row) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); row_needs_unset = true; }
       // code in view mode is renderered gray
       else if (g_editor.vim_mode == VM_NORMAL) { ab.appendstr(ESCAPE_CODE_DULL); row_needs_unset = true; }
 
-      for(const LspDiagnostic &d : f->lspDiagnostics) {
-        if (d.range.start.row >= filerow && d.range.end.row <= filerow) {
-	  row_needs_unset = true;
-	  ab.appendstr(LspDiagnosticSeverityToColor(d.severity));
-	}
+      if (!f->isLeanSyncDirty()) { // only draw diagonstics if lean state is sync'd.
+        for(const LspDiagnostic &d : f->lspDiagnostics) {
+          if (d.range.start.row >= filerow && d.range.end.row <= filerow) {
+  	       row_needs_unset = true;
+  	       ab.appendstr(LspDiagnosticSeverityToColor(d.severity));
+  	    }
       }
+    }
 
       int ix = write_int_to_str(line_number_str, filerow + 1);
       while(ix < LINE_NUMBER_NUM_CHARS - 1) {
@@ -1190,51 +1201,60 @@ void editorDrawInfoViewTacticsTab(FileConfig *f) {
   } while(0);
 
   do {
-    json_object  *result = nullptr;
-    if (f->leanInfoViewPlainGoal.response) {
-      json_object_object_get_ex(f->leanInfoViewPlainTermGoal.response, "result", &result);
+    if (!f->leanInfoViewPlainTermGoal.response.has_value()) {
+      ab.appendstr("▶ Expected Type: [Loading] \x1b[K \r\n");      
     }
-    if (result == nullptr) {
-      ab.appendstr("▶ Expected Type: --- \x1b[K \r\n");
-    } else {
-      assert(json_object_get_type(result) == json_type_object);
-      json_object *result_goal = nullptr;
-      json_object_object_get_ex(result, "goal", &result_goal);
-      assert(result_goal != nullptr);
-      assert(json_object_get_type(result_goal) == json_type_string);
+    else if (f->leanInfoViewPlainTermGoal.response.has_value() && !f->leanInfoViewPlainTermGoal.response.value()) {
+      ab.appendstr("▶ Expected Type: [None available] \x1b[K \r\n");
+    } else if (f->leanInfoViewPlainTermGoal.response.has_value() && f->leanInfoViewPlainTermGoal.response.value()) {
+      assert (f->leanInfoViewPlainTermGoal.response.has_value());
+      assert (f->leanInfoViewPlainTermGoal.response.value());
+      json_object  *result = nullptr;
+      json_object_object_get_ex(f->leanInfoViewPlainTermGoal.response.value(), "result", &result);
+      if (!result) {
+        ab.appendstr("▼ Expected Type: Got none. \x1b[K \r\n");
+      } else {
+        assert(json_object_get_type(result) == json_type_object);
+        json_object *result_goal = nullptr;
+        json_object_object_get_ex(result, "goal", &result_goal);
+        assert(result_goal != nullptr);
+        assert(json_object_get_type(result_goal) == json_type_string);
 
-      ab.appendstr("▼ Expected Type: \x1b[K \r\n");
-      editorDrawInfoViewGoal(&ab, json_object_get_string(result_goal));
-
+        ab.appendstr("▼ Expected Type: \x1b[K \r\n");
+        editorDrawInfoViewGoal(&ab, json_object_get_string(result_goal));
+      }
     }
   } while(0); // end info view plain term goal.
 
   do {
-    json_object  *result = nullptr;
-    if (f->leanInfoViewPlainTermGoal.response) {
-      json_object_object_get_ex(f->leanInfoViewPlainGoal.response, "result", &result);
-    }
-    if (result == nullptr) {
-      ab.appendstr("▶ Tactic State: --- \x1b[K \r\n");
-    } else {
-      tilde::tildeWrite("%s result: %s", __PRETTY_FUNCTION__, json_object_to_json_string(result));
+    if (!f->leanInfoViewPlainGoal.response.has_value()) {
+      ab.appendstr("▶ Tactic State: [Loading] \x1b[K \r\n");
+    } 
+    else if (f->leanInfoViewPlainGoal.response.has_value() && !f->leanInfoViewPlainGoal.response.value()) {
+      ab.appendstr("▶ Tactic State: [None available] \x1b[K \r\n");
+    } else if (f->leanInfoViewPlainGoal.response.has_value() && f->leanInfoViewPlainGoal.response.value()) {
+      json_object  *result = nullptr;
+      json_object_object_get_ex(f->leanInfoViewPlainGoal.response.value(), "result", &result);
+      // tilde::tildeWrite("%s result: %s", __PRETTY_FUNCTION__, json_object_to_json_string(result));
       json_object *result_goals = nullptr;
       json_object_object_get_ex(result, "goals", &result_goals);
-      assert(result_goals != nullptr);
+      if (result_goals == nullptr) {
+        ab.appendstr("▼ Tactic State: No goals received. \x1b[K \r\n");
+      } else {
+        assert(json_object_get_type(result_goals) == json_type_array);
+        if (json_object_array_length(result_goals) == 0) {
+          ab.appendstr("▼ Tactic State: In tactic mode with no open tactic goal. \x1b[K \r\n");
+          break;
+        }
+        assert(json_object_array_length(result_goals) > 0); 
 
-      assert(json_object_get_type(result_goals) == json_type_array);
-      if (json_object_array_length(result_goals) == 0) {
-        ab.appendstr("▼ Tactic State: In tactic mode with no open tactic goal. \x1b[K \r\n");
-        break;
-      }
-      assert(json_object_array_length(result_goals) > 0); 
-
-      for(int i = 0; i < json_object_array_length(result_goals); ++i) {
-        ab.appendfmtstr(120, "## goal[%d]: \x1b[K \r\n", i);
-        json_object *result_goals_i = json_object_array_get_idx(result_goals, i);
-        assert(result_goals_i != nullptr);
-        assert(json_object_get_type(result_goals_i) == json_type_string);
-        editorDrawInfoViewGoal(&ab, json_object_get_string(result_goals_i));
+        for(int i = 0; i < json_object_array_length(result_goals); ++i) {
+          ab.appendfmtstr(120, "## goal[%d]: \x1b[K \r\n", i);
+          json_object *result_goals_i = json_object_array_get_idx(result_goals, i);
+          assert(result_goals_i != nullptr);
+          assert(json_object_get_type(result_goals_i) == json_type_string);
+          editorDrawInfoViewGoal(&ab, json_object_get_string(result_goals_i));
+        }
       }
     }
   } while(0); // end info view goal.
@@ -1291,13 +1311,13 @@ void editorDrawInfoViewHoverTab(FileConfig *f) {
   ab.appendstr("\r\n");  // always append a space
 
   do {
-    json_object  *result = nullptr;
-    if (f->leanHoverViewHover.response) {
-      json_object_object_get_ex(f->leanHoverViewHover.response, "result", &result);
-    }
-    if (result == nullptr) {
-      ab.appendstr("▶ Hover: --- \x1b[K \r\n");
-    } else {
+    if (!f->leanHoverViewHover.response.has_value()) {
+      ab.appendstr("▶ Hover: [LOADING] \x1b[K \r\n");
+    } else if (f->leanHoverViewHover.response.has_value() && !f->leanHoverViewHover.response.value()) {
+      ab.appendstr("▶ Hover: [None available] \x1b[K \r\n");
+    } else if (f->leanInfoViewPlainGoal.response.has_value() && f->leanInfoViewPlainGoal.response.value()) {
+      json_object  *result = nullptr;
+      json_object_object_get_ex(f->leanHoverViewHover.response.value(), "result", &result);
       json_object *result_contents = nullptr;
       json_object_object_get_ex(result, "contents", &result_contents);
       assert(result_contents != nullptr);
@@ -1781,36 +1801,34 @@ void editorTickPostKeypress() {
   FileConfig *f = g_editor.curFile();
   if (!f) { return; }
 
-  tilde::tildeWrite("editorTick() | nresps: %d | nunhandled: %d",
-    f->lean_server_state.request2response.size(),
-    f->lean_server_state.unhandled_server_requests.size());
+  // tilde::tildeWrite("editorTick() | nresps: %d | nunhandled: %d",
+  //   f->lean_server_state.request2response.size(),
+  //   f->lean_server_state.unhandled_server_requests.size());
 
   if (f->absolute_filepath.extension() != ".lean") { return; }
   assert(f->absolute_filepath.extension() == ".lean");
-  if (f->lean_server_state.initialized == LeanServerInitializedKind::NotInitialized) {
+  if (f->lean_server_state.initialized == LeanServerInitializedKind::Uninitialized) {
     fileConfigLaunchLeanServer(f);
   }
-  assert(f->lean_server_state.initialized);
-  fileConfigSyncLeanState(f);
-
-  if (g_editor.vim_mode != VM_INSERT) {
-    f->lean_server_state.tick_nonblocking();
-  }
+  assert(f->lean_server_state.initialized != LeanServerInitializedKind::Uninitialized);
   
+  f->lean_server_state.tick_nonblocking();
+  // TODO: we should know if the state became initialized.
   if (g_editor.vim_mode == VM_COMPLETION) {
     completionTickPostKeypress(f, &g_editor.completion);
   }
-  
+
+  whenFillLspNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainGoal);
+  whenFillLspNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainTermGoal);
+  whenFillLspNonblockingResponse(f->lean_server_state, f->leanHoverViewHover);  
 
   if (whenFillLspNonblockingResponse(f->lean_server_state, f->leanGotoRequest)) {
-    assert(f->leanGotoRequest.response != NULL);
-    editorHandleGotoResponse(f->leanGotoRequest.response);
+    assert(f->leanGotoRequest.response);
+    assert(*f->leanGotoRequest.response);
+    editorHandleGotoResponse(*f->leanGotoRequest.response);
     editorTickPostKeypress(); // process file again.
     return; 
   }
-  whenFillLspNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainGoal);
-  whenFillLspNonblockingResponse(f->lean_server_state, f->leanInfoViewPlainTermGoal);
-  whenFillLspNonblockingResponse(f->lean_server_state, f->leanHoverViewHover);
 
   // handle unhandled requests
   if (f->lean_server_state.unhandled_server_requests.size() == 0) {
@@ -1820,7 +1838,7 @@ void editorTickPostKeypress() {
   json_object_ptr req = f->lean_server_state.unhandled_server_requests.front();
   f->lean_server_state.unhandled_server_requests.erase(f->lean_server_state.unhandled_server_requests.begin());
 
-  tilde::tildeWrite("%s: unhandled request is: %s", __PRETTY_FUNCTION__, json_object_to_json_string(req));
+  // tilde::tildeWrite("%s: unhandled request is: %s", __PRETTY_FUNCTION__, json_object_to_json_string(req));
   
   json_object *methodo = NULL;
   json_object_object_get_ex(req, "method", &methodo);
@@ -1860,7 +1878,7 @@ void editorTickPostKeypress() {
       LspDiagnostic d = json_parse_lsp_diagnostic(di, version);
       f->lspDiagnostics.push_back(d);
     }
-    tilde::tildeWrite("  textDocument/publishDiagnostics #messages: '%d'", f->lspDiagnostics.size());
+    tilde::tildeWrite("  textDocument/publishDiagnostics (#messages='%d')", f->lspDiagnostics.size());
   } else if (strcmp(method, "$/lean/fileProgress") == 0) {
     json_object *paramso =  NULL;
     json_object_object_get_ex(req, "params", &paramso);
@@ -1933,10 +1951,10 @@ void completionHandleInput(CompletionView *view, int c) {
 void completionTickPostKeypress(FileConfig *f, CompletionView *view) {
   if(whenFillLspNonblockingResponse(f->lean_server_state, view->completionResponse)) {
     tilde::tildeWrite("response [textDocument/completion] %s", 
-      json_object_to_json_string(view->completionResponse.response));
+      json_object_to_json_string(*view->completionResponse.response));
 
     json_object  *oresult = nullptr;
-    json_object_object_get_ex(view->completionResponse.response, "result", &oresult);
+    json_object_object_get_ex(*view->completionResponse.response, "result", &oresult);
     assert(oresult);
     assert(json_object_get_type(oresult) == json_type_object);
 
@@ -2105,6 +2123,11 @@ void editorProcessKeypress() {
 
     assert(f != nullptr);
     switch (c) {
+    case CTRL_KEY('c'): { // resync state.
+      fileConfigSave(f);
+      fileConfigSyncLeanState(f);
+      return;
+     }
     case '9':
     case CTRL_KEY('9'): {
       compileView::compileViewOpen(&g_editor.compileView);
@@ -2624,7 +2647,7 @@ namespace tilde {
 
   void tildeWrite(const char *fmt, ...) {
     if (!g_tilde.logfile) {
-      g_tilde.logfile = fopen("/tmp/edtr-stderr", "w");
+      g_tilde.logfile = fopen("/tmp/elide-stderr", "w");
     }
     assert(g_tilde.logfile);
 
