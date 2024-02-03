@@ -2,6 +2,7 @@
 
 template<typename T>
 static int clamp(T lo, T val, T hi) {
+  assert(lo <= hi);
   return std::min<T>(std::max<T>(lo, val), hi);
 }
 
@@ -278,10 +279,15 @@ the function `box_l_flex_lr` expects a *fixed* start position, a *flexible* leng
 
 
 struct interval {
-  const int l = 0;
-  const int r = 0;
+  int l = 0;
+  int r = 0;
   interval(int p) : l(p), r(p) {}
   interval(int l, int r) : l(l), r(r) {};
+  interval & operator = (const interval &other) {
+    this->l = other.l;
+    this->r = other.r;
+    return *this;
+  }
 
   // clamp the right value to be at minimum m0.
   interval r_clampl(int m0) const {
@@ -330,8 +336,8 @@ struct interval {
   // set the length to be at least `lenM`, and achieve this by moving `l`.
   interval len_clampl_move_lr(int lenM) const {
     const int len_needed = std::max<int>(0, lenM - this->len());
-    const int deltal = len_needed / 2;
-    const int deltar = len_needed - deltal; 
+    const int deltal = std::max<int>(0, len_needed / 2);
+    const int deltar = std::max<int>(0, len_needed - deltal); 
     assert(deltal + deltar == len_needed);
     interval i = interval(l - deltal, r + deltar);
     assert(i.len() >= lenM);

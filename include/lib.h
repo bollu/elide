@@ -131,7 +131,14 @@ struct abuf {
 
   abuf &operator = (const abuf &other) {
     _len = other._len;
-    _buf = (char*)realloc(_buf, sizeof(char) * _len);
+
+    if (_len == 0) {
+      _buf = nullptr;
+      this->_is_dirty = other._is_dirty;
+      return *this;
+    }
+    free(_buf);
+    _buf = (char*)malloc(sizeof(char) * _len);
     if (_len > 0) {
       memcpy(_buf, other._buf, _len);
     }

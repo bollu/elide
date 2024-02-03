@@ -22,10 +22,11 @@ find_package(PkgConfig REQUIRED)
 
 # libedtr
 add_library(edtr src/lib/lib.cpp src/lean_lsp.cpp src/lib/uri_encode.cpp)
+find_package(ssh CONFIG)
 find_package(json-c CONFIG)
-target_include_directories(edtr PUBLIC json-c::json-c)
-target_include_directories(edtr PUBLIC include/)
-target_link_libraries(edtr PUBLIC json-c::json-c)
+target_include_directories(edtr PUBLIC json-c::json-c ssh)
+target_include_directories(edtr PUBLIC include/ ssh)
+target_link_libraries(edtr PUBLIC json-c::json-c ssh)
 install(TARGETS edtr DESTINATION lib)
 
 # edtr

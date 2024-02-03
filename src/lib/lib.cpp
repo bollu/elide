@@ -2537,19 +2537,22 @@ namespace compileView {
       const interval drawRect = 
         interval(IX)
         .len_clampl_move_lr(NDRAWROWS)
-        .clamp(0, view->log.size()-1);
+        .clamp(0, view->log.size());
 
       // assert(drawRect.l <= IX);
       // assert(IX <= drawRect.r);
       
       // TODO: draw per column.
-      for(int r = drawRect.l; r <= drawRect.r; ++r) {
+      for(int r = drawRect.l; r < drawRect.r; ++r) {
         ab.appendstr("\x1b[K \r\n");
         if (r == IX) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
         ab.appendstr("▶  ");
         if (r == IX) { ab.appendstr(ESCAPE_CODE_UNSET); }
-
-        abuf rowbuf = abuf::from_copy_str(view->log[r].c_str());
+        assert(r >= 0);
+        assert(r < view->log.size());
+        const char *s = view->log[r].c_str();
+        assert(s != NULL);
+        abuf rowbuf = abuf::from_copy_str(s);
         for(int c = 0; c < rowbuf.ncodepoints().size; ++c) {
           if (c % NDRAWCOLS == NDRAWCOLS - 1) {
             ab.appendstr("\x1b[K \r\n");
@@ -2598,49 +2601,59 @@ namespace tilde {
     } else if (c == 'g') {
       tilde->scrollback_ix = 0;
     } else if (c == 'G') {
-      tilde->scrollback_ix = tilde->log.size() - 1;
+      tilde->scrollback_ix = clamp0(tilde->log.size() - 1);
     }
   }
 
   void tildeDraw(TildeView *tilde) {
+    assert (tilde == &g_tilde);
     drawCallback([&](abuf &ab) {
       const int IX = tilde->scrollback_ix;
       assert(IX >= 0);
-      if (tilde->log.size() > 0) {
-        assert(IX < tilde->log.size());
-      }
-      ab.appendstr("~CONSOLE\x1b[K \r\n");
+      ab.appendfmtstr(100, "~CONSOLE (ix: %d) (#entries: %d) \x1b[K \r\n", IX, tilde->log.size());
 
-      static const int NDRAWCOLS = 118;
-      static const int NDRAWROWS = 12;
+      static const int NDRAWCOLS = 70;
+      static const int NDRAWROWS = 15;
 
-      const interval drawRect = 
-        interval(IX)
-        .len_clampl_move_lr(NDRAWROWS)
-        .clamp(0, tilde->log.size()-1);
 
-      // assert(drawRect.l <= IX);
-      // assert(IX <= drawRect.r);
-      
+      std::vector<abuf> lines;
+      int focus_line_ix = 0;
       // TODO: draw per column.
-      for(int r = drawRect.l; r <= drawRect.r; ++r) {
-        ab.appendstr("\x1b[K \r\n");
-        if (r == IX) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
-        ab.appendstr("▶  ");
-        if (r == IX) { ab.appendstr(ESCAPE_CODE_UNSET); }
+      for(int row = std::max<int>(0, IX - NDRAWROWS / 2); row < std::min<int>(tilde->log.size(), IX + NDRAWROWS); ++row) {
+        lines.push_back(abuf());
+        abuf &row_ab = lines[lines.size() - 1];
 
-        abuf rowbuf = abuf::from_copy_str(tilde->log[r].c_str());
-        for(int c = 0; c < rowbuf.ncodepoints().size; ++c) {
-          if (c % NDRAWCOLS == NDRAWCOLS - 1) {
-            ab.appendstr("\x1b[K \r\n");
-            if (r == IX) { ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
-            ab.appendstr("   ┃");
-            if (r == IX) { ab.appendstr(ESCAPE_CODE_UNSET); }
-          }
-          ab.appendCodepoint(rowbuf.getCodepoint(c));
+        if (row == IX) {
+          focus_line_ix = lines.size() - 1;
         }
-      }
+        if (row == IX) { row_ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
+        row_ab.appendstr("▶  ");
+        if (row == IX) { row_ab.appendstr(ESCAPE_CODE_UNSET); }
+        assert(row < tilde->log.size());
+        const abuf row_data_buf = abuf::from_copy_str(tilde->log[row].c_str());
+        for(int c = 0; c < row_data_buf.ncodepoints().size; ++c) {
+          if (c % NDRAWCOLS == NDRAWCOLS - 1) {
+            row_ab.appendstr("\x1b[K \r\n");
+            lines.push_back(abuf()); row_ab = lines[lines.size() - 1];
+            if (row == IX) { row_ab.appendstr(ESCAPE_CODE_CURSOR_SELECT); }
+            row_ab.appendstr("   ┃");
+            if (row == IX) { row_ab.appendstr(ESCAPE_CODE_UNSET); }            
+          }
+          if (row_data_buf.getCodepoint(c)[0] == '\n') {
+            break;
+            // row_ab.appendstr("\r\n"); break;
+            // lines.push_back(abuf()); row_ab = lines[lines.size() - 1];            
+          }
 
+          row_ab.appendCodepoint(row_data_buf.getCodepoint(c));
+
+        }
+        row_ab.appendstr("\r\n");
+      };
+    
+      for(int i = std::max<int>(0, focus_line_ix - NDRAWROWS / 2);  i < std::min<int>(lines.size() - 1, focus_line_ix + NDRAWROWS/2); ++i) {
+        ab.appendbuf(&lines[i]);
+      }
     });
   };
 
@@ -2665,13 +2678,13 @@ namespace tilde {
     fwrite(str.c_str(), 1, str.size(), g_tilde.logfile);
     fflush(g_tilde.logfile);
 
-
-
     // truncate log to `MAX_ENTRIES.
     const int MAX_ENTRIES = 100;
     const int nkeep = clampu<int>(MAX_ENTRIES, g_tilde.log.size());
-    g_tilde.log.erase(g_tilde.log.begin(), g_tilde.log.begin() + nkeep);
-    
+    if (nkeep < g_tilde.log.size()) {
+      g_tilde.log.erase(g_tilde.log.begin() +  nkeep, g_tilde.log.end());
+    }
+
     // scroll back upon writing.
     g_tilde.scrollback_ix = g_tilde.log.size() - 1;
 
