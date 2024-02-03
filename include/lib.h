@@ -725,6 +725,10 @@ struct Cursor {
   bool operator == (const Cursor &other) const {
     return row == other.row && col == other.col;
   }
+
+  bool operator != (const Cursor &other) const {
+    return !(*this == other);
+  }
 };
 
 
@@ -1050,6 +1054,7 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
   // diagonstics from LSP.
   std::vector<LspDiagnostic> lspDiagnostics;
 
+  Cursor leanInfoViewRequestedCursor; // the cursor at which the info view was requested.
   LspNonblockingResponse leanInfoViewPlainGoal;
   LspNonblockingResponse leanInfoViewPlainTermGoal;
   LspNonblockingResponse leanHoverViewHover;
@@ -1058,7 +1063,6 @@ struct FileConfig : public Undoer<FileConfigUndoState> {
   LspNonblockingResponse leanGotoRequest;
   // TODO: implement completion.
   LspNonblockingResponse leanCompletionViewCompletion;
-
 
 
   // file progress from LSP.

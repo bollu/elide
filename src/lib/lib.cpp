@@ -354,6 +354,7 @@ void LeanServerState::tick_nonblocking() {
       this->request2response[response_id] = o_optional;
       this->nresponses_read++;
   } else {
+      tilde::tildeWrite("LSP ServerRequest: '%s'", json_object_to_json_string(o_optional));
       this->unhandled_server_requests.push_back(o_optional);
   }
 
@@ -722,31 +723,40 @@ void fileConfigSyncLeanState(FileConfig *file_config) {
 void fileConfigRequestGoalState(FileConfig *file_config) {
   json_object *req = nullptr;
   LspRequestId  request_id;
+  // TODO: keep track of last hover position, and don't cancel request if cursor has not moved.
 
   // $/lean/plainGoal
 
   // TODO: need to convert col to 'bytes'
-  req = lspCreateLeanPlainGoalRequest(Uri(file_config->absolute_filepath),
-    cursorToLspPosition(file_config->cursor));
-  request_id = 
-    file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
-  file_config->leanInfoViewPlainGoal = LspNonblockingResponse(request_id);
+  if (file_config->leanInfoViewPlainGoal.request == -1 || file_config->leanInfoViewRequestedCursor != file_config->cursor) {
+    req = lspCreateLeanPlainGoalRequest(Uri(file_config->absolute_filepath),
+      cursorToLspPosition(file_config->cursor));
+    request_id = 
+      file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainGoal", req);
+    file_config->leanInfoViewPlainGoal = LspNonblockingResponse(request_id);
+  }
   // file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // $/lean/plainTermGoal
-  req = lspCreateLeanPlainTermGoalRequest(Uri(file_config->absolute_filepath),
-    cursorToLspPosition(file_config->cursor));
-  request_id = 
-    file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
-  file_config->leanInfoViewPlainTermGoal = LspNonblockingResponse(request_id);
+  if (file_config->leanInfoViewPlainTermGoal.request == -1 || file_config->leanInfoViewRequestedCursor != file_config->cursor) {
+    req = lspCreateLeanPlainTermGoalRequest(Uri(file_config->absolute_filepath),
+      cursorToLspPosition(file_config->cursor));
+    request_id = 
+      file_config->lean_server_state.write_request_to_child_blocking("$/lean/plainTermGoal", req);
+    file_config->leanInfoViewPlainTermGoal = LspNonblockingResponse(request_id);
+  }
   // file_config->leanInfoViewPlainTermGoal = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
   // textDocument/hover
 
-  req = lspCreateTextDocumentHoverRequest(Uri(file_config->absolute_filepath),
-    cursorToLspPosition(file_config->cursor));
-  request_id = file_config->lean_server_state.write_request_to_child_blocking("textDocument/hover", req);
-  file_config->leanHoverViewHover = LspNonblockingResponse(request_id);
+  if (file_config->leanInfoViewPlainTermGoal.request == -1 || file_config->leanInfoViewRequestedCursor != file_config->cursor) {
+    req = lspCreateTextDocumentHoverRequest(Uri(file_config->absolute_filepath),
+      cursorToLspPosition(file_config->cursor));
+    request_id = file_config->lean_server_state.write_request_to_child_blocking("textDocument/hover", req);
+    file_config->leanHoverViewHover = LspNonblockingResponse(request_id);
+  }
+
+  file_config->leanInfoViewRequestedCursor = file_config->cursor;
   // file_config->leanHoverViewHover = file_config->lean_server_state.read_json_response_from_child_blocking(request_id);
 
 }
@@ -1196,6 +1206,7 @@ void editorDrawInfoViewTacticsTab(FileConfig *f) {
         LspDiagnosticSeverityToColor(d.severity),
         LspDiagnosticSeverityToStr(d.severity));
       const int MAXCOLS = 120;
+      XXX create newlines wraparound.
       ab.appendfmtstr(120, "  %s \r\n", d.message.substr(0,MAXCOLS - 10).c_str());
     }
   } while(0);
@@ -1289,6 +1300,7 @@ void editorDrawInfoViewMessagesTab(FileConfig *f) {
       LspDiagnosticSeverityToColor(d.severity),
       LspDiagnosticSeverityToStr(d.severity), 
       d.range.start.row, d.range.start.col);
+    XXX create newlines wraparound.
     std::string message_sub = d.message.substr(0, MAXCOLS - 10);
     ab.appendstr(message_sub.c_str());
     ab.appendstr("\r\n");
@@ -1315,35 +1327,38 @@ void editorDrawInfoViewHoverTab(FileConfig *f) {
       ab.appendstr("▶ Hover: [LOADING] \x1b[K \r\n");
     } else if (f->leanHoverViewHover.response.has_value() && !f->leanHoverViewHover.response.value()) {
       ab.appendstr("▶ Hover: [None available] \x1b[K \r\n");
-    } else if (f->leanInfoViewPlainGoal.response.has_value() && f->leanInfoViewPlainGoal.response.value()) {
+    } else if (f->leanHoverViewHover.response.has_value() && f->leanHoverViewHover.response.value()) {
       json_object  *result = nullptr;
       json_object_object_get_ex(f->leanHoverViewHover.response.value(), "result", &result);
       json_object *result_contents = nullptr;
+
       json_object_object_get_ex(result, "contents", &result_contents);
-      assert(result_contents != nullptr);
+      if (result_contents == nullptr) {
+        ab.appendstr("▼ Hover: No information available. \x1b[K \r\n");
+      } else {
+        json_object *result_contents_value = nullptr;
+        json_object_object_get_ex(result_contents, "value", &result_contents_value);
+        assert (result_contents_value != nullptr);
+        assert(json_object_get_type(result_contents_value) == json_type_string);
+        const char *s = json_object_get_string(result_contents_value); 
+        ab.appendstr("▼ Hover: \x1b[K \r\n");
+        std::vector<std::string> lines; lines.push_back(std::string());
+        for(int i = 0; i < strlen(s); ++i) {
+          std::string &line = lines[lines.size() - 1];
+          if (s[i] == '\n') {
+            lines.push_back(std::string());
+          } else if (line.size() > 100) {
+            line += "–"; // line break
+            lines.push_back(std::string());
+          } else {
+            line += s[i];
+          }
+        } // end while.
 
-      json_object *result_contents_value = nullptr;
-      json_object_object_get_ex(result_contents, "value", &result_contents_value);
-      assert (result_contents_value != nullptr);
-      assert(json_object_get_type(result_contents_value) == json_type_string);
-      const char *s = json_object_get_string(result_contents_value); 
-      ab.appendstr("▼ Hover: \x1b[K \r\n");
-      std::vector<std::string> lines; lines.push_back(std::string());
-      for(int i = 0; i < strlen(s); ++i) {
-        std::string &line = lines[lines.size() - 1];
-        if (s[i] == '\n') {
-          lines.push_back(std::string());
-        } else if (line.size() > 100) {
-          line += "–"; // line break
-          lines.push_back(std::string());
-        } else {
-          line += s[i];
+        for(std::string &line : lines) {
+          ab.appendstr(line.c_str());
+          ab.appendstr("\x1b[K \r\n");
         }
-      } // end while.
-
-      for(std::string &line : lines) {
-        ab.appendstr(line.c_str());
-        ab.appendstr("\x1b[K \r\n");
       }
     } // end else 'result != nullptr.
   } while(0);

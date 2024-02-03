@@ -26,7 +26,7 @@ find_package(ssh CONFIG)
 find_package(json-c CONFIG)
 target_include_directories(edtr PUBLIC json-c::json-c ssh)
 target_include_directories(edtr PUBLIC include/ ssh)
-target_link_libraries(edtr PUBLIC json-c::json-c ssh)
+target_link_libraries(edtr PUBLIC json-c::json-c) # ssh)
 install(TARGETS edtr DESTINATION lib)
 
 # edtr
