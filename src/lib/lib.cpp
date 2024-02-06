@@ -322,7 +322,7 @@ json_object_ptr LeanServerState::_read_next_json_record_from_buffer_nonblocking(
 
   // we don't have enough data in the buffer to read the content length
   const int header_line_end_ix = header_line_begin_ix + strlen(DOUBLE_NEWLINE_STR);
-  if (child_stdout_buffer.len() <= header_line_end_ix + content_length) {
+  if (child_stdout_buffer.len() < header_line_end_ix + content_length) {
     return NULL;
   }
 
