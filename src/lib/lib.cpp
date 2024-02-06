@@ -326,6 +326,8 @@ json_object_ptr LeanServerState::_read_next_json_record_from_buffer_nonblocking(
     return NULL;
   }
 
+  tilde::tildeWrite(std::string("got raw LSP response: '") + std::string(child_stdout_buffer.buf() + header_line_end_ix, content_length) + "'");
+
   // parse.
   json_tokener *tok = json_tokener_new(); // TODO: do not create/destroy this object each time.
   json_object *o = json_tokener_parse_ex(tok,
@@ -1206,7 +1208,7 @@ void editorDrawInfoViewTacticsTab(FileConfig *f) {
         LspDiagnosticSeverityToColor(d.severity),
         LspDiagnosticSeverityToStr(d.severity));
       const int MAXCOLS = 120;
-      XXX create newlines wraparound.
+      // XXX create newlines wraparound.
       ab.appendfmtstr(120, "  %s \r\n", d.message.substr(0,MAXCOLS - 10).c_str());
     }
   } while(0);
@@ -1300,7 +1302,7 @@ void editorDrawInfoViewMessagesTab(FileConfig *f) {
       LspDiagnosticSeverityToColor(d.severity),
       LspDiagnosticSeverityToStr(d.severity), 
       d.range.start.row, d.range.start.col);
-    XXX create newlines wraparound.
+    // XXX create newlines wraparound.
     std::string message_sub = d.message.substr(0, MAXCOLS - 10);
     ab.appendstr(message_sub.c_str());
     ab.appendstr("\r\n");
