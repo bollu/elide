@@ -359,6 +359,7 @@ struct abuf {
   // drop a prefix of the buffer. If `drop_len = 0`, then this operation is a
   // no-op.
   void dropNBytesMut(int drop_len) {
+    assert(drop_len >= 0);
     char *bnew = (char *)malloc(sizeof(char) * (_len - drop_len));
     memcpy(bnew, this->_buf + drop_len, this->_len - drop_len);
     free(this->_buf);
