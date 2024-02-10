@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.22)
 set(CMAKE_CXX_STANDARD 17) 
 
 
@@ -49,8 +49,9 @@ add_library(imgui
   src/third_party/imgui/backends/imgui_impl_sdl2.cpp
   src/third_party/imgui/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui PUBLIC src/third_party src/third_party/imgui/)
-target_link_libraries(imgui PUBLIC $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main> $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
 target_link_libraries(imgui PUBLIC OpenGL::GL)
+# target_link_libraries(imgui PUBLIC SDL2::SDL2)
+target_link_libraries(imgui PUBLIC $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main> $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
 
 target_include_directories(elidecore PUBLIC json-c::json-c ssh)
 target_include_directories(elidecore PUBLIC include/)
@@ -63,8 +64,17 @@ install(TARGETS elidecore DESTINATION lib)
 # elide
 add_executable(elide src/main.cpp)
 target_link_libraries(elide PRIVATE elidecore)
-install(TARGETS elide DESTINATION bin)
 
+if (WIN32)
+    add_custom_command(
+        TARGET elide POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:SDL2::SDL2>" "$<TARGET_FILE_DIR:elide>"
+        VERBATIM
+    )
+endif()
+
+install(TARGETS elide DESTINATION bin)
+install(FILES  "$<TARGET_RUNTIME_DLLS:elide>" DESTINATION bin)
 install(FILES src/abbreviations.json DESTINATION bin)
 file(COPY src/abbreviations.json DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
