@@ -346,11 +346,9 @@ void LeanServerState::tick_nonblocking() {
   json_object_ptr o_optional = _read_next_json_record_from_buffer_nonblocking();
   if (!o_optional) { return; }
   json_object *response_ido = NULL;
-  if (json_object_object_get_ex(o_optional, "id", &response_ido) && 
-      json_object_get_type(response_ido) == json_type_int) {
+  if (json_object_object_get_ex(o_optional, "id", &response_ido) && json_object_get_type(response_ido) == json_type_int) {
       const int response_id = json_object_get_int(response_ido);
-      tilde::tildeWrite("LSP response to '%d': '%s'", response_id, 
-        json_object_to_json_string(o_optional));
+      tilde::tildeWrite("LSP response to '%d': '%s'", response_id, json_object_to_json_string(o_optional));
       auto it = this->request2response.find(response_id);
       assert(it == this->request2response.end());
       this->request2response[response_id] = o_optional;

@@ -20,19 +20,29 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always -O2")
 # https://stackoverflow.com/a/29316084/5305365 
 find_package(PkgConfig REQUIRED)
 
-# libedtr
-add_library(edtr src/lib/lib.cpp src/lean_lsp.cpp src/lib/uri_encode.cpp)
+# libelide
+add_library(elide
+  src/lean_lsp.cpp
+  # src/lib/datastructures
+  src/lib/datastructures/abuf.cpp
+  # src/lib/views
+  src/lib/views/ctrlp.cpp
+  # src/lib/
+  src/lib/lib.cpp
+  src/lib/uri_encode.cpp)
 find_package(ssh CONFIG)
 find_package(json-c CONFIG)
-target_include_directories(edtr PUBLIC json-c::json-c ssh)
-target_include_directories(edtr PUBLIC include/ ssh)
-target_link_libraries(edtr PUBLIC json-c::json-c) # ssh)
-install(TARGETS edtr DESTINATION lib)
+target_include_directories(elide PUBLIC json-c::json-c ssh)
+target_include_directories(elide PUBLIC include/ ssh)
+target_link_libraries(elide PUBLIC json-c::json-c) # ssh)
+install(TARGETS elide DESTINATION lib)
 
-# edtr
-add_executable(elide src/main.cpp)
-target_link_libraries(elide PRIVATE edtr)
-install(TARGETS elide DESTINATION bin)
+# elide
+add_executable(elide-bin src/main.cpp)
+target_link_libraries(elide-bin PRIVATE elide)
+install(TARGETS elide-bin DESTINATION bin)
+set_target_properties(elide-bin PROPERTIES OUTPUT_NAME elide) # rename target to elide.
+
 install(FILES src/abbreviations.json DESTINATION bin)
 file(COPY src/abbreviations.json DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 

@@ -26,6 +26,7 @@ This is my Christmas 2023 effort to fill this unfilled niche in the market.
 - No syntax highlighting.
 - Sits in at ~4000 LoC of C/C++.
 
+
 #### Building
 
 ```cpp
@@ -42,6 +43,15 @@ $ mkdir build && cd build && cmake ../ && make -j4
 
 
 #### Developer Diary
+
+#### Porting to Dear ImGUI
+
+- Dracula theme: https://github.com/ocornut/imgui/issues/707#issuecomment-1372640066
+
+#### The I in UI is for Intent
+
+- https://acko.net/blog/i-is-for-intent/
+- amazing blog post 
 
 ##### Representing Cursor Positions
 
