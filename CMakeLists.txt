@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
+set(CMAKE_CXX_STANDARD 17) 
+
 
 project(elide C CXX)
 
@@ -18,13 +20,14 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always -O2")
 
 # https://github.com/facebook/folly/blob/main/CMake/FindLibUring.cmake
 # https://stackoverflow.com/a/29316084/5305365 
-find_package(PkgConfig REQUIRED)
+# find_package(PkgConfig REQUIRED)
 
 # libelide
 add_library(elide
   src/lean_lsp.cpp
   # src/lib/datastructures
   src/lib/datastructures/abuf.cpp
+  src/lib/datastructures/process.cpp
   # src/lib/views
   src/lib/views/ctrlp.cpp
   # src/lib/
@@ -46,6 +49,8 @@ add_library(imgui
   src/third_party/imgui/backends/imgui_impl_sdl2.cpp
   src/third_party/imgui/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui PUBLIC src/third_party src/third_party/imgui/)
+# $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+# $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
 target_link_libraries(imgui PUBLIC SDL2::SDL2 OpenGL::GL)
 
 target_include_directories(elide PUBLIC json-c::json-c ssh)

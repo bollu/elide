@@ -29,8 +29,31 @@ This is my Christmas 2023 effort to fill this unfilled niche in the market.
 
 #### Building
 
+Dependencies:
+- json-c
+- SDL2
+- Dear Imgui (bundled)
+
+
+##### Linux
+
+For grabbing `SDL2` and `json-c`, either use your package manager, or use
+`vcpkg` as instructed below:
+
 ```cpp
+$ vcpkg install json-c
+$ vcpkg install sdl2
 $ mkdir build && cd build && cmake ../ && make -j4
+```
+
+##### Windows (Command line)
+
+```
+$ vcpkg integrate install
+$ vcpkg install json-c
+$ vcpkg install sdl2
+$ mkdir build && cd build && cmake  -DCMAKE_TOOLCHAIN_FILE=<path/to/vcpkg/cmake/toolchain> ../ && make -j4
+# example toolchain path: -DCMAKE_TOOLCHAIN_FILE=C:/Users/bollu/software/vcpkg/scripts/buildsystems/vcpkg.cmake
 ```
 
 #### References
