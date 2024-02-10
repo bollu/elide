@@ -30,15 +30,28 @@ add_library(elide
   # src/lib/
   src/lib/lib.cpp
   src/lib/uri_encode.cpp
-  # third_party/imgui/
-  src/third_party/imgui/imgui.cpp
   )
-find_package(ssh CONFIG)
-find_package(json-c CONFIG)
-find_package(SDL2 CONFIG)
+
+# find_package(ssh CONFIG)
+find_package(json-c REQUIRED)
+find_package(SDL2 REQUIRED)
+find_package(OpenGL REQUIRED)
+
+add_library(imgui
+  src/third_party/imgui/imgui.cpp
+  src/third_party/imgui/imgui_draw.cpp
+  src/third_party/imgui/imgui_tables.cpp
+  src/third_party/imgui/imgui_widgets.cpp
+  src/third_party/imgui/imgui_demo.cpp # TODO: do I need this?
+  src/third_party/imgui/backends/imgui_impl_sdl2.cpp
+  src/third_party/imgui/backends/imgui_impl_opengl3.cpp)
+target_include_directories(imgui PUBLIC src/third_party src/third_party/imgui/)
+target_link_libraries(imgui PUBLIC SDL2::SDL2 OpenGL::GL)
+
 target_include_directories(elide PUBLIC json-c::json-c ssh)
-target_include_directories(elide PUBLIC include/ ssh)
-target_link_libraries(elide PUBLIC json-c::json-c SDL2::SDL2) # ssh)
+target_include_directories(elide PUBLIC include/)
+target_include_directories(elide PUBLIC src/third_party src/third_party/imgui/)
+target_link_libraries(elide PUBLIC json-c::json-c imgui)
 install(TARGETS elide DESTINATION lib)
 
 # elide
