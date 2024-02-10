@@ -123,15 +123,24 @@ void appendColWithCursor(abuf* dst, const abuf* row,
 // we search the directory tree of 'file_path'. If we find a `lakefile.lean`, then we call `lake --serve`
 // at that cwd. Otherwise, we call `lean --server` at the file working directory.
 // NOTE: the pointer `lakefile_dirpath` is consumed.
-void _exec_lean_server_on_child(std::optional<fs::path> lakefile_dirpath)
+void _exec_lean_server_on_child(std::optional<fs::path> lakefile_dirpath,
+    subprocess_s *subprocess)
 {
     int process_error = 0;
+    const int subprocess_options = 
+        subprocess_option_inherit_environment |
+        subprocess_option_enable_async |
+        subprocess_option_no_window | 
+        subprocess_option_search_user_path |
+        subprocess_option_enable_nonblocking;
+
     // no lakefile.
+    int failure = 1;
     if (!lakefile_dirpath) {
         fprintf(stderr, "starting 'lean --server'...\n");
         const char* process_name = "lean";
         char* const argv[] = { strdup(process_name), strdup("--server"), NULL };
-        process_error = execvp(process_name, argv);
+        failure = subprocess_create(argv, subprocess_options, subprocess);
     } else {
         std::error_code ec;
         fs::current_path(*lakefile_dirpath, ec);
@@ -140,11 +149,12 @@ void _exec_lean_server_on_child(std::optional<fs::path> lakefile_dirpath)
         };
         const char* process_name = "lake";
         char* const argv[] = { strdup(process_name), strdup("serve"), NULL };
-        process_error = execvp(process_name, argv);
+        failure = subprocess_create(argv, subprocess_options, subprocess);
+
     }
 
-    if (process_error == -1) {
-        perror("failed to launch lean server");
+    if (failure) {
+        tilde::tildeWrite("failed to launch lean server");
         abort();
     }
 }
@@ -181,10 +191,10 @@ void LeanServerState::init(std::optional<fs::path> absolute_filepath)
 {
     assert(this->initialized == LeanServerInitializedKind::Uninitialized);
     this->initialized = LeanServerInitializedKind::Initializing;
-
-    CHECK_POSIX_CALL_0(pipe(this->parent_buffer_to_child_stdin));
-    CHECK_POSIX_CALL_0(pipe2(this->child_stdout_to_parent_buffer, O_NONBLOCK));
-    CHECK_POSIX_CALL_0(pipe(this->child_stderr_to_parent_buffer));
+    
+    // CHECK_POSIX_CALL_0(pipe(this->parent_buffer_to_child_stdin));
+    // CHECK_POSIX_CALL_0(pipe2(this->child_stdout_to_parent_buffer, O_NONBLOCK));
+    // CHECK_POSIX_CALL_0(pipe(this->child_stderr_to_parent_buffer));
 
     if (absolute_filepath) {
         assert(absolute_filepath->is_absolute());
@@ -201,39 +211,7 @@ void LeanServerState::init(std::optional<fs::path> absolute_filepath)
             assert(this->lakefile_dirpath->is_absolute());
         }
     }
-
-    pid_t childpid = fork();
-    if (childpid == -1) {
-        perror("ERROR: fork failed.");
-        exit(1);
-    };
-
-    if (childpid == 0) {
-        // child->parent, child will only write to this pipe, so close read end.
-        close(this->child_stdout_to_parent_buffer[PIPE_READ_IX]);
-        // child->parent, child will only write to this pipe, so close read end.
-        close(this->child_stderr_to_parent_buffer[PIPE_READ_IX]);
-
-        // parent->child, child will only read from this end, so close write end.
-        close(this->parent_buffer_to_child_stdin[PIPE_WRITE_IX]);
-
-        // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDOUT`
-        dup2(this->child_stderr_to_parent_buffer[PIPE_WRITE_IX], STDERR_FILENO);
-        // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDOUT`
-        dup2(this->child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
-        // it is only legal to call `read()` on stdin. So we tie the `PIPE_READ_IX` to `STDIN`
-        dup2(this->parent_buffer_to_child_stdin[PIPE_READ_IX], STDIN_FILENO);
-        // execute lakefile.
-        _exec_lean_server_on_child(this->lakefile_dirpath);
-    } else {
-        // parent will only write into this pipe, so close the read end.
-        close(this->parent_buffer_to_child_stdin[PIPE_READ_IX]);
-        // parent will only read from this pipe so close the wite end.
-        close(this->child_stdout_to_parent_buffer[PIPE_WRITE_IX]);
-        // parent will only read from this pipe so close the wite end.
-        close(this->child_stderr_to_parent_buffer[PIPE_WRITE_IX]);
-    }
-
+    _exec_lean_server_on_child(this->lakefile_dirpath, &this->process);
     json_object* req = lspCreateInitializeRequest();
     this->initialize_request_id = write_request_to_child_blocking("initialize", req);
 };
@@ -245,7 +223,7 @@ struct LspResponse {
 
 int LeanServerState::_write_str_to_child(const char* buf, int len) const
 {
-    int nwritten = write(this->parent_buffer_to_child_stdin[PIPE_WRITE_IX], buf, len);
+    int nwritten = write(fileno(subprocess_stdin(&this->process)), buf, len);
     return nwritten;
 };
 
@@ -253,7 +231,8 @@ int LeanServerState::_read_stdout_str_from_child_nonblocking()
 {
     const int BUFSIZE = 4096;
     char buf[BUFSIZE];
-    int nread = read(this->child_stdout_to_parent_buffer[PIPE_READ_IX], buf, BUFSIZE);
+    int nread = subprocess_read_stdout(&this->process, buf, BUFSIZE);
+    // int nread = read(this->child_stdout_to_parent_buffer[PIPE_READ_IX], buf, BUFSIZE);
     if (nread == -1) {
 
         if (errno == EAGAIN) {
@@ -264,15 +243,6 @@ int LeanServerState::_read_stdout_str_from_child_nonblocking()
     }
     this->child_stdout_buffer.appendbuf(buf, nread);
 
-    return nread;
-};
-
-int LeanServerState::_read_stderr_str_from_child_blocking()
-{
-    const int BUFSIZE = 4096;
-    char buf[BUFSIZE];
-    int nread = read(this->child_stderr_to_parent_buffer[PIPE_READ_IX], buf, BUFSIZE);
-    this->child_stderr_buffer.appendbuf(buf, nread);
     return nread;
 };
 

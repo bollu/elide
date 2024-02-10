@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
+#include "subprocess.h"
 
 namespace fs = std::filesystem;
 
@@ -156,17 +157,18 @@ struct LeanServerState {
     LspRequestId initialize_request_id;
     // path to the lakefile associated to this lean server, if it uses one.
     std::optional<fs::path> lakefile_dirpath;
-    int parent_buffer_to_child_stdin[2]; // pipe.
-    int child_stdout_to_parent_buffer[2]; // pipe.
-    int child_stderr_to_parent_buffer[2]; // pipe.
+    // int parent_buffer_to_child_stdin[2]; // pipe.
+    // int child_stdout_to_parent_buffer[2]; // pipe.
+    // int child_stderr_to_parent_buffer[2]; // pipe.
     abuf child_stdout_buffer; // buffer to store child stdout data that has not
                               // been slurped yet.
-    abuf child_stderr_buffer; // buffer to store child stderr data that has not
-                              // been slurped yet.
-    FILE* child_stdin_log_file; // file handle of stdout logging
-    FILE* child_stdout_log_file; // file handle of stdout logging
-    FILE* child_stderr_log_file; // file handle of stderr logging
-    pid_t childpid;
+    // abuf child_stderr_buffer; // buffer to store child stderr data that has not
+    //                           // been slurped yet.
+    // FILE* child_stdin_log_file; // file handle of stdout logging
+    // FILE* child_stdout_log_file; // file handle of stdout logging
+    // FILE* child_stderr_log_file; // file handle of stderr logging
+    // pid_t childpid;
+    subprocess_s process;
     int next_request_id = 0; // ID that will be assigned to the next request.
     // number of responses that have been read.
     // invariant: nresponses_read < next_request_id. Otherwise we will deadlock.
@@ -184,7 +186,7 @@ struct LeanServerState {
     // low-level API: read from stdout and write into buffer
     // 'child_stdout_buffer'.
     int _read_stdout_str_from_child_nonblocking();
-    int _read_stderr_str_from_child_blocking();
+    // int _read_stderr_str_from_child_blocking();
     // tries to read the next JSON record from the buffer, in a nonblocking fashion.
     // If insufficied data is in the buffer, then return NULL.
     json_object_ptr _read_next_json_record_from_buffer_nonblocking();

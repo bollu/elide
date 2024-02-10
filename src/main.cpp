@@ -1,3 +1,4 @@
+/*
 // Dear ImGui: standalone example application for SDL2 + OpenGL
 // (SDL is a cross-platform general purpose library for handling windows, inputs, OpenGL/Vulkan/Metal graphics context creation, etc.)
 
@@ -203,7 +204,7 @@ int main(int, char**)
 
     return 0;
 }
-/*
+*/
 #include "lib.h"
 #include <assert.h>
 #include <ctype.h>
@@ -273,4 +274,3 @@ int main(int argc, char **argv){
   disableRawMode();
   return 0;
 }
-*/

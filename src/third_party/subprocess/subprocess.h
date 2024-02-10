@@ -89,7 +89,10 @@ enum subprocess_option_e {
   // Search for program names in the PATH variable. Always enabled on Windows.
   // Note: this will **not** search for paths in any provided custom environment
   // and instead uses the PATH of the spawning process.
-  subprocess_option_search_user_path = 0x10
+  subprocess_option_search_user_path = 0x10,
+
+  // Enable nonblocking I/O of stdout, to allow reading of stdout in nonblocking fashion. 
+  subprocess_option_enable_nonblocking = 0x20,
 };
 
 #if defined(__cplusplus)
@@ -787,8 +790,14 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     return -1;
   }
 
-  if (0 != pipe(stdoutfd)) {
-    return -1;
+  if (options & subprocess_option_enable_nonblocking) {
+    if (0 != pipe2(stdoutfd, O_NONBLOCK)) {
+      return -1;
+    }
+  } else {
+    if (0 != pipe(stdoutfd)) {
+      return -1;
+    }
   }
 
   if (subprocess_option_combined_stdout_stderr !=

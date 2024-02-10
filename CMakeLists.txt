@@ -23,7 +23,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always -O2")
 # find_package(PkgConfig REQUIRED)
 
 # libelide
-add_library(elide
+add_library(elidecore
   src/lean_lsp.cpp
   # src/lib/datastructures
   src/lib/datastructures/abuf.cpp
@@ -49,21 +49,21 @@ add_library(imgui
   src/third_party/imgui/backends/imgui_impl_sdl2.cpp
   src/third_party/imgui/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui PUBLIC src/third_party src/third_party/imgui/)
-# $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-# $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-target_link_libraries(imgui PUBLIC SDL2::SDL2 OpenGL::GL)
+target_link_libraries(imgui PUBLIC $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main> $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
+target_link_libraries(imgui PUBLIC OpenGL::GL)
 
-target_include_directories(elide PUBLIC json-c::json-c ssh)
-target_include_directories(elide PUBLIC include/)
-target_include_directories(elide PUBLIC src/third_party src/third_party/imgui/)
-target_link_libraries(elide PUBLIC json-c::json-c imgui)
-install(TARGETS elide DESTINATION lib)
+target_include_directories(elidecore PUBLIC json-c::json-c ssh)
+target_include_directories(elidecore PUBLIC include/)
+target_include_directories(elidecore PUBLIC src/third_party)
+target_include_directories(elidecore PUBLIC src/third_party/imgui/)
+target_include_directories(elidecore PUBLIC src/third_party/subprocess)
+target_link_libraries(elidecore PUBLIC json-c::json-c imgui)
+install(TARGETS elidecore DESTINATION lib)
 
 # elide
-add_executable(elide-bin src/main.cpp)
-target_link_libraries(elide-bin PRIVATE elide)
-install(TARGETS elide-bin DESTINATION bin)
-set_target_properties(elide-bin PROPERTIES OUTPUT_NAME elide) # rename target to elide.
+add_executable(elide src/main.cpp)
+target_link_libraries(elide PRIVATE elidecore)
+install(TARGETS elide DESTINATION bin)
 
 install(FILES src/abbreviations.json DESTINATION bin)
 file(COPY src/abbreviations.json DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
