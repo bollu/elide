@@ -1,5 +1,6 @@
 #include "lean_lsp.h"
 #include "lib.h"
+#include "views/tilde.h"
 #include <stdlib.h>
 #include <string.h>
 

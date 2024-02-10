@@ -239,6 +239,7 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h>
 #endif
 
 #if defined(_WIN32)

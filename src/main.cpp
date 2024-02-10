@@ -220,6 +220,7 @@ int main(int, char**)
 #include <sys/ttydefaults.h>
 #include <termios.h>
 #include <unistd.h>
+#include "datastructures/editorconfig.h"
 
 int main(int argc, char **argv){
   // make stdin non blocking.

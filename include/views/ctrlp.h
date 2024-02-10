@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <optional>
 #include <vector>
+#include "subprocess/subprocess.h"
+#include "datastructures/filelocation.h"
 
 namespace fs = std::filesystem;
 
@@ -15,10 +17,7 @@ struct RgProcess {
     bool running = false;
     // stdout buffer of the child that is stored here before being processed.
     abuf child_stdout_buffer;
-    int child_stdout_to_parent_buffer[2]; // pipe.
-
-    // PID of the child process that is running.
-    pid_t childpid;
+    subprocess_s process;
     // lines streamed from `rg` stdout.
     std::vector<abuf> lines;
     int selectedLine; // currently selected line. Bounds are `[0, lines.size())`

@@ -1,0 +1,10 @@
+enum KeyEvent {
+    KEYEVENT_PAGE_UP = 1000, // start fom sth that is disjoint from ASCII.
+    KEYEVENT_PAGE_DOWN,
+    KEYEVENT_ARROW_LEFT,
+    KEYEVENT_ARROW_RIGHT,
+    KEYEVENT_ARROW_UP,
+    KEYEVENT_ARROW_DOWN,
+    KEYEVENT_BACKSPACE
+
+};
