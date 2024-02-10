@@ -14,10 +14,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/ttydefaults.h>
-#include <termios.h>
-#include <unistd.h>
 #include <unordered_map>
 #include <vector>
 
@@ -100,7 +96,8 @@ struct Uri {
     void init_from_file_path(fs::path file_path)
     {
         const std::string file_segment_uri = "file://";
-        const std::string file_uri_unencoded = file_segment_uri + std::string(file_path);
+      const std::string file_uri_unencoded =
+          file_segment_uri + file_path.string();
 
         std::string out;
         out.resize(file_uri_unencoded.size() * 4 + 1);

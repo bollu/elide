@@ -300,7 +300,7 @@ void ctrlpTickPostKeypress(CtrlPView* view)
         view->rgProcess = RgProcess();
         // invoke the new rg process.
         CtrlPView::RgArgs args = CtrlPView::parseUserCommand(view->textArea.text);
-        view->rgProcess.execpAsync(view->absolute_cwd.c_str(),
+        view->rgProcess.execpAsync(view->absolute_cwd.string(),
             CtrlPView::rgArgsToCommandLineArgs(args));
     }
     // we need a function that is called each time x(.
@@ -321,7 +321,7 @@ void ctrlpDraw(CtrlPView* view)
             view->rgProcess.running ? "running" : "completed",
             view->rgProcess.lines.size());
 
-        const std::string cwd = std::string(view->absolute_cwd);
+        const std::string cwd = view->absolute_cwd.string();
         ab.appendfmtstr(120, "searching: '%s'\x1b[k\r\n", cwd.c_str());
 
         const int NELLIPSIS = 2; // ellipsis width;
@@ -402,7 +402,9 @@ void ctrlpDraw(CtrlPView* view)
             ab.appendstr("\x1b[K \r\n");
         } // end loop for drawing rg.
     }
+#ifndef WIN32
     CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+#endif
 }
 
 /*
@@ -426,7 +428,7 @@ bool RgProcess::isRunningNonBlocking() {
 */
 
 // (re)start the process, and run it asynchronously.
-void RgProcess::execpAsync(const char* working_dir, std::vector<std::string> args)
+void RgProcess::execpAsync(std::string working_dir, std::vector<std::string> args)
 {
     this->lines = {};
     this->selectedLine = -1;

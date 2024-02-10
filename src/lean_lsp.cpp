@@ -3,6 +3,8 @@
 #include "views/tilde.h"
 #include <stdlib.h>
 #include <string.h>
+#include "subprocess.h"
+
 
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#lifeCycleMessages
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
@@ -10,7 +12,7 @@ json_object* lspCreateInitializeRequest()
 {
     // processId
     json_object* o = json_object_new_object();
-    json_object_object_add(o, "processId", json_object_new_int(getpid()));
+    json_object_object_add(o, "processId", json_object_new_int(subprocess_getpid()));
 
     const int CWD_BUF_SIZE = 4096;
     char CWD[CWD_BUF_SIZE];
@@ -33,7 +35,7 @@ json_object* lspCreateInitializeRequest()
 void TextDocumentItem::init_from_file_path(fs::path file_path)
 {
     FILE* fp = NULL;
-    if ((fp = fopen(file_path.c_str(), "r")) == NULL) {
+    if ((fp = fopen(file_path.string().c_str(), "r")) == NULL) {
         die("unable to create file from path '%s'.", file_path.c_str());
     }
 
@@ -72,7 +74,7 @@ LspDiagnostic json_parse_lsp_diagnostic(json_object* diagnostic, int version)
     assert(json_object_get_type(severityo) == json_type_int);
     const int severity = json_object_get_int(severityo);
 
-    tilde::tildeWrite("%s: %s | message: %s | severity: %d", __PRETTY_FUNCTION__,
+    tilde::tildeWrite("%s: %s | message: %s | severity: %d", __FUNCTION__,
         json_object_to_json_string(diagnostic),
         message,
         severity);

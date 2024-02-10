@@ -21,10 +21,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/ttydefaults.h>
-#include <termios.h>
-#include <unistd.h>
 #include <unordered_map>
 #include <vector>
 #include "subprocess.h"

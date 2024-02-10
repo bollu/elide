@@ -23,7 +23,7 @@ struct RgProcess {
     int selectedLine; // currently selected line. Bounds are `[0, lines.size())`
 
     // start the process, and run it asynchronously.
-    void execpAsync(const char* working_dir, std::vector<std::string> args);
+    void execpAsync(std::string working_dir, std::vector<std::string> args);
     // kills the process synchronously.
     void killSync();
 

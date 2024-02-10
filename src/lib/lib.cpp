@@ -4,23 +4,16 @@
 #include <algorithm>
 #include <assert.h>
 #include <ctype.h>
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <iostream>
 #include <iterator>
-#include <libgen.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/ttydefaults.h>
 #include <sys/types.h>
-#include <sys/wait.h>
-#include <termios.h>
-#include <unistd.h>
 #include "views/tilde.h"
 #include "algorithms/getfilepathamongstparents.h"
 #include "algorithms/appendcolwithcursor.h"
@@ -29,6 +22,11 @@
 #include "definitions/keyevent.h"
 #include "datastructures/editorconfig.h"
 #include "definitions/escapecode.h"
+
+#ifdef WIN32
+#include <windows.h>
+#endif
+
 // TODO: show lake path in messages tab.
 // TODO: add a new view for running `lake build`.
 
@@ -123,7 +121,7 @@ struct LspResponse {
 
 int LeanServerState::_write_str_to_child(const char* buf, int len) const
 {
-    int nwritten = write(fileno(subprocess_stdin(&this->process)), buf, len);
+    int nwritten = fwrite(buf, 1, len, subprocess_stdin(&this->process));
     return nwritten;
 };
 
@@ -291,6 +289,7 @@ void die(const char* fmt, ...)
 void disableRawMode()
 {
     // show hidden cursor
+#ifndef _WIN32
     const char* showCursor = "\x1b[?25h";
     // no point catching errors at this state, we are closing soon anyway.
     int _ = write(STDOUT_FILENO, showCursor, strlen(showCursor));
@@ -298,10 +297,12 @@ void disableRawMode()
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_editor.orig_termios) == -1) {
         die("tcsetattr");
     }
+#endif
 }
 
 void enableRawMode()
 {
+#ifndef _WIN32
     if (tcgetattr(STDIN_FILENO, &g_editor.orig_termios) == -1) {
         die("tcgetattr");
     };
@@ -342,10 +343,12 @@ void enableRawMode()
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
         die("tcsetattr");
     }
+#endif
 }
 
 void getCursorPosition(int* rows, int* cols)
 {
+#ifndef _WIN32
     char buf[32];
     unsigned int i = 0;
     // n: terminal status | 6: cursor position
@@ -373,13 +376,13 @@ void getCursorPosition(int* rows, int* cols)
     if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) {
         die("unable to parse cursor string");
     };
+#endif
 }
 
 int getWindowSize(int* rows, int* cols)
 {
 
-    // getCursorPosition(rows, cols);
-
+#ifndef _WIN32
     struct winsize ws;
     // TIOCGWINSZ: terminal IOctl get window size.
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
@@ -391,6 +394,8 @@ int getWindowSize(int* rows, int* cols)
         // fprintf(stderr, "cols: %d | rows: %d\n", *cols, *rows);
         // die("foo");
     }
+    return 0;
+#endif
     return 0;
 }
 
@@ -673,7 +678,7 @@ FileConfig::FileConfig(FileLocation loc)
     this->cursor = loc.cursor;
     this->absolute_filepath = loc.absolute_filepath;
     assert(this->absolute_filepath.is_absolute());
-    FILE* fp = fopen(this->absolute_filepath.c_str(), "a+");
+    FILE* fp = fopen(this->absolute_filepath.string().c_str(), "a+");
     if (!fp) {
         die("fopen: unable to open file '%s'", this->absolute_filepath.c_str());
     }
@@ -682,12 +687,14 @@ FileConfig::FileConfig(FileLocation loc)
     char* line = nullptr;
     size_t linecap = 0; // allocate memory for line read.
     ssize_t linelen = -1;
-    while ((linelen = getline(&line, &linecap, fp)) != -1) {
-        while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) {
-            linelen--;
-        }
-        fileConfigInsertRowBefore(this, this->rows.size(), line, linelen);
-    }
+    // TODO: `getline` is not posix, switch to using C++ streams.
+    assert(false && "must port getline()");
+    // while ((linelen = getline(&line, &linecap, fp)) != -1) {
+    //     while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) {
+    //         linelen--;
+    //     }
+    //     fileConfigInsertRowBefore(this, this->rows.size(), line, linelen);
+    // }
     free(line);
     fclose(fp);
 }
@@ -748,21 +755,10 @@ void fileConfigSave(FileConfig* f)
 
     abuf buf;
     fileConfigRowsToBuf(f, &buf);
-    // | open for read and write
-    // | create if does not exist
-    // 0644: +r, +w
-    int fd = open(f->absolute_filepath.c_str(), O_RDWR | O_CREAT, 0644);
-    if (fd != -1) {
-        // editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
-    }
-    assert(fd != -1 && "unable to open file");
-    // | set file to len.
-    int err = ftruncate(fd, buf.len());
-    assert(err != -1 && "unable to truncate");
-    int nwritten = write(fd, buf.buf(), buf.len());
+    FILE *fp  = fopen(f->absolute_filepath.string().c_str(), "w");
+    int nwritten = fwrite(buf.buf(), 1, buf.len(), fp);
     assert(nwritten == buf.len() && "wasn't able to write enough bytes");
-    // editorSetStatusMessage("Saved file");
-    close(fd);
+    fclose(fp);
 }
 
 LspPosition cursorToLspPosition(const Cursor c)
@@ -1007,7 +1003,9 @@ void fileConfigDraw(FileConfig* f)
         // to make space for status bar.
         ab.appendstr("\r\n");
     }
+#ifndef WIN32
     CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+#endif  // !WIN32
 }
 
 void drawCallback(std::function<void(abuf& ab)> f)
@@ -1017,7 +1015,9 @@ void drawCallback(std::function<void(abuf& ab)> f)
     ab.appendstr("\x1b[2J"); // J: erase in display.
     ab.appendstr("\x1b[1;1H"); // H: cursor position
     f(ab);
+#ifndef WIN32
     CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+#endif
 }
 
 void editorDrawFileConfigPopup(FileConfig* f)
@@ -1070,7 +1070,10 @@ void editorDrawInfoViewGoal(abuf* ab, const char* str)
             // grab the substring and print out out.
             assert(line_end < len && str[line_end] == '\n');
             const int substr_len = line_end - line_begin; // half open interval [line_begin, line_end)
-            char* substr = strndup(str + line_begin, substr_len);
+            char* substr = (char *)calloc(sizeof(char), substr_len + 1);
+            for (int i = 0; i < substr_len; ++i) {
+                substr[i] = str[line_begin + i];
+            }
             ab->appendfmtstr(120, "%s%s\x1b[K \r\n", INDENT_STR, substr);
             free(substr);
         }
@@ -1207,7 +1210,9 @@ void editorDrawInfoViewTacticsTab(FileConfig* f)
     // to make space for status bar.
     ab.appendstr("\r\n");
 
+#ifndef WIN32
     CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+#endif
 }
 
 void editorDrawInfoViewMessagesTab(FileConfig* f)
@@ -1237,7 +1242,9 @@ void editorDrawInfoViewMessagesTab(FileConfig* f)
 
     ab.appendstr("\x1b[K"); // The K command (Erase In Line) erases part of the current line.
     ab.appendstr("\r\n"); // always append a space
+#ifndef WIN32
     CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+#endif
 }
 
 void editorDrawInfoViewHoverTab(FileConfig* f)
@@ -1292,7 +1299,9 @@ void editorDrawInfoViewHoverTab(FileConfig* f)
         } // end else 'result != nullptr.
     } while (0);
 
+#ifndef WIN32
     CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+#endif
 }
 
 InfoViewTab _infoViewTabCycleDelta(FileConfig* f, InfoViewTab t, int delta)
@@ -1343,7 +1352,9 @@ void editorDrawNoFile()
     // Default arguments for H is 1, so it's as if we had sent [1;1H
     ab.appendstr("\x1b[1;1H");
     ab.appendstr("We will know . We must know ~ David Hilbert.\r\n");
+#ifndef WIN32
     CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+#endif
 }
 
 void editorDraw()
@@ -1599,6 +1610,7 @@ void fileConfigMoveCursor(FileConfig* f, int key)
 
 int editorReadRawEscapeSequence()
 {
+#ifndef WIN32
     int nread;
     char c;
     if ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -1654,6 +1666,8 @@ int editorReadRawEscapeSequence()
         return KEYEVENT_BACKSPACE;
     }
     return c;
+#endif
+    return 0;
 }
 
 // open row below ('o'.)
@@ -1724,7 +1738,8 @@ void editorHandleGotoResponse(json_object_ptr response)
     const char* uri = json_object_get_string(result0_uri);
     assert(result0_uri);
     const fs::path absolute_filepath = Uri::parse(uri);
-    tilde::tildeWrite("response [textDocument/gotoDefinition] result0_uri[filepath]: '%s'", std::string(absolute_filepath).c_str());
+    tilde::tildeWrite("response [textDocument/gotoDefinition] result0_uri[filepath]: '%s'", 
+        absolute_filepath.string().c_str());
     assert(absolute_filepath.is_absolute());
 
     json_object* result0_targetSelectionRange = nullptr;
@@ -1987,7 +2002,9 @@ void completionDraw(CompletionView* view)
             ab.appendstr(ESCAPE_CODE_UNSET);
         }
     }
+#ifndef WIN32
     CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
+#endif
 }
 
 void editorProcessKeypress()
@@ -2406,6 +2423,7 @@ fs::path get_executable_path()
     const int BUFSIZE = 2048;
     char* buf = (char*)calloc(BUFSIZE, sizeof(char));
     const char* exe_path = "/proc/self/exe";
+#ifndef WIN32
     int sz = readlink(exe_path, buf, BUFSIZE);
 
     if (sz == -1) {
@@ -2414,6 +2432,17 @@ fs::path get_executable_path()
     fs::path out(buf);
     free(buf);
     return out;
+#else
+    static const int MAX_PATH_SIZE = 512;
+    char path[MAX_PATH_SIZE];
+    if (GetModuleFileName(NULL, path, MAX_PATH_SIZE)) {
+        std::cout << "Executable Path: " << path << std::endl;
+    } else {
+        assert(false && "unable to get path of executable");
+    }
+    fs::path out(path);
+    return out;
+#endif
 }
 
 // get the path to `/path/to/exe/abbreviations.json`.
@@ -2459,7 +2488,7 @@ void load_abbreviation_dict_from_json(AbbreviationDict* dict, json_object* o)
 // Load the abbreviation dictionary from the filesystem.
 void load_abbreviation_dict_from_file(AbbreviationDict* dict, fs::path abbrev_path)
 {
-    json_object* o = json_object_from_file(abbrev_path.c_str());
+    json_object* o = json_object_from_file(abbrev_path.string().c_str());
     if (o == NULL) {
         die("unable to load abbreviations from file '%s'.\n", abbrev_path.c_str());
     }

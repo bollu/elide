@@ -254,6 +254,8 @@ typedef unsigned int subprocess_size_t;
 #endif
 #else
 #include <inttypes.h>
+#include <process.h>
+#include <direct.h>
 
 typedef intptr_t subprocess_intptr_t;
 typedef size_t subprocess_size_t;
@@ -1196,6 +1198,22 @@ int subprocess_alive(struct subprocess_s *const process) {
   return is_alive;
 }
 
+char *subprocess_getcwd(char *buffer, int maxlen) {
+#if defined(_WIN32)
+  return _getcwd(buffer, maxlen);
+#else
+  return getcwd(buffer, maxlen);
+#endif
+
+}
+int subprocess_getpid(){
+#if defined(_WIN32)
+  return _getpid();
+#else
+  return getpid();
+#endif
+};
+
 #if defined(__clang__)
 #if __has_warning("-Wunsafe-buffer-usage")
 #pragma clang diagnostic pop
@@ -1205,5 +1223,7 @@ int subprocess_alive(struct subprocess_s *const process) {
 #if defined(__cplusplus)
 } // extern "C"
 #endif
+
+
 
 #endif /* SHEREDOM_SUBPROCESS_H_INCLUDED */

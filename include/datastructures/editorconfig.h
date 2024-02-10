@@ -9,7 +9,6 @@
 struct EditorConfig {
     Zipper<FileLocation> file_location_history;
     VimMode vim_mode = VM_NORMAL;
-    struct termios orig_termios;
     int screenrows = 0;
     int screencols = 0;
 
@@ -36,7 +35,7 @@ struct EditorConfig {
 
     void getOrOpenNewFile(FileLocation file_loc, bool isUndoRedo = false)
     {
-        tilde::tildeWrite("%s %s:%d:%d", __PRETTY_FUNCTION__, file_loc.absolute_filepath.c_str(),
+        tilde::tildeWrite("%s %s:%d:%d", __FUNCTION__, file_loc.absolute_filepath.c_str(),
             file_loc.cursor.row,
             file_loc.cursor.col.size);
         assert(file_loc.absolute_filepath.is_absolute());
