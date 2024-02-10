@@ -221,7 +221,9 @@ int main(int, char**)
 #include <termios.h>
 #include <unistd.h>
 #include "datastructures/editorconfig.h"
+#include <thread>
 
+namespace chr = std::chrono;
 int main(int argc, char **argv){
   // make stdin non blocking.
   fcntl(0, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK);
@@ -254,23 +256,21 @@ int main(int argc, char **argv){
 
   enableRawMode();
   while (1) {
-    timespec tbegin;
-    Debouncer::get_time(&tbegin);
+    auto tbegin = Debouncer::get_time();
 
     editorDraw();
     editorProcessKeypress();
     editorTickPostKeypress();
 
-    timespec tend;
-    Debouncer::get_time(&tend);
+    auto tend = Debouncer::get_time();
+    chr::nanoseconds elapsed_nsec = tend - tbegin;
+    auto elapsed_sec = chr::duration_cast<chr::seconds>(elapsed_nsec); 
+    if (elapsed_sec.count() > 0) { continue; }
 
-    const long elapsed_nanosec = tend.tv_nsec - tbegin.tv_nsec;
-    const long elapsed_sec = tend.tv_sec - tbegin.tv_sec;
-    if (elapsed_sec > 0) { continue; }
+    auto elapsed_microsec = chr::duration_cast<chr::microseconds>(elapsed_nsec);
+    const chr::microseconds total_microsec(1000000 / 120); // 120 FPS = 1s / 120 frames = 1000000 microsec / 120 frames
+    std::this_thread::sleep_for(total_microsec - elapsed_microsec);
 
-    const long elapsed_microsec = elapsed_nanosec / 1000;
-    const long total_microsec = 1000000 / 120; // 120 FPS = 1s / 120 frames = 1000000 microsec / 120 frames
-    usleep(clamp0(total_microsec - elapsed_microsec));
   };
   disableRawMode();
   return 0;

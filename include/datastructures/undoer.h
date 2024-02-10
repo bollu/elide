@@ -103,6 +103,7 @@ private:
     std::stack<T> redoStack; // stack of redos.
     // make it greater than `0.1` seconds so it is 2x the perceptible limit
     // for humans. So it is a pause, but not necessarily a long one.
-    Debouncer debouncer = Debouncer(0, Debouncer::millisToNanos(150));
+    Debouncer debouncer = Debouncer(std::chrono::seconds(0), 
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(150)));
 };
 
