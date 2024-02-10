@@ -29,12 +29,16 @@ add_library(elide
   src/lib/views/ctrlp.cpp
   # src/lib/
   src/lib/lib.cpp
-  src/lib/uri_encode.cpp)
+  src/lib/uri_encode.cpp
+  # third_party/imgui/
+  src/third_party/imgui/imgui.cpp
+  )
 find_package(ssh CONFIG)
 find_package(json-c CONFIG)
+find_package(SDL2 CONFIG)
 target_include_directories(elide PUBLIC json-c::json-c ssh)
 target_include_directories(elide PUBLIC include/ ssh)
-target_link_libraries(elide PUBLIC json-c::json-c) # ssh)
+target_link_libraries(elide PUBLIC json-c::json-c SDL2::SDL2) # ssh)
 install(TARGETS elide DESTINATION lib)
 
 # elide
