@@ -2269,14 +2269,11 @@ void editorProcessKeypress(SDL_Event e)
 
 void initEditor()
 {
-    if (getWindowSize(&g_editor.screenrows, &g_editor.screencols) == -1) {
-        die("getWindowSize");
-    };
-    static const int BOTTOM_INFO_PANE_HEIGHT = 2;
-    g_editor.screenrows -= BOTTOM_INFO_PANE_HEIGHT;
     fs::path abbrev_path = get_abbreviations_dict_path();
-    printf("[loading abbreviations.json from '%s']\n", abbrev_path.c_str());
+    tilde::tildeWrite("loading abbreviations.json from '%s'", abbrev_path.string().c_str());
     load_abbreviation_dict_from_file(&g_editor.abbrevDict, abbrev_path);
+    tilde::tildeWrite("#abbreviations loaded: '%d'",
+                      g_editor.abbrevDict.nrecords);
     assert(g_editor.abbrevDict.is_initialized);
 }
 
@@ -2421,10 +2418,10 @@ SuffixUnabbrevInfo abbrev_dict_get_unabbrev(AbbreviationDict* dict, const char* 
 // get the path to the executable, so we can build the path to resources.
 fs::path get_executable_path()
 {
+#ifndef WIN32
     const int BUFSIZE = 2048;
     char* buf = (char*)calloc(BUFSIZE, sizeof(char));
     const char* exe_path = "/proc/self/exe";
-#ifndef WIN32
     int sz = readlink(exe_path, buf, BUFSIZE);
 
     if (sz == -1) {
@@ -2436,9 +2433,7 @@ fs::path get_executable_path()
 #else
     static const int MAX_PATH_SIZE = 512;
     char path[MAX_PATH_SIZE];
-    if (GetModuleFileName(NULL, path, MAX_PATH_SIZE)) {
-        std::cout << "Executable Path: " << path << std::endl;
-    } else {
+    if (!GetModuleFileName(NULL, path, MAX_PATH_SIZE)) {
         assert(false && "unable to get path of executable");
     }
     fs::path out(path);
@@ -2450,6 +2445,7 @@ fs::path get_executable_path()
 fs::path get_abbreviations_dict_path()
 {
     fs::path exe_path = get_executable_path();
+    tilde::tildeWrite("executable path: '%s'", exe_path.string().c_str());
     fs::path exe_folder = exe_path.parent_path();
     // char *exe_folder = dirname(strdup(exe_path.c_str()));
     return exe_folder / "abbreviations.json";

@@ -1,4 +1,4 @@
-// Dear ImGui: standalone example application for SDL2 + OpenGL
+﻿// Dear ImGui: standalone example application for SDL2 + OpenGL
 // (SDL is a cross-platform general purpose library for handling windows,
 // inputs, OpenGL/Vulkan/Metal graphics context creation, etc.)
 
@@ -129,22 +129,37 @@ int main(int argc, char** argv) {
   // io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
   // io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
   // ImFont* font =
-  // io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f,
-  // nullptr, io.Fonts->GetGlyphRangesJapanese()); IM_ASSERT(font != nullptr);
+  {
+    const fs::path exe_path = get_executable_path();
+    const fs::path exe_folder = exe_path.parent_path();
+    const fs::path fontpath =  exe_folder / "mononoki-Regular.ttf";
+    static const ImWchar ranges[] = {
+        0x0020, 0x00FF,  // Basic Latin + Latin Supplement
+        0x0020, 0x007F,  // Basic Latin
+        0x00A0, 0x00FF,  // Latin-1 Supplement
+        0x0370, 0x03FF,  // Greek and Coptic
+        0x2200, 0x22FF,  // Mathematical Operators
+        0x2600, 0x26FF,  // Miscellaneous Symbols
+        0x2A00, 0x2AFF,  // Supplemental Mathematical Operators
+        0x2100, 0x214F,  // Letterlike Symbols
+        0,               // End of ranges
+    };
 
-  // initEditor();
-  // disableRawMode();
+    io.Fonts->GetGlyphRangesDefault();
+	ImFont* font = io.Fonts->AddFontFromFileTTF(fontpath.string().c_str(), 12.0f, NULL, ranges);
+    io.Fonts->Build();
+    io.FontDefault = font;
+  }
 
-  // if (argc >= 2) { g_editor.original_cwd = fs::path(argv[1]); }
+  initEditor();
 
-  if (argc >= 2) { g_editor.original_cwd = fs::canonical(fs::path(argv[1]));
-  } else { g_editor.original_cwd = fs::absolute(fs::current_path()); }
+  if (argc >= 2) { g_editor.original_cwd = fs::canonical(fs::path(argv[1])); }
+  else { g_editor.original_cwd = fs::absolute(fs::current_path()); }
 
   if (fs::is_regular_file(g_editor.original_cwd)) {
     const fs::path filepath = g_editor.original_cwd;
     g_editor.original_cwd = g_editor.original_cwd.remove_filename();
     g_editor.original_cwd = ctrlpGetGoodRootDirAbsolute(g_editor.original_cwd);
-    g_editor.getOrOpenNewFile(FileLocation(filepath, Cursor(0, 0)));
     g_editor.getOrOpenNewFile(FileLocation(filepath, Cursor(0, 0)));
   } else {
     g_editor.original_cwd = ctrlpGetGoodRootDirAbsolute(g_editor.original_cwd);
@@ -152,6 +167,7 @@ int main(int argc, char** argv) {
   }
 
   tilde::tildeWrite("original_cwd: '%s'", g_editor.original_cwd.c_str());
+  tilde::tildeWrite("builtin_initialize baseTypeExt : EnvExtension BaseTypeExtState ← β ℕ");
 
  
   // Main loop
@@ -180,7 +196,6 @@ int main(int argc, char** argv) {
       }
     }
 
-    // editorDraw();
     editorProcessKeypress(event);
     editorTickPostKeypress();
 
@@ -191,11 +206,15 @@ int main(int argc, char** argv) {
     ImGui::NewFrame();
 
     // 3. Show another simple window.
-    ImGui::Begin("~ Debug Log");
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::Begin("~ Debug Log", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
     for (std::string& s : tilde::g_tilde.log) {
       ImGui::Text(s.c_str());
     }
     ImGui::End();
+
+    // editorDraw();
+
 
     // Rendering
     ImGui::Render();

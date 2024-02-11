@@ -74,9 +74,15 @@ if (WIN32)
 endif()
 
 install(TARGETS elide DESTINATION bin)
+
+# copy into install dir
 install(FILES  "$<TARGET_RUNTIME_DLLS:elide>" DESTINATION bin)
 install(FILES src/abbreviations.json DESTINATION bin)
+install(FILES resources/mononoki-Regular.ttf DESTINATION bin)
+
+# copy into build dir
 file(COPY src/abbreviations.json DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY resources/mononoki-Regular.ttf DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 add_subdirectory(test/)
 

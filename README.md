@@ -1,4 +1,4 @@
-# elIDE: Elegant Metamodal Lean4 IDE
+# elIDE: Elegant Metamodal Lean4 Shadertoy IDE
 
 A [Metamodal](https://en.wikipedia.org/wiki/Metamodernism) IDE for Lean.
 As I broadly see it, there are two kinds of proof assistant editors:
