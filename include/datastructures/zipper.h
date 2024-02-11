@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include "assert.h"
 
 template <typename T>
 struct Zipper {

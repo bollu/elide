@@ -79,10 +79,12 @@ install(TARGETS elide DESTINATION bin)
 install(FILES  "$<TARGET_RUNTIME_DLLS:elide>" DESTINATION bin)
 install(FILES src/abbreviations.json DESTINATION bin)
 install(FILES resources/mononoki-Regular.ttf DESTINATION bin)
+install(FILES "resources/Meslo LG S DZ Regular for Powerline.ttf" DESTINATION bin)
 
 # copy into build dir
 file(COPY src/abbreviations.json DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 file(COPY resources/mononoki-Regular.ttf DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY "resources/Meslo LG S DZ Regular for Powerline.ttf" DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 add_subdirectory(test/)
 
