@@ -7,6 +7,7 @@
 #include <vector>
 #include "subprocess/subprocess.h"
 #include "datastructures/filelocation.h"
+#include "SDL2/SDL_events.h"
 
 namespace fs = std::filesystem;
 
@@ -98,6 +99,6 @@ bool ctrlpWhenSelected(CtrlPView* view);
 struct FileLocation;
 FileLocation ctrlpGetSelectedFileLocation(const CtrlPView* view);
 void ctrlpOpen(CtrlPView* view, VimMode previous_state, fs::path cwd);
-void ctrlpHandleInput(CtrlPView* view, int c);
+void ctrlpHandleInput(CtrlPView* view, const SDL_Event &e);
 void ctrlpTickPostKeypress(CtrlPView* view);
 void ctrlpDraw(CtrlPView* view);

@@ -28,6 +28,7 @@
 #include "datastructures/filelocation.h"
 #include "views/ctrlp.h"
 #include "datastructures/fileconfig.h"
+#include "SDL2/SDL_events.h"
 namespace fs = std::filesystem;
 
 static int utf8_next_code_point_len(const char* str);
@@ -88,13 +89,13 @@ LspPosition cursorToLspPosition(Cursor c);
 
 void editorDraw();
 void editorTickPostKeypress();
-void editorScroll();
-void editorDrawRows(abuf& ab);
-void editorDrawStatusBar(abuf& ab);
-void editorDrawMessageBar(abuf& ab);
-void editorMoveCursor(int key);
-void editorProcessKeypress();
-char* editorPrompt(const char* prompt);
+// void editorScroll();
+// void editorDrawRows(abuf& ab);
+// void editorDrawStatusBar(abuf& ab);
+// void editorDrawMessageBar(abuf& ab);
+// void editorMoveCursor(int key);
+void editorProcessKeypress(SDL_Event e);
+// char* editorPrompt(const char* prompt);
 void initEditor();
 
 // get the path to the executable, so we can build the path to resources.

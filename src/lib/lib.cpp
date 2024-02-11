@@ -63,7 +63,7 @@ void _exec_lean_server_on_child(std::optional<fs::path> lakefile_dirpath,
         fprintf(stderr, "starting 'lean --server'...\n");
         const char* process_name = "lean";
         char* const argv[] = { strdup(process_name), strdup("--server"), NULL };
-        failure = subprocess_create(argv, subprocess_options, subprocess);
+        failure = subprocess_create(NULL, argv, subprocess_options, subprocess);
     } else {
         std::error_code ec;
         fs::current_path(*lakefile_dirpath, ec);
@@ -72,7 +72,7 @@ void _exec_lean_server_on_child(std::optional<fs::path> lakefile_dirpath,
         };
         const char* process_name = "lake";
         char* const argv[] = { strdup(process_name), strdup("serve"), NULL };
-        failure = subprocess_create(argv, subprocess_options, subprocess);
+        failure = subprocess_create(NULL, argv, subprocess_options, subprocess);
 
     }
 
@@ -1911,15 +1911,15 @@ void completionOpen(CompletionView* view, VimMode previous_state, FileConfig* f)
     g_editor.vim_mode = VM_COMPLETION;
 }
 
-void completionHandleInput(CompletionView* view, int c)
+void completionHandleInput(CompletionView* view, const SDL_Event &e)
 {
-    if (c == CTRL_KEY('c') || c == '\\') {
-        view->quitPressed = false;
-    } else if (c == CTRL_KEY('\r')) {
-        view->selectPressed = false;
-    }
-    // TODO: move the rest of the code into text area.
-    assert(false && "unimplemented");
+    // if (c == CTRL_KEY('c') || c == '\\') {
+    //     view->quitPressed = false;
+    // } else if (c == CTRL_KEY('\r')) {
+    //     view->selectPressed = false;
+    // }
+    // // TODO: move the rest of the code into text area.
+    // assert(false && "unimplemented");
 }
 
 void completionTickPostKeypress(FileConfig* f, CompletionView* view)
@@ -2007,35 +2007,35 @@ void completionDraw(CompletionView* view)
 #endif
 }
 
-void editorProcessKeypress()
-{
-    int c = editorReadRawEscapeSequence();
 
+void editorProcessKeypress(SDL_Event e)
+{
     if (g_editor.vim_mode == VM_COMPLETION) {
-        if (c == CTRL_KEY('\\') || c == CTRL_KEY('c')) {
+        if (e.type == SDL_KEYDOWN && e.key.keysym.mod & KMOD_CTRL && 
+            e.key.keysym.sym == SDLK_BACKSLASH || e.key.keysym.sym == SDLK_c) {
             g_editor.vim_mode = VM_INSERT;
             return;
-        } else if (c == '\r') {
+        } else if (e.key.keysym.sym == SDLK_RETURN) {
             // TODO: make the completer accept the autocomplete.
             return;
-        } else if (isprint(c)) {
+        } else {
             // completionInsertChar(c);
             return;
         }
     } else if (g_editor.vim_mode == VM_TILDE) {
-        tilde::tildeHandleInput(&tilde::g_tilde, c);
+        tilde::tildeHandleInput(&tilde::g_tilde, e);
         if (tilde::tildeWhenQuit(&tilde::g_tilde)) {
             g_editor.vim_mode = VM_NORMAL;
             return;
         }
     } else if (g_editor.vim_mode == VM_COMPILE) {
-        compileView::compileViewHandleInput(&g_editor.compileView, c);
+        compileView::compileViewHandleInput(&g_editor.compileView, e);
         if (compileView::compileViewWhenQuit(&g_editor.compileView)) {
             g_editor.vim_mode = VM_NORMAL;
             return;
         }
     } else if (g_editor.vim_mode == VM_CTRLP) {
-        ctrlpHandleInput(&g_editor.ctrlp, c);
+        ctrlpHandleInput(&g_editor.ctrlp, e);
         if (ctrlpWhenQuit(&g_editor.ctrlp)) {
             g_editor.vim_mode = g_editor.ctrlp.previous_state;
             return;
@@ -2046,7 +2046,7 @@ void editorProcessKeypress()
             return;
         }
     } else if (g_editor.vim_mode == VM_COMPLETION) {
-        completionHandleInput(&g_editor.completion, c);
+        completionHandleInput(&g_editor.completion, e);
         if (completionWhenQuit(&g_editor.completion)) {
             g_editor.vim_mode = g_editor.completion.previous_state;
             return;
@@ -2059,37 +2059,37 @@ void editorProcessKeypress()
     } else if (g_editor.vim_mode == VM_INFOVIEW_DISPLAY_GOAL) { // behaviours only in infoview mode
         assert(g_editor.curFile());
         FileConfig* f = g_editor.curFile();
-        switch (c) {
-        case 'h':
-        case 'j': {
-            f->infoViewTab = infoViewTabCyclePrevious(f, f->infoViewTab);
-            return;
-        }
-        case 'l':
-        case 'k':
-        case '\t': {
-            // TODO: this is not per file info? or is it?
-            f->infoViewTab = infoViewTabCycleNext(f, f->infoViewTab);
-            return;
-        }
-        case CTRL_KEY('c'):
-        case CTRL_KEY('j'):
-        case CTRL_KEY('k'): {
-            g_editor.vim_mode = VM_NORMAL;
-            return;
-        }
-        default: {
-            return;
-        }
-        }
+        // switch (e.key.keysym.sym) {
+        // case SDLK_h:
+        // case SDLK_j: {
+        //     f->infoViewTab = infoViewTabCyclePrevious(f, f->infoViewTab);
+        //     return;
+        // }
+        // case SDLK_l:
+        // case SDLK_k:
+        // case '\t': {
+        //     // TODO: this is not per file info? or is it?
+        //     f->infoViewTab = infoViewTabCycleNext(f, f->infoViewTab);
+        //     return;
+        // }
+        // case CTRL_KEY('c'):
+        // case CTRL_KEY('j'):
+        // case CTRL_KEY('k'): {
+        //     g_editor.vim_mode = VM_NORMAL;
+        //     return;
+        // }
+        // default: {
+        //     return;
+        // }
+        // }
     } else if (g_editor.vim_mode == VM_NORMAL) { // behaviours only in normal mode
         FileConfig* f = g_editor.curFile();
         if (f == nullptr) {
-            if (c == CTRL_KEY('p')) {
+            if (e.key.keysym.sym == SDLK_p && e.key.keysym.mod & KMOD_CTRL) {
                 ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
-            } else if (c == 'q') {
+            } else if (e.key.keysym.sym == SDLK_q) {
                 exit(0);
-            } else if (c == '`') {
+            } else if (e.key.keysym.sym == SDLK_BACKQUOTE) {
                 tilde::tildeOpen(&tilde::g_tilde);
                 g_editor.vim_mode = VM_TILDE;
                 return;
@@ -2097,134 +2097,135 @@ void editorProcessKeypress()
             return;
         }
 
+        // normal mode.
         assert(f != nullptr);
-        switch (c) {
-        case CTRL_KEY('c'): { // resync state.
-            fileConfigSave(f);
-            fileConfigSyncLeanState(f);
-            return;
-        }
-        case '9':
-        case CTRL_KEY('9'): {
-            compileView::compileViewOpen(&g_editor.compileView);
-            g_editor.vim_mode = VM_COMPILE;
-        }
-        case CTRL_KEY(']'): {
-            // goto definition.
-            // TODO: refactor this code. to force initialization first.
-            fileConfigGotoDefinitionNonblocking(g_editor.curFile(), GotoKind::Definition);
-            return;
-        }
-        case CTRL_KEY('['): { // is this a good choice of key? I am genuinely unsure.
-            // goto definition.
-            fileConfigGotoDefinitionNonblocking(g_editor.curFile(), GotoKind::TypeDefiition);
-            return;
-        }
-        case CTRL_KEY('o'): {
-            g_editor.undoFileMove();
-            return;
-        }
-        case CTRL_KEY('i'): {
-            g_editor.redoFileMove();
-            return;
-        }
-        case '`': {
-            tilde::tildeOpen(&tilde::g_tilde);
-            g_editor.vim_mode = VM_TILDE;
-            return;
-        }
-        case CTRL_KEY('p'): {
-            ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
-            return;
-        }
-        case 'D': {
-            f->mkUndoMemento();
-            fileConfigDeleteTillEndOfRow(f);
-            return;
-        }
-        case 'q': {
-            fileConfigSave(f);
-            exit(0);
-            return;
-        }
-        case 'u': {
-            f->doUndo();
-            return;
-        }
-        case 'r':
-        case 'U': {
-            f->doRedo();
-            return;
-        }
-        case 'x': {
-            f->mkUndoMemento();
-            fileConfigXCommand(f);
-            break;
-        }
-        case 'h':
-        case 'j':
-        case 'k':
-        case 'l':
-        case CTRL_KEY('d'):
-        case CTRL_KEY('u'):
-        case 'w':
-        case 'b': {
-            fileConfigMoveCursor(f, c);
-            break;
-        }
-        case 'o': {
-            f->mkUndoMemento();
-            fileConfigOpenRowBelow(f);
-            g_editor.vim_mode = VM_INSERT;
-            return;
-        }
-        case 'O': {
-            f->mkUndoMemento();
-            fileConfigOpenRowAbove(f);
-            g_editor.vim_mode = VM_INSERT;
-            return;
-        }
+        // switch (c) {
+        // case CTRL_KEY('c'): { // resync state.
+        //     fileConfigSave(f);
+        //     fileConfigSyncLeanState(f);
+        //     return;
+        // }
+        // case '9':
+        // case CTRL_KEY('9'): {
+        //     compileView::compileViewOpen(&g_editor.compileView);
+        //     g_editor.vim_mode = VM_COMPILE;
+        // }
+        // case CTRL_KEY(']'): {
+        //     // goto definition.
+        //     // TODO: refactor this code. to force initialization first.
+        //     fileConfigGotoDefinitionNonblocking(g_editor.curFile(), GotoKind::Definition);
+        //     return;
+        // }
+        // case CTRL_KEY('['): { // is this a good choice of key? I am genuinely unsure.
+        //     // goto definition.
+        //     fileConfigGotoDefinitionNonblocking(g_editor.curFile(), GotoKind::TypeDefiition);
+        //     return;
+        // }
+        // case CTRL_KEY('o'): {
+        //     g_editor.undoFileMove();
+        //     return;
+        // }
+        // case CTRL_KEY('i'): {
+        //     g_editor.redoFileMove();
+        //     return;
+        // }
+        // case '`': {
+        //     tilde::tildeOpen(&tilde::g_tilde);
+        //     g_editor.vim_mode = VM_TILDE;
+        //     return;
+        // }
+        // case CTRL_KEY('p'): {
+        //     ctrlpOpen(&g_editor.ctrlp, VM_NORMAL, g_editor.original_cwd);
+        //     return;
+        // }
+        // case 'D': {
+        //     f->mkUndoMemento();
+        //     fileConfigDeleteTillEndOfRow(f);
+        //     return;
+        // }
+        // case 'q': {
+        //     fileConfigSave(f);
+        //     exit(0);
+        //     return;
+        // }
+        // case 'u': {
+        //     f->doUndo();
+        //     return;
+        // }
+        // case 'r':
+        // case 'U': {
+        //     f->doRedo();
+        //     return;
+        // }
+        // case 'x': {
+        //     f->mkUndoMemento();
+        //     fileConfigXCommand(f);
+        //     break;
+        // }
+        // case 'h':
+        // case 'j':
+        // case 'k':
+        // case 'l':
+        // case CTRL_KEY('d'):
+        // case CTRL_KEY('u'):
+        // case 'w':
+        // case 'b': {
+        //     fileConfigMoveCursor(f, c);
+        //     break;
+        // }
+        // case 'o': {
+        //     f->mkUndoMemento();
+        //     fileConfigOpenRowBelow(f);
+        //     g_editor.vim_mode = VM_INSERT;
+        //     return;
+        // }
+        // case 'O': {
+        //     f->mkUndoMemento();
+        //     fileConfigOpenRowAbove(f);
+        //     g_editor.vim_mode = VM_INSERT;
+        //     return;
+        // }
 
-        case 'a': {
-            f->mkUndoMemento();
-            fileConfigCursorMoveCharRightNoWraparound(f);
-            g_editor.vim_mode = VM_INSERT;
-            return;
-        }
-        case 'd': {
-            f->mkUndoMemento();
-            fileConfigDeleteCurrentRow(f);
-            return;
-        }
-        case '$': {
-            fileConfigCursorMoveEndOfRow(f);
-            return;
-        }
-        case '0': {
-            fileConfigCursorMoveBeginOfRow(f);
-            return;
-        }
+        // case 'a': {
+        //     f->mkUndoMemento();
+        //     fileConfigCursorMoveCharRightNoWraparound(f);
+        //     g_editor.vim_mode = VM_INSERT;
+        //     return;
+        // }
+        // case 'd': {
+        //     f->mkUndoMemento();
+        //     fileConfigDeleteCurrentRow(f);
+        //     return;
+        // }
+        // case '$': {
+        //     fileConfigCursorMoveEndOfRow(f);
+        //     return;
+        // }
+        // case '0': {
+        //     fileConfigCursorMoveBeginOfRow(f);
+        //     return;
+        // }
 
-        case CTRL_KEY('j'):
-        case CTRL_KEY('k'): {
-            fileConfigRequestGoalState(f);
-            g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL;
-            return;
-        }
-        case 'i': {
-            f->mkUndoMemento();
-            g_editor.vim_mode = VM_INSERT;
-            return;
-        }
-        } // end switch over key.
+        // case CTRL_KEY('j'):
+        // case CTRL_KEY('k'): {
+        //     fileConfigRequestGoalState(f);
+        //     g_editor.vim_mode = VM_INFOVIEW_DISPLAY_GOAL;
+        //     return;
+        // }
+        // case 'i': {
+        //     f->mkUndoMemento();
+        //     g_editor.vim_mode = VM_INSERT;
+        //     return;
+        // }
+        // } // end switch over key.
     } // end mode == VM_NORMAL
     else {
         assert(g_editor.vim_mode == VM_INSERT);
         FileConfig* f = g_editor.curFile();
         if (f == nullptr) {
-            if (c == CTRL_KEY('p')) {
+            if (e.key.keysym.sym == SDLK_p && e.key.keysym.mod & KMOD_CTRL) {
                 ctrlpOpen(&g_editor.ctrlp, VM_INSERT, g_editor.original_cwd);
-            } else if (c == 'q') {
+            } else if (e.key.keysym.sym == SDLK_q) {
                 exit(0);
             }
             return;
@@ -2233,34 +2234,34 @@ void editorProcessKeypress()
         // make an undo memento every second.
         f->mkUndoMementoRecent();
 
-        switch (c) { // behaviors only in edit mode.
-        case CTRL_KEY('p'): {
-            ctrlpOpen(&g_editor.ctrlp, VM_INSERT, g_editor.original_cwd);
-            return;
-        }
-        case '\r':
-            fileConfigInsertEnterKey(f);
-            return;
-        case KEYEVENT_BACKSPACE: { // this is backspace, apparently
-            fileConfigBackspace(f);
-            return;
-        }
-        case CTRL_KEY('\\'): {
-            completionOpen(&g_editor.completion, VM_INSERT, f);
-            return;
-        }
-        // when switching to normal mode, sync the lean state.
-        case CTRL_KEY('c'): { // escape key
-            g_editor.vim_mode = VM_NORMAL;
-            fileConfigSave(f);
-            return;
-        }
-        default:
-            if (isprint(c)) {
-                fileConfigInsertCharBeforeCursor(f, c);
-                return;
-            }
-        } // end switch case.
+        // switch (c) { // behaviors only in edit mode.
+        // case CTRL_KEY('p'): {
+        //     ctrlpOpen(&g_editor.ctrlp, VM_INSERT, g_editor.original_cwd);
+        //     return;
+        // }
+        // case '\r':
+        //     fileConfigInsertEnterKey(f);
+        //     return;
+        // case KEYEVENT_BACKSPACE: { // this is backspace, apparently
+        //     fileConfigBackspace(f);
+        //     return;
+        // }
+        // case CTRL_KEY('\\'): {
+        //     completionOpen(&g_editor.completion, VM_INSERT, f);
+        //     return;
+        // }
+        // // when switching to normal mode, sync the lean state.
+        // case CTRL_KEY('c'): { // escape key
+        //     g_editor.vim_mode = VM_NORMAL;
+        //     fileConfigSave(f);
+        //     return;
+        // }
+        // default:
+        //     if (isprint(c)) {
+        //         fileConfigInsertCharBeforeCursor(f, c);
+        //         return;
+        //     }
+        // } // end switch case.
     } // end mode == VM_INSERT
 }
 
@@ -2509,26 +2510,26 @@ void compileViewOpen(CompileView* view)
     view->scrollback_ix = {};
 };
 
-void compileViewHandleInput(CompileView* view, int c)
+void compileViewHandleInput(CompileView* view, const SDL_Event &e)
 {
     const int NSCREENROWS = 20;
 
-    if (c == CTRL_KEY('c') || c == CTRL_KEY('q') || c == 'q' || c == '`' || c == '~') {
-        view->quitPressed = true;
-    } else if (c == CTRL_KEY('d')) {
-        view->scrollback_ix = clamp0u<int>(view->scrollback_ix + NSCREENROWS, view->log.size() - 1);
-        ;
-    } else if (c == CTRL_KEY('u')) {
-        view->scrollback_ix = clamp0(view->scrollback_ix - NSCREENROWS);
-    } else if (c == CTRL_KEY('p') || c == 'k') {
-        view->scrollback_ix = clamp0(view->scrollback_ix - 1);
-    } else if (c == CTRL_KEY('n') || c == 'j') {
-        view->scrollback_ix = clampu<int>(view->scrollback_ix + 1, view->log.size() - 1);
-    } else if (c == 'g') {
-        view->scrollback_ix = 0;
-    } else if (c == 'G') {
-        view->scrollback_ix = view->log.size() - 1;
-    }
+    // if (c == CTRL_KEY('c') || c == CTRL_KEY('q') || c == 'q' || c == '`' || c == '~') {
+    //     view->quitPressed = true;
+    // } else if (c == CTRL_KEY('d')) {
+    //     view->scrollback_ix = clamp0u<int>(view->scrollback_ix + NSCREENROWS, view->log.size() - 1);
+    //     ;
+    // } else if (c == CTRL_KEY('u')) {
+    //     view->scrollback_ix = clamp0(view->scrollback_ix - NSCREENROWS);
+    // } else if (c == CTRL_KEY('p') || c == 'k') {
+    //     view->scrollback_ix = clamp0(view->scrollback_ix - 1);
+    // } else if (c == CTRL_KEY('n') || c == 'j') {
+    //     view->scrollback_ix = clampu<int>(view->scrollback_ix + 1, view->log.size() - 1);
+    // } else if (c == 'g') {
+    //     view->scrollback_ix = 0;
+    // } else if (c == 'G') {
+    //     view->scrollback_ix = view->log.size() - 1;
+    // }
 }
 
 void compileViewDraw(CompileView* view)
@@ -2602,26 +2603,25 @@ void tildeOpen(TildeView* tilde)
     tilde->scrollback_ix = {};
 };
 
-void tildeHandleInput(TildeView* tilde, int c)
-{
+void tildeHandleInput(TildeView* tilde, const SDL_Event &e) {
     const int NSCREENROWS = 20;
 
-    if (c == CTRL_KEY('c') || c == CTRL_KEY('q') || c == 'q' || c == '`' || c == '~') {
-        tilde->quitPressed = true;
-    } else if (c == CTRL_KEY('d')) {
-        tilde->scrollback_ix = clamp0u<int>(tilde->scrollback_ix + NSCREENROWS, tilde->log.size() - 1);
-        ;
-    } else if (c == CTRL_KEY('u')) {
-        tilde->scrollback_ix = clamp0(tilde->scrollback_ix - NSCREENROWS);
-    } else if (c == CTRL_KEY('p') || c == 'k') {
-        tilde->scrollback_ix = clamp0(tilde->scrollback_ix - 1);
-    } else if (c == CTRL_KEY('n') || c == 'j') {
-        tilde->scrollback_ix = clampu<int>(tilde->scrollback_ix + 1, tilde->log.size() - 1);
-    } else if (c == 'g') {
-        tilde->scrollback_ix = 0;
-    } else if (c == 'G') {
-        tilde->scrollback_ix = clamp0(tilde->log.size() - 1);
-    }
+    // if (c == CTRL_KEY('c') || c == CTRL_KEY('q') || c == 'q' || c == '`' || c == '~') {
+    //     tilde->quitPressed = true;
+    // } else if (c == CTRL_KEY('d')) {
+    //     tilde->scrollback_ix = clamp0u<int>(tilde->scrollback_ix + NSCREENROWS, tilde->log.size() - 1);
+    //     ;
+    // } else if (c == CTRL_KEY('u')) {
+    //     tilde->scrollback_ix = clamp0(tilde->scrollback_ix - NSCREENROWS);
+    // } else if (c == CTRL_KEY('p') || c == 'k') {
+    //     tilde->scrollback_ix = clamp0(tilde->scrollback_ix - 1);
+    // } else if (c == CTRL_KEY('n') || c == 'j') {
+    //     tilde->scrollback_ix = clampu<int>(tilde->scrollback_ix + 1, tilde->log.size() - 1);
+    // } else if (c == 'g') {
+    //     tilde->scrollback_ix = 0;
+    // } else if (c == 'G') {
+    //     tilde->scrollback_ix = clamp0(tilde->log.size() - 1);
+    // }
 }
 
 void tildeDraw(TildeView* tilde)
@@ -2687,7 +2687,7 @@ void tildeDraw(TildeView* tilde)
 void tildeWrite(const char* fmt, ...)
 {
     if (!g_tilde.logfile) {
-        g_tilde.logfile = fopen("/tmp/elide-stderr", "w");
+        g_tilde.logfile = fopen("elide-stderr.txt", "w");
     }
     assert(g_tilde.logfile);
 

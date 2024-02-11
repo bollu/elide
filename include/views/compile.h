@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include "SDL2/SDL_events.h"
 
 namespace fs = std::filesystem;
 
@@ -21,6 +22,6 @@ struct CompileView {
 
 bool compileViewWhenQuit(CompileView* view);
 void compileViewOpen(CompileView* view);
-void compileViewHandleInput(CompileView* view, int c);
+void compileViewHandleInput(CompileView* view, const SDL_Event &e);
 void compileViewDraw(CompileView* view);
 };

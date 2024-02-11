@@ -4,6 +4,7 @@
 #include "views/completion.h"
 #include "views/compile.h"
 #include "views/tilde.h"
+#include "views/ctrlp.h"
 #include "datastructures/abbreviationdict.h"
 
 struct EditorConfig {

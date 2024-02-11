@@ -1,3 +1,4 @@
+#pragma once
 /*
    The latest version of this library is available on GitHub;
    https://github.com/sheredom/subprocess.h
@@ -100,6 +101,7 @@ extern "C" {
 #endif
 
 /// @brief Create a process.
+/// @param cwd An optional curent working directory, pass NULL if not desired.
 /// @param command_line An array of strings for the command line to execute for
 /// this process. The last element must be NULL to signify the end of the array.
 /// The memory backing this parameter only needs to persist until this function
@@ -107,11 +109,13 @@ extern "C" {
 /// @param options A bit field of subprocess_option_e's to pass.
 /// @param out_process The newly created process.
 /// @return On success zero is returned.
-subprocess_weak int subprocess_create(const char *const command_line[],
+subprocess_weak int subprocess_create(const char *cwd,
+                                      const char *const command_line[],
                                       int options,
                                       struct subprocess_s *const out_process);
 
 /// @brief Create a process (extended create).
+/// @param cwd An optional curent working directory, pass NULL if not desired.
 /// @param command_line An array of strings for the command line to execute for
 /// this process. The last element must be NULL to signify the end of the array.
 /// The memory backing this parameter only needs to persist until this function
@@ -126,7 +130,8 @@ subprocess_weak int subprocess_create(const char *const command_line[],
 /// If `options` contains `subprocess_option_inherit_environment`, then
 /// `environment` must be NULL.
 subprocess_weak int
-subprocess_create_ex(const char *const command_line[], int options,
+subprocess_create_ex(const char *cwd,
+                     const char *const command_line[], int options,
                      const char *const environment[],
                      struct subprocess_s *const out_process);
 
@@ -253,9 +258,11 @@ typedef int subprocess_intptr_t;
 typedef unsigned int subprocess_size_t;
 #endif
 #else
+#include <windows.h>
 #include <inttypes.h>
 #include <process.h>
 #include <direct.h>
+#include <libloaderapi.h>
 
 typedef intptr_t subprocess_intptr_t;
 typedef size_t subprocess_size_t;
@@ -485,13 +492,14 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
 }
 #endif
 
-int subprocess_create(const char *const commandLine[], int options,
+int subprocess_create(const char *cwd, const char *const commandLine[], int options,
                       struct subprocess_s *const out_process) {
-  return subprocess_create_ex(commandLine, options, SUBPROCESS_NULL,
+  return subprocess_create_ex(cwd, commandLine, options, SUBPROCESS_NULL,
                               out_process);
 }
 
-int subprocess_create_ex(const char *const commandLine[], int options,
+int subprocess_create_ex(const char *cwd,
+                         const char *const commandLine[], int options,
                          const char *const environment[],
                          struct subprocess_s *const out_process) {
 #if defined(_WIN32)
@@ -747,6 +755,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
           1,                   // handles are inherited
           flags,               // creation flags
           used_environment,    // used environment
+          // cwd ? cwd : SUBPROCESS_NULL,     // use parent's current directory
           SUBPROCESS_NULL,     // use parent's current directory
           SUBPROCESS_PTR_CAST(LPSTARTUPINFOA,
                               &startInfo), // STARTUPINFO pointer
@@ -773,6 +782,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   return 0;
 #else
+  if (cwd) { chdir(cwd); }
   int stdinfd[2];
   int stdoutfd[2];
   int stderrfd[2];
@@ -1198,7 +1208,16 @@ int subprocess_alive(struct subprocess_s *const process) {
   return is_alive;
 }
 
-char *subprocess_getcwd(char *buffer, int maxlen) {
+static void subprocess_get_exepath(char* buffer, int maxlen) {
+  memset(buffer, 0, maxlen);  // readlink does not null terminate!
+#ifdef WIN32
+  GetModuleFileNameA(NULL, buffer, maxlen);
+#else
+  readlink("/proc/self/exe", buffer, maxlen);
+#endif
+}
+
+static char *subprocess_getcwd(char *buffer, int maxlen) {
 #if defined(_WIN32)
   return _getcwd(buffer, maxlen);
 #else
@@ -1206,7 +1225,7 @@ char *subprocess_getcwd(char *buffer, int maxlen) {
 #endif
 
 }
-int subprocess_getpid(){
+static int subprocess_getpid(){
 #if defined(_WIN32)
   return _getpid();
 #else

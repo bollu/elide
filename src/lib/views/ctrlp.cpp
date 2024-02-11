@@ -8,6 +8,7 @@
 #include "definitions/keyevent.h"
 #include "definitions/ctrlkey.h"
 #include "definitions/escapecode.h"
+#include "SDL2/SDL_events.h"
 
 // TODO: get this by ref into the object or something.
 extern EditorConfig g_editor; // global editor handle.
@@ -255,41 +256,41 @@ void singleLineTextAreaHandleInput(SingleLineTextArea* textArea, int c)
     }
 }
 
-void ctrlpHandleInput(CtrlPView* view, int c)
+void ctrlpHandleInput(CtrlPView* view, const SDL_Event &e)
 {
-    singleLineTextAreaHandleInput(&view->textArea, c);
-    assert(view->textArea.col <= view->textArea.text.ncodepoints());
+    // singleLineTextAreaHandleInput(&view->textArea, c);
+    // assert(view->textArea.col <= view->textArea.text.ncodepoints());
 
-    if (c == 'j' || c == CTRL_KEY('n')) {
-        view->rgProcess.selectedLine = clamp0u<int>(view->rgProcess.selectedLine + 1, view->rgProcess.lines.size() - 1);
-    } else if (c == 'k' || c == CTRL_KEY('p')) {
-        view->rgProcess.selectedLine = clamp0(view->rgProcess.selectedLine - 1);
-    };
+    // if (c == 'j' || c == CTRL_KEY('n')) {
+    //     view->rgProcess.selectedLine = clamp0u<int>(view->rgProcess.selectedLine + 1, view->rgProcess.lines.size() - 1);
+    // } else if (c == 'k' || c == CTRL_KEY('p')) {
+    //     view->rgProcess.selectedLine = clamp0(view->rgProcess.selectedLine - 1);
+    // };
 
-    if (view->textArea.mode == TAM_Normal) {
-        if (c == CTRL_KEY('j') || c == CTRL_KEY('n')) {
-            view->rgProcess.selectedLine = clamp0u<int>(view->rgProcess.selectedLine + 1, view->rgProcess.lines.size() - 1);
-        } else if (c == CTRL_KEY('c') || c == 'q') {
-            // quit and go back to previous state.
-            view->quitPressed = true;
-        } else if (c == '\r') {
-            // pressing <ENTER> either selects if a choice is available, or quits if no choices are available.
-            if (view->rgProcess.lines.size() > 0) {
-                view->selectPressed = true;
-            } else {
-                view->quitPressed = true;
-            }
-        }
-    } else {
-        assert(view->textArea.mode == TAM_Insert);
-        if (c == '\r') {
-            if (view->rgProcess.lines.size() > 0) {
-                view->selectPressed = true;
-            } else {
-                view->quitPressed = true;
-            }
-        }
-    }
+    // if (view->textArea.mode == TAM_Normal) {
+    //     if (c == CTRL_KEY('j') || c == CTRL_KEY('n')) {
+    //         view->rgProcess.selectedLine = clamp0u<int>(view->rgProcess.selectedLine + 1, view->rgProcess.lines.size() - 1);
+    //     } else if (c == CTRL_KEY('c') || c == 'q') {
+    //         // quit and go back to previous state.
+    //         view->quitPressed = true;
+    //     } else if (c == '\r') {
+    //         // pressing <ENTER> either selects if a choice is available, or quits if no choices are available.
+    //         if (view->rgProcess.lines.size() > 0) {
+    //             view->selectPressed = true;
+    //         } else {
+    //             view->quitPressed = true;
+    //         }
+    //     }
+    // } else {
+    //     assert(view->textArea.mode == TAM_Insert);
+    //     if (c == '\r') {
+    //         if (view->rgProcess.lines.size() > 0) {
+    //             view->selectPressed = true;
+    //         } else {
+    //             view->quitPressed = true;
+    //         }
+    //     }
+    // }
 }
 
 void ctrlpTickPostKeypress(CtrlPView* view)
@@ -441,52 +442,18 @@ void RgProcess::execpAsync(std::string working_dir, std::vector<std::string> arg
         subprocess_option_search_user_path |
         subprocess_option_enable_nonblocking;
 
+    const char* process_name = "rg";
+    // process_name, arg1, ..., argN, NULL
+    char** argv = (char**)calloc(sizeof(char*), args.size() + 2);
+    argv[0] = strdup(process_name);
+    for (int i = 0; i < args.size(); ++i) {
+        argv[1 + i] = strdup(args[i].c_str());
+    }
+    argv[1 + args.size()] = NULL;
+
     // TODO: add option to chdir()
-    // const int failure = 
-    //     subprocess_create(argv,
-    // assert(false && ("unimplemented " __PRETTY_FUNCTION__ ":" __LINE__)); 
-    assert(false && ("unimplemented RgProcess::execpAsync")); 
-
-    // CHECK_POSIX_CALL_0(pipe2(this->child_stdout_to_parent_buffer, O_NONBLOCK));
-
-    // this->childpid = fork();
-    // if (childpid == -1) {
-    //     perror("ERROR: fork failed.");
-    //     exit(1);
-    // };
-
-    // if (childpid == 0) {
-    //     close(STDIN_FILENO);
-    //     close(STDERR_FILENO);
-    //     // child->parent, child will only write to this pipe, so close read end.
-    //     close(this->child_stdout_to_parent_buffer[PIPE_READ_IX]);
-    //     // it is only legal to call `write()` on stdout. So we tie the `PIPE_WRITE_IX` to `STDOUT`
-    //     dup2(this->child_stdout_to_parent_buffer[PIPE_WRITE_IX], STDOUT_FILENO);
-
-    //     if (chdir(working_dir) != 0) {
-    //         die("ERROR: unable to run `rg, cannot switch to working directory '%s'", working_dir);
-    //     };
-    //     const char* process_name = "rg";
-    //     // process_name, arg1, ..., argN, NULL
-    //     char** argv = (char**)calloc(sizeof(char*), args.size() + 2);
-    //     argv[0] = strdup(process_name);
-    //     for (int i = 0; i < args.size(); ++i) {
-    //         argv[1 + i] = strdup(args[i].c_str());
-    //     }
-    //     argv[1 + args.size()] = NULL;
-    //     if (execvp(process_name, argv) == -1) {
-    //         perror("failed to launch ripgrep");
-    //         abort();
-    //     }
-    // } else {
-
-    //     // parent<-child, parent will only read from this pipe, so close write end.
-    //     close(this->child_stdout_to_parent_buffer[PIPE_WRITE_IX]);
-
-    //     // parent.
-    //     assert(this->childpid != 0);
-    //     this->running = true;
-    // }
+    const int failure = subprocess_create(working_dir.c_str(), argv, subprocess_options, &this->process);
+    assert(!failure);
 };
 
 // kills the process synchronously.
