@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <assert.h>
 #include <ctype.h>
+#include <fstream>
+#include <iostream>
 #include <errno.h>
 #include <fcntl.h>
 #include <iostream>
@@ -22,6 +24,7 @@
 #include "definitions/keyevent.h"
 #include "datastructures/editorconfig.h"
 #include "definitions/escapecode.h"
+#include "imgui/imgui.h"
 
 #ifdef WIN32
 #include <windows.h>
@@ -129,7 +132,7 @@ int LeanServerState::_read_stdout_str_from_child_nonblocking()
 {
     const int BUFSIZE = 4096;
     char buf[BUFSIZE];
-    int nread = subprocess_read_stdout(&this->process, buf, BUFSIZE);
+    int nread = subprocess_read_stdout_async(&this->process, buf, BUFSIZE);
     // int nread = read(this->child_stdout_to_parent_buffer[PIPE_READ_IX], buf, BUFSIZE);
     if (nread == -1) {
 
@@ -673,30 +676,28 @@ void fileConfigRequestGoalState(FileConfig* file_config)
 }
 
 /*** file i/o ***/
-FileConfig::FileConfig(FileLocation loc)
-{
+FileConfig::FileConfig(FileLocation loc) {
     this->cursor = loc.cursor;
     this->absolute_filepath = loc.absolute_filepath;
     assert(this->absolute_filepath.is_absolute());
-    FILE* fp = fopen(this->absolute_filepath.string().c_str(), "a+");
-    if (!fp) {
-        die("fopen: unable to open file '%s'", this->absolute_filepath.c_str());
-    }
-    fseek(fp, 0, /*whence=*/SEEK_SET);
 
-    char* line = nullptr;
-    size_t linecap = 0; // allocate memory for line read.
-    ssize_t linelen = -1;
-    // TODO: `getline` is not posix, switch to using C++ streams.
-    assert(false && "must port getline()");
-    // while ((linelen = getline(&line, &linecap, fp)) != -1) {
-    //     while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) {
-    //         linelen--;
-    //     }
-    //     fileConfigInsertRowBefore(this, this->rows.size(), line, linelen);
-    // }
-    free(line);
-    fclose(fp);
+    std::ifstream file(this->absolute_filepath.string());
+    if (!file.is_open()) {
+        die("ifstream: unable to open file '%s'",
+            this->absolute_filepath.c_str());
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        // Remove trailing newline or carriage return characters
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+            line.pop_back();
+        }
+        fileConfigInsertRowBefore(this, this->rows.size(), line.c_str(),
+                                  line.length());
+    }
+
+    file.close();
 }
 
 void fileConfigRowsToBuf(FileConfig* file, abuf* buf)
@@ -866,146 +867,146 @@ const char* LspDiagnosticSeverityToColor(LspDiagnosticSeverity s)
 
 void fileConfigDraw(FileConfig* f)
 {
-    f->cursor_render_col = 0;
-    assert(f->cursor.row >= 0 && f->cursor.row <= f->rows.size());
-    if (f->cursor.row < f->rows.size()) {
-        f->cursor_render_col = f->rows[f->cursor.row].cxToRx(Size<Codepoint>(f->cursor.col));
-    }
-    if (f->cursor.row < f->scroll_row_offset) {
-        f->scroll_row_offset = f->cursor.row;
-    }
-    if (f->cursor.row >= f->scroll_row_offset + g_editor.screenrows) {
-        f->scroll_row_offset = f->cursor.row - g_editor.screenrows + 1;
-    }
-    if (f->cursor_render_col < f->scroll_col_offset) {
-        f->scroll_col_offset = f->cursor_render_col;
-    }
-    if (f->cursor_render_col >= f->scroll_col_offset + g_editor.screencols) {
-        f->scroll_col_offset = f->cursor_render_col - g_editor.screencols + 1;
-    }
 
-    abuf ab;
-    ab.appendstr("\x1b[?25l"); // hide cursor
+    ImGui::Begin(f->absolute_filepath.string().c_str(), nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+    ImGui::End();
+    // f->cursor_render_col = 0;
+    // assert(f->cursor.row >= 0 && f->cursor.row <= f->rows.size());
+    // if (f->cursor.row < f->rows.size()) {
+    //     f->cursor_render_col = f->rows[f->cursor.row].cxToRx(Size<Codepoint>(f->cursor.col));
+    // }
+    // if (f->cursor.row < f->scroll_row_offset) {
+    //     f->scroll_row_offset = f->cursor.row;
+    // }
+    // if (f->cursor.row >= f->scroll_row_offset + g_editor.screenrows) {
+    //     f->scroll_row_offset = f->cursor.row - g_editor.screenrows + 1;
+    // }
+    // if (f->cursor_render_col < f->scroll_col_offset) {
+    //     f->scroll_col_offset = f->cursor_render_col;
+    // }
+    // if (f->cursor_render_col >= f->scroll_col_offset + g_editor.screencols) {
+    //     f->scroll_col_offset = f->cursor_render_col - g_editor.screencols + 1;
+    // }
 
-    // VT100 escapes.
-    // \x1b: escape.
-    // J: erase in display.
-    // [2J: clear entire screen
-    // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
-    // cursor to bottom
-    //          0 is default arg, so [J: clear screen from cursor to bottom
-    ab.appendstr("\x1b[2J");
+    // abuf ab;
+    // ab.appendstr("\x1b[?25l"); // hide cursor
 
-    // H: cursor position
-    // [<row>;<col>H   (args separated by ;).
-    // Default arguments for H is 1, so it's as if we had sent [1;1H
-    ab.appendstr("\x1b[1;1H");
+    // // VT100 escapes.
+    // // \x1b: escape.
+    // // J: erase in display.
+    // // [2J: clear entire screen
+    // // trivia: [0J: clear screen from top to cuursor, [1J: clear screen from
+    // // cursor to bottom
+    // //          0 is default arg, so [J: clear screen from cursor to bottom
+    // ab.appendstr("\x1b[2J");
 
-    // When we print the line number, tilde, we then print a
-    // "\r\n" like on any other line, but this causes the terminal to scroll in
-    // order to make room for a new, blank line. Let’s make the last line an
-    // exception when we print our
-    // "\r\n".
-    // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
-    // plus one more for the progress bar character
-    const int NCHARS_PIPE = 1;
-    const int NCHARS_PROGRESSBAR = 1;
-    const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + f->scroll_row_offset + NCHARS_PIPE + NCHARS_PROGRESSBAR) + 1;
-    for (int row = 0; row < g_editor.screenrows; row++) {
-        int filerow = row + f->scroll_row_offset;
+    // // H: cursor position
+    // // [<row>;<col>H   (args separated by ;).
+    // // Default arguments for H is 1, so it's as if we had sent [1;1H
+    // ab.appendstr("\x1b[1;1H");
 
-        // convert the line number into a string, and write it.
-        {
+    // // When we print the line number, tilde, we then print a
+    // // "\r\n" like on any other line, but this causes the terminal to scroll in
+    // // order to make room for a new, blank line. Let’s make the last line an
+    // // exception when we print our
+    // // "\r\n".
+    // // plus one at the end for the pipe, and +1 on the num_digits so we start from '1'.
+    // // plus one more for the progress bar character
+    // const int NCHARS_PIPE = 1;
+    // const int NCHARS_PROGRESSBAR = 1;
+    // const int LINE_NUMBER_NUM_CHARS = num_digits(g_editor.screenrows + f->scroll_row_offset + NCHARS_PIPE + NCHARS_PROGRESSBAR) + 1;
+    // for (int row = 0; row < g_editor.screenrows; row++) {
+    //     int filerow = row + f->scroll_row_offset;
 
-            char* line_number_str = (char*)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
-            if (f->lean_server_state.initialized != LeanServerInitializedKind::Initialized) {
-                ab.appendstr(ESCAPE_CODE_GRAY "▌" ESCAPE_CODE_UNSET);
-            } else if (f->isLeanSyncDirty()) {
-                ab.appendstr(ESCAPE_CODE_WHITE "▌" ESCAPE_CODE_UNSET);
-            } else {
-                if (filerow < f->progressbar.startRow || f->progressbar.finished) {
-                    ab.appendstr(ESCAPE_CODE_GREEN "▌" ESCAPE_CODE_UNSET);
-                } else {
-                    ab.appendstr(ESCAPE_CODE_YELLOW "▌" ESCAPE_CODE_UNSET);
-                }
-            }
-            bool row_needs_unset = false;
-            if (filerow == f->cursor.row) {
-                ab.appendstr(ESCAPE_CODE_CURSOR_SELECT);
-                row_needs_unset = true;
-            }
-            // code in view mode is renderered gray
-            else if (g_editor.vim_mode == VM_NORMAL) {
-                ab.appendstr(ESCAPE_CODE_DULL);
-                row_needs_unset = true;
-            }
+    //     // convert the line number into a string, and write it.
+    //     {
 
-            if (!f->isLeanSyncDirty()) { // only draw diagonstics if lean state is sync'd.
-                for (const LspDiagnostic& d : f->lspDiagnostics) {
-                    if (d.range.start.row >= filerow && d.range.end.row <= filerow) {
-                        row_needs_unset = true;
-                        ab.appendstr(LspDiagnosticSeverityToColor(d.severity));
-                    }
-                }
-            }
+    //         char* line_number_str = (char*)calloc(sizeof(char), (LINE_NUMBER_NUM_CHARS + 1)); // TODO: allocate once.
+    //         if (f->lean_server_state.initialized != LeanServerInitializedKind::Initialized) {
+    //             ab.appendstr(ESCAPE_CODE_GRAY "▌" ESCAPE_CODE_UNSET);
+    //         } else if (f->isLeanSyncDirty()) {
+    //             ab.appendstr(ESCAPE_CODE_WHITE "▌" ESCAPE_CODE_UNSET);
+    //         } else {
+    //             if (filerow < f->progressbar.startRow || f->progressbar.finished) {
+    //                 ab.appendstr(ESCAPE_CODE_GREEN "▌" ESCAPE_CODE_UNSET);
+    //             } else {
+    //                 ab.appendstr(ESCAPE_CODE_YELLOW "▌" ESCAPE_CODE_UNSET);
+    //             }
+    //         }
+    //         bool row_needs_unset = false;
+    //         if (filerow == f->cursor.row) {
+    //             ab.appendstr(ESCAPE_CODE_CURSOR_SELECT);
+    //             row_needs_unset = true;
+    //         }
+    //         // code in view mode is renderered gray
+    //         else if (g_editor.vim_mode == VM_NORMAL) {
+    //             ab.appendstr(ESCAPE_CODE_DULL);
+    //             row_needs_unset = true;
+    //         }
 
-            int ix = write_int_to_str(line_number_str, filerow + 1);
-            while (ix < LINE_NUMBER_NUM_CHARS - 1) {
-                line_number_str[ix] = ' ';
-                ix++;
-            }
-            line_number_str[ix] = '|';
-            ab.appendstr(line_number_str);
-            free(line_number_str);
+    //         if (!f->isLeanSyncDirty()) { // only draw diagonstics if lean state is sync'd.
+    //             for (const LspDiagnostic& d : f->lspDiagnostics) {
+    //                 if (d.range.start.row >= filerow && d.range.end.row <= filerow) {
+    //                     row_needs_unset = true;
+    //                     ab.appendstr(LspDiagnosticSeverityToColor(d.severity));
+    //                 }
+    //             }
+    //         }
 
-            // code in view mode is renderered gray, so reset.
-            if (row_needs_unset) {
-                ab.appendstr(ESCAPE_CODE_UNSET);
-            }
-        }
-        // code in view mode is renderered gray
-        if (g_editor.vim_mode == VM_NORMAL) {
-            ab.appendstr("\x1b[37;40m");
-        }
+    //         int ix = write_int_to_str(line_number_str, filerow + 1);
+    //         while (ix < LINE_NUMBER_NUM_CHARS - 1) {
+    //             line_number_str[ix] = ' ';
+    //             ix++;
+    //         }
+    //         line_number_str[ix] = '|';
+    //         ab.appendstr(line_number_str);
+    //         free(line_number_str);
 
-        const TextAreaMode textAreaMode = g_editor.vim_mode == VM_NORMAL ? TextAreaMode::TAM_Normal : TAM_Insert;
+    //         // code in view mode is renderered gray, so reset.
+    //         if (row_needs_unset) {
+    //             ab.appendstr(ESCAPE_CODE_UNSET);
+    //         }
+    //     }
+    //     // code in view mode is renderered gray
+    //     if (g_editor.vim_mode == VM_NORMAL) {
+    //         ab.appendstr("\x1b[37;40m");
+    //     }
 
-        if (filerow < f->rows.size()) {
-            const abuf& row = f->rows[filerow];
-            const Size<Codepoint> NCOLS = clampu<Size<Codepoint>>(row.ncodepoints(), g_editor.screencols - LINE_NUMBER_NUM_CHARS - 1);
-            assert(g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT);
+    //     const TextAreaMode textAreaMode = g_editor.vim_mode == VM_NORMAL ? TextAreaMode::TAM_Normal : TAM_Insert;
 
-            if (filerow == f->cursor.row) {
-                for (Size<Codepoint> i(0); i <= NCOLS; ++i) {
-                    appendColWithCursor(&ab, &row, i, f->cursor.col, textAreaMode);
-                }
-            } else {
-                for (Ix<Codepoint> i(0); i < NCOLS; ++i) {
-                    ab.appendCodepoint(row.getCodepoint(i));
-                }
-            }
-        } else if (filerow == f->rows.size() && f->cursor.row == filerow) {
-            abufAppendCodepointWithCursor(&ab, textAreaMode, " ");
-        } else {
-            ab.appendstr("~");
-        }
+    //     if (filerow < f->rows.size()) {
+    //         const abuf& row = f->rows[filerow];
+    //         const Size<Codepoint> NCOLS = clampu<Size<Codepoint>>(row.ncodepoints(), g_editor.screencols - LINE_NUMBER_NUM_CHARS - 1);
+    //         assert(g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT);
 
-        if (g_editor.vim_mode == VM_NORMAL) {
-            ab.appendstr("\x1b[0m");
-        }
+    //         if (filerow == f->cursor.row) {
+    //             for (Size<Codepoint> i(0); i <= NCOLS; ++i) {
+    //                 appendColWithCursor(&ab, &row, i, f->cursor.col, textAreaMode);
+    //             }
+    //         } else {
+    //             for (Ix<Codepoint> i(0); i < NCOLS; ++i) {
+    //                 ab.appendCodepoint(row.getCodepoint(i));
+    //             }
+    //         }
+    //     } else if (filerow == f->rows.size() && f->cursor.row == filerow) {
+    //         abufAppendCodepointWithCursor(&ab, textAreaMode, " ");
+    //     } else {
+    //         ab.appendstr("~");
+    //     }
 
-        // The K command (Erase In Line) erases part of the current line.
-        // by default, arg is 0, which erases everything to the right of the
-        // cursor.
-        ab.appendstr("\x1b[K");
+    //     if (g_editor.vim_mode == VM_NORMAL) {
+    //         ab.appendstr("\x1b[0m");
+    //     }
 
-        // always append a space, since we decrement a row from screen rows
-        // to make space for status bar.
-        ab.appendstr("\r\n");
-    }
-#ifndef WIN32
-    CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
-#endif  // !WIN32
+    //     // The K command (Erase In Line) erases part of the current line.
+    //     // by default, arg is 0, which erases everything to the right of the
+    //     // cursor.
+    //     ab.appendstr("\x1b[K");
+
+    //     // always append a space, since we decrement a row from screen rows
+    //     // to make space for status bar.
+    //     ab.appendstr("\r\n");
+    // }
 }
 
 void drawCallback(std::function<void(abuf& ab)> f)
@@ -1359,9 +1360,25 @@ void editorDrawNoFile()
 
 void editorDraw()
 {
+
+    if (ctrlpDraw(&g_editor.ctrlp)) {
+        if (ctrlpWhenSelected(&g_editor.ctrlp)) {
+            g_editor.getOrOpenNewFile(ctrlpGetSelectedFileLocation(&g_editor.ctrlp));
+            g_editor.vim_mode = VM_NORMAL;
+        }
+    }
+    // draw the current file.
     if (g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT) {
         if (g_editor.curFile()) {
             fileConfigDraw(g_editor.curFile());
+        } else {
+            editorDrawNoFile();
+        }
+    }
+    /*
+    if (g_editor.vim_mode == VM_NORMAL || g_editor.vim_mode == VM_INSERT) {
+        if (g_editor.curFile()) {
+            fileconfigdraw(g_editor.curfile());
         } else {
             editorDrawNoFile();
         }
@@ -1379,6 +1396,7 @@ void editorDraw()
         assert(g_editor.curFile() != NULL);
         editorDrawInfoView(g_editor.curFile());
     }
+    */
 }
 
 /*** input ***/
@@ -2035,7 +2053,7 @@ void editorProcessKeypress(SDL_Event e)
             return;
         }
     } else if (g_editor.vim_mode == VM_CTRLP) {
-        ctrlpHandleInput(&g_editor.ctrlp, e);
+        _ctrlpHandleInput(&g_editor.ctrlp);
         if (ctrlpWhenQuit(&g_editor.ctrlp)) {
             g_editor.vim_mode = g_editor.ctrlp.previous_state;
             return;

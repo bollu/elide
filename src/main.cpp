@@ -27,6 +27,86 @@
 #include <SDL_opengl.h>
 #endif
 
+
+namespace ImGui {
+void setupDraculaColors() {
+  auto& colors = ImGui::GetStyle().Colors;
+  colors[ImGuiCol_WindowBg] = ImVec4{0.1f, 0.1f, 0.13f, 1.0f};
+  colors[ImGuiCol_MenuBarBg] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+
+  // Border
+  colors[ImGuiCol_Border] = ImVec4{0.44f, 0.37f, 0.61f, 0.29f};
+  colors[ImGuiCol_BorderShadow] = ImVec4{0.0f, 0.0f, 0.0f, 0.24f};
+
+  // Text
+  colors[ImGuiCol_Text] = ImVec4{1.0f, 1.0f, 1.0f, 1.0f};
+  colors[ImGuiCol_TextDisabled] = ImVec4{0.5f, 0.5f, 0.5f, 1.0f};
+
+  // Headers
+  colors[ImGuiCol_Header] = ImVec4{0.13f, 0.13f, 0.17, 1.0f};
+  colors[ImGuiCol_HeaderHovered] = ImVec4{0.19f, 0.2f, 0.25f, 1.0f};
+  colors[ImGuiCol_HeaderActive] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+
+  // Buttons
+  colors[ImGuiCol_Button] = ImVec4{0.13f, 0.13f, 0.17, 1.0f};
+  colors[ImGuiCol_ButtonHovered] = ImVec4{0.19f, 0.2f, 0.25f, 1.0f};
+  colors[ImGuiCol_ButtonActive] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+  colors[ImGuiCol_CheckMark] = ImVec4{0.74f, 0.58f, 0.98f, 1.0f};
+
+  // Popups
+  colors[ImGuiCol_PopupBg] = ImVec4{0.1f, 0.1f, 0.13f, 0.92f};
+
+  // Slider
+  colors[ImGuiCol_SliderGrab] = ImVec4{0.44f, 0.37f, 0.61f, 0.54f};
+  colors[ImGuiCol_SliderGrabActive] = ImVec4{0.74f, 0.58f, 0.98f, 0.54f};
+
+  // Frame BG
+  colors[ImGuiCol_FrameBg] = ImVec4{0.13f, 0.13, 0.17, 1.0f};
+  colors[ImGuiCol_FrameBgHovered] = ImVec4{0.19f, 0.2f, 0.25f, 1.0f};
+  colors[ImGuiCol_FrameBgActive] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+
+  // Tabs
+  colors[ImGuiCol_Tab] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+  colors[ImGuiCol_TabHovered] = ImVec4{0.24, 0.24f, 0.32f, 1.0f};
+  colors[ImGuiCol_TabActive] = ImVec4{0.2f, 0.22f, 0.27f, 1.0f};
+  colors[ImGuiCol_TabUnfocused] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+  colors[ImGuiCol_TabUnfocusedActive] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+
+  // Title
+  colors[ImGuiCol_TitleBg] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+  colors[ImGuiCol_TitleBgActive] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+  colors[ImGuiCol_TitleBgCollapsed] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+
+  // Scrollbar
+  colors[ImGuiCol_ScrollbarBg] = ImVec4{0.1f, 0.1f, 0.13f, 1.0f};
+  colors[ImGuiCol_ScrollbarGrab] = ImVec4{0.16f, 0.16f, 0.21f, 1.0f};
+  colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4{0.19f, 0.2f, 0.25f, 1.0f};
+  colors[ImGuiCol_ScrollbarGrabActive] = ImVec4{0.24f, 0.24f, 0.32f, 1.0f};
+
+  // Seperator
+  colors[ImGuiCol_Separator] = ImVec4{0.44f, 0.37f, 0.61f, 1.0f};
+  colors[ImGuiCol_SeparatorHovered] = ImVec4{0.74f, 0.58f, 0.98f, 1.0f};
+  colors[ImGuiCol_SeparatorActive] = ImVec4{0.84f, 0.58f, 1.0f, 1.0f};
+
+  // Resize Grip
+  colors[ImGuiCol_ResizeGrip] = ImVec4{0.44f, 0.37f, 0.61f, 0.29f};
+  colors[ImGuiCol_ResizeGripHovered] = ImVec4{0.74f, 0.58f, 0.98f, 0.29f};
+  colors[ImGuiCol_ResizeGripActive] = ImVec4{0.84f, 0.58f, 1.0f, 0.29f};
+
+  // Docking
+  // colors[ImGuiCol_DockingPreview] = ImVec4{0.44f, 0.37f, 0.61f, 1.0f};
+
+  auto& style = ImGui::GetStyle();
+  style.TabRounding = 4;
+  style.ScrollbarRounding = 9;
+  style.WindowRounding = 7;
+  style.GrabRounding = 3;
+  style.FrameRounding = 3;
+  style.PopupRounding = 4;
+  style.ChildRounding = 4;
+}
+}  // namespace ImGui;
+
 // Main code
 namespace chr = std::chrono;
 namespace fs = std::filesystem;
@@ -99,7 +179,7 @@ int main(int argc, char** argv) {
       ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
 
   // Setup Dear ImGui style
-  ImGui::StyleColorsDark();
+  ImGui::setupDraculaColors();
   // ImGui::StyleColorsLight();
 
   // Setup Platform/Renderer backends
@@ -196,6 +276,7 @@ int main(int argc, char** argv) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       ImGui_ImplSDL2_ProcessEvent(&event);
+      // editorProcessKeypress(event);
       if (event.type == SDL_QUIT) {
         done = true;
       }
@@ -206,8 +287,6 @@ int main(int argc, char** argv) {
       }
     }
 
-    editorProcessKeypress(event);
-    editorTickPostKeypress();
 
     // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
@@ -215,15 +294,28 @@ int main(int argc, char** argv) {
     ImGui::NewFrame();
 
     // 3. Show another simple window.
+    const auto DisplaySize = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::Begin("~ Debug Log", nullptr,
-                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
-    for (std::string& s : tilde::g_tilde.log) {
-      ImGui::Text(s.c_str());
-    }
-    ImGui::End();
+    ImGui::SetNextWindowSize(ImVec2(DisplaySize));
+    if (g_editor.vim_mode == VM_TILDE) {
+      ImGui::Begin("~ Debug Log", nullptr, ImGuiWindowFlags_NoResize |
+                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                       ImGuiWindowFlags_NoInputs);
+      if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey::ImGuiKey_P)) {
+        g_editor.vim_mode = VM_CTRLP;
+      }
 
-    // editorDraw();
+      if (ImGui::IsKeyPressed(ImGuiKey_GraveAccent)) {
+        g_editor.vim_mode = tilde::g_tilde.previousMode;
+      }
+      for (std::string& s : tilde::g_tilde.log) {
+        ImGui::Text(s.c_str());
+      }
+      ImGui::End();
+    }
+
+    editorDraw();
+    editorTickPostKeypress();
 
     // Rendering
     ImGui::Render();
@@ -243,12 +335,12 @@ int main(int argc, char** argv) {
       continue;
     }
 
-    auto elapsed_microsec = chr::duration_cast<chr::microseconds>(elapsed_nsec);
-    const chr::microseconds total_microsec(
-        1000000 /
-        30);  // 30 FPS = 1s / 30 frames = 1000000 microsec / 120 frames
-    const auto sleep_microsec = total_microsec - elapsed_microsec;
-    std::this_thread::sleep_for(sleep_microsec);
+    // auto elapsed_microsec = chr::duration_cast<chr::microseconds>(elapsed_nsec);
+    // const chr::microseconds total_microsec(
+    //     1000000 /
+    //     30);  // 30 FPS = 1s / 30 frames = 1000000 microsec / 120 frames
+    // const auto sleep_microsec = total_microsec - elapsed_microsec;
+    // std::this_thread::sleep_for(sleep_microsec);
   }
 
   // Cleanup

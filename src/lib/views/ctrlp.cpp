@@ -9,6 +9,8 @@
 #include "definitions/ctrlkey.h"
 #include "definitions/escapecode.h"
 #include "SDL2/SDL_events.h"
+#include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"
 
 // TODO: get this by ref into the object or something.
 extern EditorConfig g_editor; // global editor handle.
@@ -147,6 +149,7 @@ std::vector<std::string> CtrlPView::rgArgsToCommandLineArgs(CtrlPView::RgArgs ar
 {
     // search for files
     std::vector<std::string> out;
+    out.push_back("--max-depth"); out.push_back("2");
     if (args.fileContentPattern != "") {
         // we are searching
         out.push_back(args.fileContentPattern);
@@ -199,66 +202,156 @@ void ctrlpOpen(CtrlPView* view, VimMode previous_state, fs::path absolute_cwd)
     g_editor.vim_mode = VM_CTRLP;
 }
 
-void singleLineTextAreaHandleInput(SingleLineTextArea* textArea, int c)
-{
+void singleLineTextAreaDraw(SingleLineTextArea* textArea) {
+
+    // Get the font height
+    float fontHeight = ImGui::GetFontSize();
+
+    // Optionally add some padding
+    float heightPadding = 0.0f;
+    float totalHeight =
+        fontHeight + heightPadding * 2;  // Total height including padding
+
+    // Calculate the available width
+    float width = ImGui::GetContentRegionMaxAbs().x;
+
+    if (ImGui::BeginChild("singleLineTextArea", ImVec2(width, totalHeight),
+                          ImGuiChildFlags_None)) {
+        _singleLineTextAreaHandleInput(textArea);
+        // Draw a rectangle with height equal to font height + padding
+        ImVec2 p0 =
+            ImGui::GetCursorScreenPos();  // Top-left corner of the rectangle
+        ImVec2 p1 =
+            ImVec2(p0.x + width,
+                   p0.y + totalHeight);  // Bottom-right corner of the rectangle
+
+        ImVec4 bgColor = textArea->mode == TextAreaMode::TAM_Normal
+                             ? ImGui::GetStyle().Colors[ImGuiCol_FrameBgHovered]
+                             : ImGui::GetStyle().Colors[ImGuiCol_FrameBgActive];
+
+        // Convert ImVec4 (0-1 range) to ImU32
+        ImU32 bgColU32 =
+            IM_COL32((int)(bgColor.x * 255), (int)(bgColor.y * 255),
+                     (int)(bgColor.z * 255), (int)(bgColor.w * 255));
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            p0, p1, bgColU32);  // Change color as needed
+
+        // Adjust cursor for text, considering padding
+        ImGui::SetCursorScreenPos(ImVec2(p0.x, p0.y + heightPadding));
+
+        ImGui::PushItemWidth(
+            width);  // Ensure the input text field fits the rectangle
+        ImGui::PushStyleColor(
+            ImGuiCol_Text, textArea->mode == TextAreaMode::TAM_Normal
+                               ? ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]
+                               : ImGui::GetStyle().Colors[ImGuiCol_Text]);
+        ImGui::TextEx(textArea->text.buf(),
+                      textArea->text.buf() + textArea->text.nbytes().size);
+        ImGui::PopStyleColor();
+        ImGui::PopItemWidth();
+        ImGui::EndChild();
+    }
+};
+
+void _singleLineTextAreaHandleInput(SingleLineTextArea* textArea) {
+    ImGuiIO& io = ImGui::GetIO();
     assert(textArea->col <= textArea->text.ncodepoints());
-    if (textArea->mode == TAM_Normal) {
-        if (c == 'h' || c == KEYEVENT_ARROW_LEFT) {
-            textArea->col = textArea->col.sub0(1);
-        } else if (c == 'l' || c == KEYEVENT_ARROW_RIGHT) {
-            textArea->col = clampu<Size<Codepoint>>(textArea->col + 1, textArea->text.ncodepoints());
-        } else if (c == '$' || c == CTRL_KEY('e')) {
-            textArea->col = textArea->text.ncodepoints();
-        } else if (c == '0' || c == CTRL_KEY('a')) {
-            textArea->col = 0;
-        } else if (c == 'd' || c == CTRL_KEY('k')) {
-            textArea->text.truncateNCodepoints(textArea->col);
-        } else if (c == 'w') {
-            // TODO: move word.
-            textArea->col = clampu<Size<Codepoint>>(textArea->col + 4, textArea->text.ncodepoints());
-        } else if (c == 'x') {
-            if (textArea->col < textArea->text.ncodepoints()) {
-                textArea->text.delCodepointAt(textArea->col.toIx());
+    if (textArea->mode == TAM_Insert) {
+        if (io.InputQueueCharacters.Size) {
+            for (int n = 0; n < io.InputQueueCharacters.Size; n++) {
+                char c = io.InputQueueCharacters[0];
+                if (isprint(c)) {
+                    textArea->text.insertCodepointBefore(textArea->col, &c);
+                    textArea->col += 1;
+                }
             }
-        } else if (c == 'b') {
-            textArea->col = textArea->col.sub0(4);
-            // TODO: move word back.
-        } else if (c == 'i') {
-            textArea->mode = TAM_Insert;
-        } else if (c == 'a') {
-            textArea->col = clampu<Size<Codepoint>>(textArea->col + 1, textArea->text.ncodepoints());
-            textArea->mode = TAM_Insert;
+            io.InputQueueCharacters.resize(0);
         }
-    } else {
-        assert(textArea->mode == TAM_Insert);
-        if (c == CTRL_KEY('c')) {
-            textArea->mode = TAM_Normal;
-            // quit and go back to previous state.
-        } else if (c == KEYEVENT_ARROW_LEFT || c == CTRL_KEY('b')) {
-            textArea->col = textArea->col.sub0(1);
-        } else if (c == KEYEVENT_ARROW_RIGHT || c == CTRL_KEY('f')) {
-            textArea->col = clampu<Size<Codepoint>>(textArea->col + 1, textArea->text.ncodepoints());
-        } else if (c == KEYEVENT_BACKSPACE) {
+
+        if (ImGui::IsKeyPressed(ImGuiKey::ImGuiKey_Backspace)) {
             if (textArea->col > 0) {
                 textArea->text.delCodepointAt(textArea->col.largestIx());
                 textArea->col = textArea->col.sub0(1);
             }
-        } else if (c == CTRL_KEY('e')) { // readline
-            textArea->col = textArea->text.ncodepoints();
-        } else if (c == CTRL_KEY('a')) {
-            textArea->col = 0;
-        } else if (c == CTRL_KEY('k')) {
-            textArea->text.truncateNCodepoints(textArea->col);
-        } else if (isprint(c) && c != ' ' && c != '\t') {
-            textArea->text.insertCodepointBefore(textArea->col, (const char*)&c);
-            textArea->col += 1;
         }
     }
+    /*
+    if (textArea->mode == TAM_Normal) {
+        if (e.key.keysym.sym == SDLK_h || e.key.keysym.sym == SDLK_LEFT) {
+            textArea->col = textArea->col.sub0(1);
+        } else if (e.key.keysym.sym == SDLK_l ||
+                   e.key.keysym.sym == SDLK_RIGHT) {
+            textArea->col = clampu<Size<Codepoint>>(
+                textArea->col + 1, textArea->text.ncodepoints());
+        } else if (e.key.keysym.sym == SDLK_DOLLAR ||
+                   (e.key.keysym.sym == SDLK_e &&
+                    e.key.keysym.mod & KMOD_CTRL)) {
+            textArea->col = textArea->text.ncodepoints();
+        } else if (e.key.keysym.sym == SDLK_a) {  //  || c == CTRL_KEY('a')) {
+            textArea->col = 0;
+        } else if (e.key.keysym.sym == SDLK_d ||
+                   e.key.keysym.sym == SDLK_d && e.key.keysym.mod & KMOD_CTRL) {
+            textArea->text.truncateNCodepoints(textArea->col);
+        } else if (e.key.keysym.sym == SDLK_w) {
+            // TODO: move word.
+            textArea->col = clampu<Size<Codepoint>>(
+                textArea->col + 4, textArea->text.ncodepoints());
+        } else if (e.key.keysym.sym == SDLK_x) {
+            if (textArea->col < textArea->text.ncodepoints()) {
+                textArea->text.delCodepointAt(textArea->col.toIx());
+            }
+        } else if (e.key.keysym.sym == SDLK_b) {
+            textArea->col = textArea->col.sub0(4);
+            // TODO: move word back.
+        } else if (e.key.keysym.sym == SDLK_i) {
+            textArea->mode = TAM_Insert;
+        } else if (e.key.keysym.sym == SDLK_a) {
+            textArea->col = clampu<Size<Codepoint>>(
+                textArea->col + 1, textArea->text.ncodepoints());
+            textArea->mode = TAM_Insert;
+        }
+    } else {
+        assert(textArea->mode == TAM_Insert);
+        if (e.key.keysym.sym == SDLK_c && (e.key.keysym.mod & KMOD_CTRL)) {
+            textArea->mode = TAM_Normal;
+            // quit and go back to previous state.
+        } else if (e.key.keysym.sym ==
+                   SDLK_LEFT) {  // || ()c == CTRL_KEY('b')) {
+            textArea->col = textArea->col.sub0(1);
+        } else if (e.key.keysym.sym ==
+                   SDLK_RIGHT) {  // || c == CTRL_KEY('f')) {
+            textArea->col = clampu<Size<Codepoint>>(
+                textArea->col + 1, textArea->text.ncodepoints());
+        } else if (e.key.keysym.sym == SDLK_BACKSPACE) {
+            if (textArea->col > 0) {
+                textArea->text.delCodepointAt(textArea->col.largestIx());
+                textArea->col = textArea->col.sub0(1);
+            }
+        } else if (!e.key.repeat && e.key.keysym.sym >= SDLK_EXCLAIM &&
+                   e.key.keysym.sym <= SDLK_z && e.key.keysym.sym != ' ' &&
+                   e.key.keysym.sym != '\t' && e.key.keysym.sym != '\n') {
+            const char c = e.key.keysym.sym;
+            textArea->text.insertCodepointBefore(textArea->col, &c);
+            textArea->col += 1;
+        }
+
+        // else if (c == CTRL_KEY('e')) { // readline
+        //     textArea->col = textArea->text.ncodepoints();
+        // } else if (c == CTRL_KEY('a')) {
+        //     textArea->col = 0;
+        // } else if (c == CTRL_KEY('k')) {
+        //     textArea->text.truncateNCodepoints(textArea->col);
+        // } else if (isprint(c) && c != ' ' && c != '\t') {
+        //     textArea->text.insertCodepointBefore(textArea->col, (const
+        //     char*)&c); textArea->col += 1;
+        // }
+    }
+    */
 }
 
-void ctrlpHandleInput(CtrlPView* view, const SDL_Event &e)
+void _ctrlpHandleInput(CtrlPView* view)
 {
-    // singleLineTextAreaHandleInput(&view->textArea, c);
+    // singleLineTextAreaHandleInput(&view->textArea);
     // assert(view->textArea.col <= view->textArea.text.ncodepoints());
 
     // if (c == 'j' || c == CTRL_KEY('n')) {
@@ -308,104 +401,40 @@ void ctrlpTickPostKeypress(CtrlPView* view)
     view->rgProcess.readLinesNonBlocking();
 }
 
-void ctrlpDraw(CtrlPView* view)
-{
-    abuf ab;
-    { // draw text of the search.
-        ab.appendstr("\x1b[?25l"); // hide cursor
-        ab.appendstr("\x1b[2J"); // J: erase in display.
-        ab.appendstr("\x1b[1;1H"); // H: cursor position
-
-        // append format string.
-        ab.appendfmtstr(120, "┎ctrlp mode (%10s|%10s|%5d matches)┓\x1b[k\r\n",
-            textAreaModeToString(view->textArea.mode),
-            view->rgProcess.running ? "running" : "completed",
-            view->rgProcess.lines.size());
-
-        const std::string cwd = view->absolute_cwd.string();
-        ab.appendfmtstr(120, "searching: '%s'\x1b[k\r\n", cwd.c_str());
-
-        const int NELLIPSIS = 2; // ellipsis width;
-        const int VIEWSIZE = 80;
-        const int NCODEPOINTS = view->textArea.text.ncodepoints().size;
-
-        // interesting, see that the left and right actually appears to be well-typed.
-        // NCODEPOINTS = 40. VIEWSIZE = 10
-        // [0, 0] -> [-10, 10] -> [0, 10] -> [0, 10]
-        // [1, 1] -> [-9, 11] -> [0, 11] -> [0, 10]?
-        const auto intervalText = interval(view->textArea.col.size)
-                                      .ldl(VIEWSIZE)
-                                      .clamp(0, NCODEPOINTS) // clamp length to be inbounds.
-                                      .len_clampl_move_r(VIEWSIZE) // move right hand side point to be inbounds
-                                      .clamp(0, NCODEPOINTS); // clamp right to be inbounds
-
-        const auto intervalEllipsisL = interval(0, intervalText.l);
-        for (int i = 0; i < NELLIPSIS; ++i) {
-            ab.appendstr(ESCAPE_CODE_DULL);
-            ab.appendstr(i < intervalEllipsisL.r ? "«" : " ");
-            ab.appendstr(ESCAPE_CODE_UNSET);
-        }
-        ab.appendstr(" ");
-
-        // TODO: why does the right hand size computation not work?
-        for (int i = intervalText.l; i <= intervalText.r; ++i) {
-            appendColWithCursor(&ab,
-                &view->textArea.text,
-                i,
-                view->textArea.col,
-                view->textArea.mode);
-        }
-
-        ab.appendstr(" ");
-
-        const auto intervalEllipsisR = interval(intervalText.r, NCODEPOINTS).lregauge();
-        for (int i = 0; i < NELLIPSIS; ++i) {
-            ab.appendstr(ESCAPE_CODE_DULL);
-            ab.appendstr(i < intervalEllipsisR.r ? "»" : " ");
-            ab.appendstr(ESCAPE_CODE_UNSET);
-        }
-        ab.appendstr("\x1b[K\r\n");
+bool ctrlpDraw(CtrlPView* view) {
+    if (!g_editor.vim_mode == VimMode::VM_CTRLP) {
+        return false;
     }
-
-    // ab.appendstr(ESCAPE_CODE_UNSET);
-    ab.appendstr("\x1b[K\r\n");
-    ab.appendstr("━━━━━\x1b[K\r\n");
-
-    { // draw text from rg.
-        const int VIEWSIZE = 80;
-        const int NELLIPSIS = 3;
-        const int NROWS = g_editor.screenrows - 5;
-
-        for (int i = 0; i < view->rgProcess.lines.size() && i < NROWS; ++i) {
-            const abuf& line = view->rgProcess.lines[i];
-            const int NCODEPOINTS = line.ncodepoints().size;
-
-            if (i == view->rgProcess.selectedLine) {
-                ab.appendstr(ESCAPE_CODE_CURSOR_SELECT);
-            }
-
-            const interval intervalText = interval(0, VIEWSIZE - NELLIPSIS).clamp(0, NCODEPOINTS);
-            for (int i = intervalText.l; i < intervalText.r; ++i) {
-                ab.appendCodepoint(line.getCodepoint(Ix<Codepoint>(i)));
-            }
-
-            const interval intervalEllipsisR = interval(intervalText.r, NCODEPOINTS).lregauge();
-            for (int i = 0; i < 2; ++i) {
-                ab.appendstr(ESCAPE_CODE_DULL);
-                ab.appendstr(i < intervalEllipsisR.r ? "»" : " ");
-                ab.appendstr(ESCAPE_CODE_UNSET);
-            }
-
-            if (i == view->rgProcess.selectedLine) {
-                ab.appendstr(ESCAPE_CODE_UNSET);
-            }
-
-            ab.appendstr("\x1b[K \r\n");
-        } // end loop for drawing rg.
+    // TODO: figure out if window is focused.
+    if (ImGui::IsKeyPressed(ImGuiKey_GraveAccent,
+                            /*repeat =*/false)) {
+        tilde::g_tilde.previousMode = VimMode::VM_CTRLP;
+        g_editor.vim_mode = VimMode::VM_TILDE;
+    } else if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+        if (view->rgProcess.lines.size() > 0) {
+            view->selectPressed = true;
+        } else {
+            view->quitPressed = true;
+        }
     }
-#ifndef WIN32
-    CHECK_POSIX_CALL_M1(write(STDOUT_FILENO, ab.buf(), ab.len()));
-#endif
+    ImGui::Begin("CtrlP", nullptr,
+                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+    ImGui::Text("mode (%10s|%10s|%5d matches)",
+                textAreaModeToString(view->textArea.mode),
+                view->rgProcess.running ? "running" : "completed",
+                view->rgProcess.lines.size());
+    // ImGui::SetKeyboardFocusHere();
+    singleLineTextAreaDraw(&view->textArea);
+    ImGui::BeginChild("ctrlp_choices");
+    for (int i = 0; i < view->rgProcess.lines.size(); ++i) {
+        if (ImGui::Selectable(view->rgProcess.lines[i].to_std_string().c_str(),
+                              view->rgProcess.selectedLine == i)) {
+            view->rgProcess.selectedLine = i;
+        }
+    }
+    ImGui::EndChild();
+    ImGui::End();
+    return true;
 }
 
 /*
@@ -471,7 +500,7 @@ int RgProcess::_read_stdout_str_from_child_nonblocking()
 {
     const int BUFSIZE = 4096;
     char buf[BUFSIZE];
-    int nread = subprocess_read_stdout(&this->process, buf, BUFSIZE);
+    unsigned nread = subprocess_read_stdout_async(&this->process, buf, BUFSIZE);
     // TODO: dodgy, do better error handling.
     if (nread == -1) {
         return 0;

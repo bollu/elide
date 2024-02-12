@@ -203,7 +203,11 @@ subprocess_weak int subprocess_terminate(struct subprocess_s *const process);
 /// execution is to use the `subprocess_option_enable_async` option in
 /// conjunction with this method.
 subprocess_weak unsigned
-subprocess_read_stdout(struct subprocess_s *const process, char *const buffer,
+subprocess_read_stdout_sync(struct subprocess_s *const process, char *const buffer,
+                       unsigned size);
+
+subprocess_weak unsigned long
+subprocess_read_stdout_async(struct subprocess_s *const process, char *const buffer,
                        unsigned size);
 
 /// @brief Read the standard error from the child process.
@@ -1074,7 +1078,28 @@ int subprocess_terminate(struct subprocess_s *const process) {
 #endif
 }
 
-unsigned subprocess_read_stdout(struct subprocess_s *const process,
+unsigned long subprocess_read_stdout_async(struct subprocess_s *const process, char *const buffer, unsigned size) {
+    unsigned long bytes_read = 0; // Ensure bytes_read is initialized
+    void *handle = SUBPROCESS_PTR_CAST(void *, _get_osfhandle(_fileno(process->stdout_file)));
+    struct subprocess_overlapped_s overlapped = {0, 0, {{0, 0}}, SUBPROCESS_NULL};
+    overlapped.hEvent = process->hEventOutput;
+
+    if (!ReadFile(handle, buffer, size, &bytes_read, SUBPROCESS_PTR_CAST(LPOVERLAPPED, &overlapped))) {
+        unsigned long error = GetLastError();
+        if (error == ERROR_IO_PENDING) {
+            // Async read has been successfully initiated
+            return 1; // Indicate operation is pending
+        } else {
+            // An error occurred
+            return 0; // TODO: handle this?
+            // assert(false && "error when reading from file");
+        }
+    }
+  // ReadFile completed immediately
+  return SUBPROCESS_CAST(unsigned long, bytes_read);
+}
+
+unsigned subprocess_read_stdout_sync(struct subprocess_s *const process,
                                 char *const buffer, unsigned size) {
 #if defined(_WIN32)
   void *handle;

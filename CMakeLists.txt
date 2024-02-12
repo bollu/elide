@@ -39,6 +39,7 @@ add_library(elidecore
 find_package(json-c REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(libuv CONFIG REQUIRED)
 
 add_library(imgui
   src/third_party/imgui/imgui.cpp
@@ -59,6 +60,7 @@ target_include_directories(elidecore PUBLIC src/third_party)
 target_include_directories(elidecore PUBLIC src/third_party/imgui/)
 target_include_directories(elidecore PUBLIC src/third_party/subprocess)
 target_link_libraries(elidecore PUBLIC json-c::json-c imgui)
+target_link_libraries(elidecore PRIVATE $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>)
 install(TARGETS elidecore DESTINATION lib)
 
 # elide

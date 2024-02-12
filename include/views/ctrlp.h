@@ -99,6 +99,6 @@ bool ctrlpWhenSelected(CtrlPView* view);
 struct FileLocation;
 FileLocation ctrlpGetSelectedFileLocation(const CtrlPView* view);
 void ctrlpOpen(CtrlPView* view, VimMode previous_state, fs::path cwd);
-void ctrlpHandleInput(CtrlPView* view, const SDL_Event &e);
+void _ctrlpHandleInput(CtrlPView* view);
 void ctrlpTickPostKeypress(CtrlPView* view);
-void ctrlpDraw(CtrlPView* view);
+bool ctrlpDraw(CtrlPView* view);
